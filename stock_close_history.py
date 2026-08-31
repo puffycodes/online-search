@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""
+Pull the past daily open / high / low / close prices of a single stock,
+using Yahoo Finance's public chart endpoint. No API key or authentication
+required.
+
+Give it a ticker in Yahoo's notation (AAPL, VOD.L, D05.SI, SAP.DE, ...) and
+either a --range keyword, an explicit --start/--end window, or --last N to
+get just the most recent N sessions.
+
+Supports --json for structured output so an agent can parse stdout instead
+of the human-readable report. On failure the process exits non-zero and
+prints {"error": "..."} to stderr.
+"""
+
+import argparse
+import datetime as dt
+import json
+import sys
+
+import requests
+
+CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+# Yahoo rejects requests without a browser-like User-Agent.
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+REQUEST_TIMEOUT = 15
+
+VALID_RANGES = [
+    "5d", "1mo", "3mo", "6mo", "ytd", "1y", "2y", "5y", "10y", "max",
+]
+DEFAULT_RANGE = "1mo"
+SECONDS_PER_DAY = 86400
+
+
+def _parse_date(value):
+    try:
+        return dt.datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
+    except ValueError:
+        raise ValueError(f"invalid date {value!r}, expected YYYY-MM-DD")
+
+
+def build_params(args):
+    """Return the query params for the chart call from the parsed args."""
+    params = {"interval": "1d", "includeAdjustedClose": "true"}
+
+    if args.start or args.end:
+        start = _parse_date(args.start) if args.start else None
+        end = _parse_date(args.end) if args.end else dt.datetime.now(dt.timezone.utc)
+        if start is None:
+            raise ValueError("--end requires --start")
+        if end <= start:
+            raise ValueError("--end must be after --start")
+        params["period1"] = int(start.timestamp())
+        # pad the end by a day so the final session is inclusive
+        params["period2"] = int(end.timestamp()) + SECONDS_PER_DAY
+    elif args.last:
+        # Fetch a generous calendar window, then trim to the last N rows.
+        # ~1.6 calendar days per trading day, plus slack for holidays.
+        lookback_days = args.last * 2 + 10
+        start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=lookback_days)
+        params["period1"] = int(start.timestamp())
+        params["period2"] = int(dt.datetime.now(dt.timezone.utc).timestamp()) + SECONDS_PER_DAY
+    else:
+        params["range"] = args.range
+
+    return params
+
+
+def fetch_history(symbol, params):
+    response = requests.get(
+        CHART_URL.format(symbol=symbol),
+        params=params,
+        headers=HEADERS,
+        timeout=REQUEST_TIMEOUT,
+    )
+    # Yahoo returns a JSON error body with a 404/400 for bad symbols.
+    try:
+        payload = response.json()
+    except ValueError:
+        response.raise_for_status()
+        raise
+    error = payload.get("chart", {}).get("error")
+    if error:
+        raise requests.RequestException(
+            error.get("description") or error.get("code") or str(error)
+        )
+    results = payload.get("chart", {}).get("result")
+    if not results:
+        raise requests.RequestException("no data returned for symbol")
+    return results[0]
+
+
+def extract_rows(result):
+    meta = result.get("meta", {})
+    gmtoffset = meta.get("gmtoffset", 0) or 0
+    timestamps = result.get("timestamp") or []
+    quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+    volumes = quote.get("volume") or []
+    adj_block = result.get("indicators", {}).get("adjclose") or [{}]
+    adj_closes = adj_block[0].get("adjclose") if adj_block else None
+
+    def at(series, i):
+        value = series[i] if i < len(series) else None
+        return round(value, 4) if value is not None else None
+
+    rows = []
+    for i, ts in enumerate(timestamps):
+        close = closes[i] if i < len(closes) else None
+        if close is None:
+            # In-progress session or a data gap - not a settled close.
+            continue
+        date = dt.datetime.utcfromtimestamp(ts + gmtoffset).strftime("%Y-%m-%d")
+        volume = volumes[i] if i < len(volumes) else None
+        rows.append(
+            {
+                "date": date,
+                "open": at(opens, i),
+                "high": at(highs, i),
+                "low": at(lows, i),
+                "close": round(close, 4),
+                "adj_close": at(adj_closes or [], i),
+                "volume": int(volume) if volume is not None else None,
+            }
+        )
+    return meta, rows
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Pull past daily open/high/low/close prices for a single stock."
+    )
+    parser.add_argument(
+        "symbol",
+        help="Ticker in Yahoo notation, e.g. AAPL, VOD.L, D05.SI, SAP.DE",
+    )
+    window = parser.add_mutually_exclusive_group()
+    window.add_argument(
+        "--range",
+        choices=VALID_RANGES,
+        default=DEFAULT_RANGE,
+        help=f"Look-back window (default: {DEFAULT_RANGE})",
+    )
+    window.add_argument(
+        "--last",
+        type=int,
+        metavar="N",
+        help="Return only the most recent N trading sessions",
+    )
+    parser.add_argument("--start", help="Start date YYYY-MM-DD (with optional --end)")
+    parser.add_argument("--end", help="End date YYYY-MM-DD (defaults to today)")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON on stdout instead of a human-readable report.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+
+    if args.last is not None and args.last < 1:
+        print("Error: --last must be a positive integer", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        params = build_params(args)
+        result = fetch_history(args.symbol, params)
+        meta, rows = extract_rows(result)
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        message = f"failed to fetch prices for {args.symbol!r}: {exc}"
+        if args.json:
+            print(json.dumps({"error": message}), file=sys.stderr)
+        else:
+            print(f"Error: {message}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.last:
+        rows = rows[-args.last:]
+
+    symbol = meta.get("symbol", args.symbol)
+    exchange = meta.get("fullExchangeName") or meta.get("exchangeName") or "?"
+    currency = meta.get("currency") or ""
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "currency": currency,
+                    "prices": rows,
+                },
+                indent=2,
+            )
+        )
+        return
+
+    if not rows:
+        print(f"No settled price data found for {symbol}.")
+        return
+
+    print(f"{symbol} - {exchange} ({currency}) - {len(rows)} session(s)\n")
+    show_adj = any(r["adj_close"] not in (None, r["close"]) for r in rows)
+
+    def cell(value, width=12):
+        return f"{value:>{width},.4f}" if value is not None else f"{'-':>{width}}"
+
+    header = f"{'Date':<12}" + "".join(
+        f"{name:>12}" for name in ("Open", "High", "Low", "Close")
+    )
+    if show_adj:
+        header += f"{'Adj Close':>13}"
+    header += f"{'Volume':>15}"
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        line = f"{row['date']:<12}" + cell(row["open"]) + cell(row["high"]) + \
+            cell(row["low"]) + cell(row["close"])
+        if show_adj:
+            line += cell(row["adj_close"], 13)
+        vol = row["volume"]
+        line += f"{vol:>15,}" if vol is not None else f"{'-':>15}"
+        print(line)
+
+    latest = rows[-1]
+
+    def num(value):
+        return f"{value:,.4f}" if value is not None else "-"
+
+    print(
+        f"\nMost recent session ({latest['date']}): "
+        f"O {num(latest['open'])}  H {num(latest['high'])}  "
+        f"L {num(latest['low'])}  C {num(latest['close'])} {currency}"
+    )
+
+
+if __name__ == "__main__":
+    main()
