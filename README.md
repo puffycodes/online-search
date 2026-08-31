@@ -416,7 +416,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ## stock_tech_buzz_agent.py
 
-An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the top 50 hottest tech discussions from Hacker News, and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
+An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the ~40 hottest tech discussions from Hacker News (the `--discussion-limit` default is 50 but the underlying script ranks only its first 40 candidates), and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
 
 Requires `market_top_volume.py` and `hottest_tech_discussions.py` to be present in the same directory — it imports them directly rather than shelling out.
 
@@ -438,7 +438,7 @@ python3 stock_tech_buzz_agent.py [--stock-limit N] [--discussion-limit N] [--jso
 | Flag | Default | Description |
 |---|---|---|
 | `--stock-limit N` | 10 | Number of top-volume stocks to pull *per exchange* (so total candidates = 2×N) |
-| `--discussion-limit N` | 50 | Number of hottest tech discussions to search |
+| `--discussion-limit N` | 50 | Number of hottest tech discussions to search. Capped by `hottest_tech_discussions.py`'s candidate pool (`CANDIDATE_POOL_SIZE`, 40) — values above ~40 return at most ~40 |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
@@ -459,7 +459,7 @@ If no top-volume stock is mentioned in any of the fetched discussions (the commo
 No overlap found between the top 20 volume stocks and the top 39 tech discussions.
 ```
 
-(The discussion count in that message may be lower than `--discussion-limit` since Hacker News' `topstories` list occasionally contains fewer than the requested candidate pool, or entries that fail to fetch — see [`hottest_tech_discussions.py`](#hottest_tech_discussionspy)'s error handling.)
+(The discussion count in that message is usually lower than `--discussion-limit`: the underlying [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) only ranks its first `CANDIDATE_POOL_SIZE` (40) top stories, so a default `--discussion-limit 50` yields ~40 at most, and a few more can drop out if their detail fetch fails.)
 
 #### Tool usage (`--json`)
 
@@ -493,7 +493,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 ### How it works
 
 1. **Fetch top-volume stocks** — Calls `market_top_volume.get_movers()` with metric `"volume"` once for `"nyse"` and once for `"nasdaq"` (each with `--stock-limit`), tagging each quote with its source exchange and de-duplicating by symbol.
-2. **Fetch tech discussions** — Calls `hottest_tech_discussions.get_hottest_tech_discussions()` with `--discussion-limit`.
+2. **Fetch tech discussions** — Calls `hottest_tech_discussions.get_hottest_tech_discussions()` with `--discussion-limit`. That function only inspects the first `CANDIDATE_POOL_SIZE` (40) of HN's current top stories, so a `--discussion-limit` above ~40 effectively tops out there.
 3. **Match stocks to discussions** — For every stock, checks every discussion's title for either: (a) the ticker symbol as a case-sensitive whole word (e.g. `NVDA`), or (b) the company name — with legal-entity suffixes like "Corporation"/"Inc."/"Ltd." stripped — as a case-insensitive whole-word/phrase match (e.g. "NVIDIA Corporation" → "NVIDIA").
 4. **Filter and report** — Keeps only stocks with at least one matching discussion, and prints each stock paired with the discussion(s) that mentioned it.
 
