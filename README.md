@@ -5,10 +5,12 @@ Small standalone scripts that pull live data from public web APIs. Each is self-
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
+- [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, rendered to a PNG with matplotlib
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
+- [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
 
 ---
 
@@ -414,6 +416,102 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
+## stock_candlestick.py
+
+Fetches the past price history of one stock from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — the same endpoint as [`stock_close_history.py`](#stock_close_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- [`matplotlib`](https://pypi.org/project/matplotlib/)
+
+```bash
+pip install requests matplotlib
+```
+
+### Usage
+
+```bash
+python3 stock_candlestick.py SYMBOL [--range RANGE | --last N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--interval {1d,1wk,1mo}] [--volume] [-o OUTPUT] [--show]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, … |
+| `--range RANGE` | `6mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
+| `--last N` | — | Plot only the most recent `N` bars (mutually exclusive with `--range`) |
+| `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
+| `--interval` | `1d` | Bar size: `1d` (daily), `1wk` (weekly), `1mo` (monthly) |
+| `--volume` | off | Add a volume panel beneath the price panel |
+| `-o` / `--output` | `<SYMBOL>_candlestick.png` | PNG path to write (`.` in the ticker becomes `_`) |
+| `--show` | off | Open an interactive matplotlib window instead of writing a file |
+
+`--range`, `--last`, and `--start/--end` are three ways to pick the window; `--range` and `--last` are mutually exclusive at the argparse level, and `--start/--end` takes precedence over both. There is no `--json` mode — the output is an image.
+
+#### Example
+
+```bash
+python3 stock_candlestick.py NVDA --range 1y --volume
+```
+
+```
+Wrote NVDA_candlestick.png
+```
+
+The chart draws one candle per bar: a thin wick from the session low to high, and an open-to-close body. Direction is encoded **both** by hue and by fill so it survives greyscale and red/green colour-vision deficiency — up bars (close ≥ open) are hollow with a green edge, down bars (close < open) are filled red. A doji (open == close) collapses to a short horizontal line. The title carries the ticker, exchange, bar count, interval, and date span; a legend maps the two candle styles.
+
+### How it works
+
+1. **Build the query window** — Identical to [`stock_close_history.py`](#stock_close_historypy): `--start/--end` become `period1`/`period2` epoch bounds (end padded a day so the final bar is inclusive); `--last N` fetches a generous calendar window sized to the interval (`N*2 + 10` days for daily, wider for weekly/monthly) to be trimmed later; otherwise `range` is passed through. `interval` is whatever `--interval` selects.
+2. **Fetch** — GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised rather than parsed.
+3. **Extract bars** — Zips `timestamp` with `indicators.quote[0]`'s `open` / `high` / `low` / `close` / `volume`. Any bar missing an OHLC value (an in-progress or gapped period) is skipped. Each timestamp is shifted by `meta.gmtoffset` before taking the date.
+4. **Render** — With `--last N`, keeps the final `N` bars. Plots candles against an integer x-index (so weekends and holidays leave no gaps), relabels ~10 x-ticks with the bar dates, optionally adds a volume panel coloured to match each candle, and either writes the figure to the `-o` path (150 dpi) or shows it interactively.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `VALID_RANGES` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
+| `VALID_INTERVALS` | `["1d", "1wk", "1mo"]` | Accepted `--interval` values |
+| `DEFAULT_RANGE` | `"6mo"` | Window used when no `--range`, `--last`, or `--start` is given |
+| `DEFAULT_INTERVAL` | `"1d"` | Bar size used when `--interval` isn't passed |
+| `COLOR_UP` / `COLOR_DOWN` | `#1a9850` / `#d73027` | Green edge for up bars, red fill for down bars |
+| `COLOR_WICK` / `COLOR_GRID` / `COLOR_SURFACE` | greys / white | Wick, gridline, and background colours |
+| `REQUEST_TIMEOUT` | 15 | Request timeout in seconds |
+| `HEADERS` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
+
+### API reference
+
+- `build_params(args)` — Turns parsed args into the chart-endpoint query params (`range` vs `period1`/`period2`), sizing the `--last` look-back to the interval and validating dates.
+- `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises on a Yahoo error body or an empty result, and returns the first `chart.result` object.
+- `extract_rows(result)` — Returns `(meta, rows)` where `rows` is the list of `{date, open, high, low, close, volume}` dicts for complete bars only (`date` is a `datetime`).
+- `render_chart(symbol, exchange, currency, interval, rows, out_path, show, with_volume)` — Draws the candlestick figure (and optional volume panel) and either saves it or shows it. Imports matplotlib lazily and selects the `Agg` backend unless `--show`.
+- `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--interval`, `--volume`, `--output`, and `--show`.
+- `main(argv=None)` — Entry point; builds params, fetches, trims for `--last`, resolves the output path, and renders.
+
+### Error handling
+
+- If the request fails (network error, timeout, non-2xx) or Yahoo returns an error body (`"No data found, symbol may be delisted"` for an unknown ticker), the script prints `Error: …` to stderr and exits with status code 1.
+- An invalid `--range` or `--interval` value is rejected by argument parsing (exit code 2); passing both `--range` and `--last` is likewise rejected.
+- A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
+- A `--last` value below 1 exits with status code 1.
+- If no complete bars fall in the window, the script prints `Error: no price data found for '<SYMBOL>'` and exits with status code 1.
+- If matplotlib isn't installed, it prints `Error: matplotlib is required (pip install matplotlib)` and exits with status code 1.
+
+### Notes / limitations
+
+- Relies on an undocumented, unofficial Yahoo Finance endpoint — public and free, but with no guarantee it stays available or unchanged.
+- The ticker must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, `.T`, …). The script does not resolve company names to tickers.
+- Candle bodies use the **raw** open/high/low/close — prices are not split/dividend-adjusted, so a split inside the window shows up as a large gap.
+- The figure width scales with the bar count (`~0.11 in` per bar), so a long daily range produces a very wide, short image — use `--interval 1wk` or `1mo` for multi-year spans.
+- `--show` needs a working matplotlib GUI backend and a display; in a headless environment omit it and read the PNG.
+- Prices are end-of-day snapshots in the listing currency, and some markets quote in minor units — e.g. LSE returns `GBp` (pence).
+
+---
+
 ## stock_tech_buzz_agent.py
 
 An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the ~40 hottest tech discussions from Hacker News (the `--discussion-limit` default is 50 but the underlying script ranks only its first 40 candidates), and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
@@ -643,3 +741,43 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Requires `stock_close_history.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's prices or a "symbol may be delisted" error.
 - Inherits all the limitations of [`stock_close_history.py`](#stock_close_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
+
+---
+
+## Claude Code agent: `stock-candlestick-chart`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-candlestick-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_candlestick.py`](#stock_candlestickpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
+
+### Purpose
+
+Lets Claude Code answer requests like "show me a candlestick chart of AAPL", "chart Tesla's last 3 months", "plot DBS weekly candles for the first half of the year", or "candlestick chart for Vodafone since June with volume" by running the script and handing back the chart, instead of describing prices from stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for "see / plot / draw / visualize \<company\>'s price history as a chart" requests, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-candlestick-chart"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, and `--volume` when volume is mentioned.
+3. Runs `python3 stock_candlestick.py SYMBOL <window flags> [--interval …] [--volume] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
+4. Reads the PNG to verify it rendered, then reports a one- or two-sentence summary (ticker, exchange, period, interval, and a brief read of the trend) ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash`, `Read` |
+| Underlying script | [`stock_candlestick.py`](#stock_candlestickpy) |
+
+### Notes / limitations
+
+- Requires `stock_candlestick.py` (and its `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
+- Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's chart or a "symbol may be delisted" error.
+- The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
+- Inherits all the limitations of [`stock_candlestick.py`](#stock_candlestickpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
