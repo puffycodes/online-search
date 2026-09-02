@@ -5,9 +5,9 @@ Small, dependency-free technical indicators over a price series.
 Every function takes ``prices`` as an iterable of numbers, oldest session
 first (e.g. the ``close`` field of each row from stock_close_history.py's
 ``--json`` output). Series transforms (``moving_average``,
-``price_vs_moving_average``) return a list the same length as the input so the
-result lines up session-for-session with the source rows; classifiers
-(``trend``) return a single verdict.
+``price_vs_moving_average``, ``moving_average_cross``) return a list the same
+length as the input so the result lines up session-for-session with the source
+rows; classifiers (``trend``) return a single verdict.
 
 Not a CLI - this module is imported, not run.
 """
@@ -58,6 +58,39 @@ def price_vs_moving_average(prices, n):
         elif price > avg:
             out.append("above")
         elif price < avg:
+            out.append("below")
+        else:
+            out.append("equal")
+    return out
+
+
+def moving_average_cross(prices, fast, slow):
+    """Where the ``fast`` SMA sits relative to the ``slow`` SMA, per session.
+
+    prices     : iterable of numbers, oldest session first.
+    fast, slow  : the two moving-average windows in sessions (positive ints).
+                  ``fast`` is meant to be the shorter one, but the function
+                  just compares whichever two windows it is given.
+
+    Returns a list the same length as ``prices``: ``"above"``, ``"below"`` or
+    ``"equal"`` for each session where **both** averages are defined (from
+    index ``max(fast, slow) - 1`` on), and ``None`` before that. Take ``[-1]``
+    for the current reading; a change in the value marks a crossover (the
+    "golden cross" / "death cross" when ``fast``/``slow`` are e.g. 50/200).
+
+    >>> moving_average_cross([1, 2, 3, 4, 5, 6], 2, 4)
+    [None, None, None, 'above', 'above', 'above']
+    """
+    prices = list(prices)
+    fast_ma = moving_average(prices, fast)
+    slow_ma = moving_average(prices, slow)
+    out = []
+    for f, s in zip(fast_ma, slow_ma):
+        if f is None or s is None:
+            out.append(None)
+        elif f > s:
+            out.append("above")
+        elif f < s:
             out.append("below")
         else:
             out.append("equal")
