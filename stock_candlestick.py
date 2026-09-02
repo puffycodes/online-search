@@ -9,6 +9,10 @@ either a --range keyword, an explicit --start/--end window, or --last N to
 plot just the most recent N sessions. Pick the bar size with --interval
 (1d, 1wk, 1mo).
 
+Simple moving averages of the close are overlaid as lines; the windows
+default to 5, 10, 20 and 50 bars and can be changed (or switched off) with
+--ma.
+
 By default the chart is written to <SYMBOL>_candlestick.png; use --output to
 change the path or --show to open an interactive window instead. Add
 --volume for a volume panel beneath the price panel.
@@ -23,10 +27,12 @@ import sys
 import requests
 
 import yahoo_finance as yf
+from indicators import moving_average
 
 VALID_INTERVALS = ["1d", "1wk", "1mo"]
 DEFAULT_RANGE = "6mo"
 DEFAULT_INTERVAL = "1d"
+DEFAULT_MA = "5,10,20,50"
 
 # Up candles are drawn hollow (surface fill) with a green edge; down candles
 # are filled solid red. Direction is encoded by BOTH hue and fill, so the
@@ -36,6 +42,30 @@ COLOR_DOWN = "#d73027"
 COLOR_WICK = "#333333"
 COLOR_GRID = "#d0d0d0"
 COLOR_SURFACE = "#ffffff"
+# Moving-average line colours, used in the order the windows are given.
+# Kept clear of the green/red candles (and of each other); cycled if there
+# are more windows than colours.
+COLOR_MA = ["#1f78b4", "#6a3d9a", "#e6ab02", "#a6761d", "#e7298a", "#555555"]
+
+
+def _parse_ma_arg(value):
+    """Parse the --ma argument: a comma-separated list of positive ints.
+
+    ``""`` / ``none`` / ``off`` yields an empty list (no averages). The result
+    is de-duplicated and sorted so shorter, faster-moving averages plot first.
+    """
+    cleaned = value.strip().lower()
+    if cleaned in ("", "none", "off"):
+        return []
+    try:
+        windows = [int(part) for part in cleaned.split(",") if part.strip()]
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"--ma must be comma-separated integers (or 'none'), got {value!r}"
+        )
+    if any(w < 1 for w in windows):
+        raise argparse.ArgumentTypeError("--ma windows must be positive integers")
+    return sorted(set(windows))
 
 
 def extract_rows(result):
@@ -73,12 +103,14 @@ def extract_rows(result):
     return meta, rows
 
 
-def render_chart(symbol, exchange, currency, interval, rows, out_path, show, with_volume):
+def render_chart(symbol, exchange, currency, interval, rows, ma_series,
+                 out_path, show, with_volume):
     import matplotlib
 
     if not show:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
     from matplotlib.patches import Rectangle
     from matplotlib.ticker import FuncFormatter, MaxNLocator
 
@@ -123,6 +155,19 @@ def render_chart(symbol, exchange, currency, interval, rows, out_path, show, wit
                     facecolor=face, edgecolor=edge, linewidth=0.8, zorder=3,
                 )
             )
+
+    # Moving-average overlays: one line per window, drawn only where the
+    # average is defined (its first window-1 bars are None).
+    ma_handles = []
+    for idx, (window, values) in enumerate(ma_series.items()):
+        pts = [(x, v) for x, v in zip(xs, values) if v is not None]
+        if not pts:
+            continue  # window longer than the number of bars shown
+        mx, my = zip(*pts)
+        color = COLOR_MA[idx % len(COLOR_MA)]
+        ax.plot(mx, my, color=color, linewidth=1.2, alpha=0.9, zorder=4)
+        ma_handles.append(Line2D([0], [0], color=color, linewidth=1.2,
+                                 label=f"MA{window}"))
 
     ax.set_xlim(-1, n)
     ax.margins(y=0.05)
@@ -175,13 +220,13 @@ def render_chart(symbol, exchange, currency, interval, rows, out_path, show, wit
 
         ax_vol.yaxis.set_major_formatter(FuncFormatter(fmt_volume))
 
-    # Legend: hollow = up (close >= open), filled = down.
+    # Legend: hollow = up (close >= open), filled = down, plus one entry per
+    # moving-average line.
     up_key = Rectangle((0, 0), 1, 1, facecolor=COLOR_SURFACE, edgecolor=COLOR_UP)
     down_key = Rectangle((0, 0), 1, 1, facecolor=COLOR_DOWN, edgecolor=COLOR_DOWN)
-    ax.legend(
-        [up_key, down_key], ["Close ≥ Open", "Close < Open"],
-        loc="best", fontsize=9, framealpha=0.9,
-    )
+    handles = [up_key, down_key] + ma_handles
+    labels = ["Close ≥ Open", "Close < Open"] + [h.get_label() for h in ma_handles]
+    ax.legend(handles, labels, loc="best", fontsize=9, framealpha=0.9)
 
     if show:
         plt.show()
@@ -234,6 +279,14 @@ def parse_args(argv=None):
         action="store_true",
         help="Add a volume panel beneath the price panel",
     )
+    parser.add_argument(
+        "--ma",
+        type=_parse_ma_arg,
+        default=_parse_ma_arg(DEFAULT_MA),
+        metavar="N,N,...",
+        help=f"Comma-separated simple-moving-average windows to overlay "
+             f"(default: {DEFAULT_MA}; pass 'none' to disable)",
+    )
     return parser.parse_args(argv)
 
 
@@ -255,8 +308,14 @@ def main(argv=None):
         print(f"Error: failed to fetch prices for {args.symbol!r}: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    # Compute the moving averages on the full fetched series, then trim in step
+    # with rows so a --last window still shows correct values at its left edge
+    # whenever the padded fetch reached back far enough.
+    closes = [r["close"] for r in rows]
+    ma_series = {w: moving_average(closes, w) for w in args.ma}
     if args.last:
         rows = rows[-args.last:]
+        ma_series = {w: s[-args.last:] for w, s in ma_series.items()}
 
     if not rows:
         print(f"Error: no price data found for {args.symbol!r}", file=sys.stderr)
@@ -269,7 +328,7 @@ def main(argv=None):
 
     try:
         render_chart(
-            symbol, exchange, currency, args.interval, rows,
+            symbol, exchange, currency, args.interval, rows, ma_series,
             out_path, args.show, args.volume,
         )
     except ImportError:
