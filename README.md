@@ -7,11 +7,13 @@ Small standalone scripts that pull live data from public web APIs. Each is self-
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
 - [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, rendered to a PNG with matplotlib
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the two `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
+- [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `trend`
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
+- [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_close_history.py` + `indicators.py` and reports whether a named stock is trending up or down
 
 ---
 
@@ -549,6 +551,63 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy) and 
 
 ---
 
+## indicators.py
+
+Small, dependency-free technical indicators over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_close_history.py`](#stock_close_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by the [`stock-trend`](#claude-code-agent-stock-trend) agent.
+
+### Requirements
+
+- Python 3.7+ (standard library only)
+
+### API reference
+
+- `moving_average(prices, n)` — Simple moving average over an `n`-session window. Returns a list the **same length** as `prices`: element `i` is the mean of `prices[i-n+1 .. i]`, or `None` for the first `n-1` positions where a full window isn't available yet, so the result lines up session-for-session with the source rows. Raises `ValueError` if `n < 1`.
+- `price_vs_moving_average(prices, n)` — Where each session's price sits relative to its `n`-session SMA. Returns a list the **same length** as `prices`: `"above"`, `"below"`, or `"equal"` for each session where the SMA is defined, and `None` for the first `n-1` positions where it isn't yet. Take `[-1]` for the current reading. Raises `ValueError` (via `moving_average`) if `n < 1`.
+- `trend(prices, window=None, flat_threshold=0.01)` — Classifies the series as `"up"`, `"down"`, or `"flat"`. Fits a least-squares line through the closes and measures the move that line implies from its first fitted point to its last, as a fraction of the mean price; if that fitted move is smaller than `flat_threshold` (default `0.01` = 1%) in magnitude the series is `"flat"` (direction is just noise), otherwise its sign decides up vs down. `window=N` restricts the fit to the last `N` prices. Raises `ValueError` on fewer than 2 prices (or `window < 2`).
+- `_ols_slope(values)` — Internal: least-squares slope of `values` against `x = 0, 1, 2, …` (per step).
+
+### Examples
+
+```python
+>>> from indicators import moving_average, price_vs_moving_average, trend
+>>> moving_average([1, 2, 3, 4, 5], 3)
+[None, None, 2.0, 3.0, 4.0]
+>>> price_vs_moving_average([10, 10, 10, 7, 13], 3)
+[None, None, 'equal', 'below', 'above']
+>>> trend([1, 2, 3, 4, 5])
+'up'
+>>> trend([5, 4, 3, 2, 1])
+'down'
+>>> trend([10, 10, 10, 10])
+'flat'
+```
+
+Pull real closes straight from the JSON tool:
+
+```python
+import json, subprocess
+from indicators import trend, moving_average
+
+out = subprocess.run(
+    ["python3", "stock_close_history.py", "AAPL", "--range", "6mo", "--json"],
+    capture_output=True, text=True, check=True,
+).stdout
+closes = [r["close"] for r in json.loads(out)["prices"]]
+
+trend(closes)                 # -> "up" / "down" / "flat" over the whole span
+trend(closes, window=20)      # -> the near-term (last 20 sessions) trend
+moving_average(closes, 50)[-1]           # -> current 50-session SMA
+price_vs_moving_average(closes, 50)[-1]  # -> "above" / "below" / "equal"
+```
+
+### Notes / limitations
+
+- `moving_average` re-sums each window, so it is O(len·n) — fine for stock series (hundreds–thousands of points). For very long inputs keep a running sum instead (O(len)), accepting minor floating-point drift.
+- `trend` is a mechanical read of past closing prices — a straight-line fit, nothing more. It is not a forecast, and `flat_threshold` is a blunt single knob: tune it up to ignore weaker trends, down to be more sensitive. It does not scale with the series' own volatility.
+- Both functions take raw `close` values. Pass `adj_close` instead when spanning a split or large dividend.
+
+---
+
 ## stock_tech_buzz_agent.py
 
 An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the ~40 hottest tech discussions from Hacker News (the `--discussion-limit` default is 50 but the underlying script ranks only its first 40 candidates), and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
@@ -818,3 +877,44 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's chart or a "symbol may be delisted" error.
 - The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
 - Inherits all the limitations of [`stock_candlestick.py`](#stock_candlestickpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
+
+---
+
+## Claude Code agent: `stock-trend`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-trend.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_close_history.py`](#stock_close_historypy) for the price history and then to the [`indicators.py`](#indicatorspy) functions (`trend`, `moving_average`) to classify it.
+
+### Purpose
+
+Lets Claude Code answer requests like "is AAPL trending up?", "what's the trend on Tesla?", "is Vodafone in a downtrend?", "has DBS been going up or down lately?", or "is NVDA on an uptrend this quarter?" with a mechanical read of recent closing prices, instead of guessing a direction from stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about the direction, trend, or momentum of a named company or ticker over time, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-trend"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+2. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` for "this year" / "past year", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise `--range 6mo`.
+3. Runs `python3 stock_close_history.py SYMBOL <window flags> --json > /tmp/stock_trend.json` from the repo root, then a `python3` heredoc that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions, the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages.
+4. Reports a one-line verdict (up trend / down trend / roughly flat over the dates examined) plus a few supporting lines, calling out when the short-window trend disagrees with the overall one, and closes with a caveat that this is not a prediction or investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script and the analysis snippet).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_close_history.py`](#stock_close_historypy) |
+| Underlying module | [`indicators.py`](#indicatorspy) |
+
+### Notes / limitations
+
+- Requires `stock_close_history.py` (with its `yahoo_finance.py` helper and the `requests` dependency) and `indicators.py` to be present and runnable from the repo root — the analysis step must run with the repo root on `sys.path` so `import indicators` resolves.
+- Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's trend or a "symbol may be delisted" error.
+- The verdict is a straight-line fit over past closes (see [`indicators.py`](#indicatorspy) limitations): a mechanical description, not a forecast, and sensitive to the window chosen and to `flat_threshold`.
+- Inherits all the limitations of [`stock_close_history.py`](#stock_close_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
