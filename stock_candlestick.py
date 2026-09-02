@@ -22,18 +22,11 @@ import sys
 
 import requests
 
-CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-# Yahoo rejects requests without a browser-like User-Agent.
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-REQUEST_TIMEOUT = 15
+import yahoo_finance as yf
 
-VALID_RANGES = [
-    "5d", "1mo", "3mo", "6mo", "ytd", "1y", "2y", "5y", "10y", "max",
-]
 VALID_INTERVALS = ["1d", "1wk", "1mo"]
 DEFAULT_RANGE = "6mo"
 DEFAULT_INTERVAL = "1d"
-SECONDS_PER_DAY = 86400
 
 # Up candles are drawn hollow (surface fill) with a green edge; down candles
 # are filled solid red. Direction is encoded by BOTH hue and fill, so the
@@ -45,79 +38,16 @@ COLOR_GRID = "#d0d0d0"
 COLOR_SURFACE = "#ffffff"
 
 
-def _parse_date(value):
-    try:
-        return dt.datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
-    except ValueError:
-        raise ValueError(f"invalid date {value!r}, expected YYYY-MM-DD")
-
-
-def build_params(args):
-    """Return the query params for the chart call from the parsed args."""
-    params = {"interval": args.interval, "includeAdjustedClose": "true"}
-
-    if args.start or args.end:
-        start = _parse_date(args.start) if args.start else None
-        end = _parse_date(args.end) if args.end else dt.datetime.now(dt.timezone.utc)
-        if start is None:
-            raise ValueError("--end requires --start")
-        if end <= start:
-            raise ValueError("--end must be after --start")
-        params["period1"] = int(start.timestamp())
-        # pad the end by a day so the final session is inclusive
-        params["period2"] = int(end.timestamp()) + SECONDS_PER_DAY
-    elif args.last:
-        # Fetch a generous calendar window, then trim to the last N bars.
-        # ~1.6 calendar days per trading day, plus slack for holidays.
-        lookback_days = args.last * 2 + 10
-        if args.interval == "1wk":
-            lookback_days = args.last * 9 + 14
-        elif args.interval == "1mo":
-            lookback_days = args.last * 32 + 31
-        start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=lookback_days)
-        params["period1"] = int(start.timestamp())
-        params["period2"] = int(dt.datetime.now(dt.timezone.utc).timestamp()) + SECONDS_PER_DAY
-    else:
-        params["range"] = args.range
-
-    return params
-
-
-def fetch_history(symbol, params):
-    response = requests.get(
-        CHART_URL.format(symbol=symbol),
-        params=params,
-        headers=HEADERS,
-        timeout=REQUEST_TIMEOUT,
-    )
-    # Yahoo returns a JSON error body with a 404/400 for bad symbols.
-    try:
-        payload = response.json()
-    except ValueError:
-        response.raise_for_status()
-        raise
-    error = payload.get("chart", {}).get("error")
-    if error:
-        raise requests.RequestException(
-            error.get("description") or error.get("code") or str(error)
-        )
-    results = payload.get("chart", {}).get("result")
-    if not results:
-        raise requests.RequestException("no data returned for symbol")
-    return results[0]
-
-
 def extract_rows(result):
     """Return (meta, rows) where each row is a dict with date + OHLCV."""
-    meta = result.get("meta", {})
-    gmtoffset = meta.get("gmtoffset", 0) or 0
-    timestamps = result.get("timestamp") or []
-    quote = (result.get("indicators", {}).get("quote") or [{}])[0]
-    opens = quote.get("open") or []
-    highs = quote.get("high") or []
-    lows = quote.get("low") or []
-    closes = quote.get("close") or []
-    volumes = quote.get("volume") or []
+    meta, series = yf.extract_series(result)
+    gmtoffset = series["gmtoffset"]
+    timestamps = series["timestamp"]
+    opens = series["open"]
+    highs = series["high"]
+    lows = series["low"]
+    closes = series["close"]
+    volumes = series["volume"]
 
     rows = []
     for i, ts in enumerate(timestamps):
@@ -272,7 +202,7 @@ def parse_args(argv=None):
     window = parser.add_mutually_exclusive_group()
     window.add_argument(
         "--range",
-        choices=VALID_RANGES,
+        choices=yf.VALID_RANGES,
         default=DEFAULT_RANGE,
         help=f"Look-back window (default: {DEFAULT_RANGE})",
     )
@@ -315,8 +245,11 @@ def main(argv=None):
         sys.exit(1)
 
     try:
-        params = build_params(args)
-        result = fetch_history(args.symbol, params)
+        params = yf.build_params(
+            interval=args.interval, range_=args.range,
+            start=args.start, end=args.end, last=args.last,
+        )
+        result = yf.fetch_history(args.symbol, params)
         meta, rows = extract_rows(result)
     except (requests.RequestException, ValueError, KeyError) as exc:
         print(f"Error: failed to fetch prices for {args.symbol!r}: {exc}", file=sys.stderr)

@@ -1,11 +1,12 @@
 # online-search
 
-Small standalone scripts that pull live data from public web APIs. Each is self-contained — no local package, just a single `.py` file.
+Small standalone scripts that pull live data from public web APIs. Each is self-contained — no local package, just a `.py` file (the two `stock_*` scripts also share `yahoo_finance.py`, a helper module in the same directory).
 
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
 - [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, rendered to a PNG with matplotlib
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the two `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
@@ -374,29 +375,31 @@ With `--json`, results print as a JSON object on stdout. On failure, an exit cod
 
 ### How it works
 
-1. **Build the query window** — From the args: `--start/--end` become `period1`/`period2` epoch bounds (the end is padded a day so the final session is inclusive); `--last N` fetches a generous calendar window (`N*2 + 10` days) to be trimmed later; otherwise `range` is passed through. `interval=1d` and `includeAdjustedClose=true` are always set.
-2. **Fetch** — GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised as an error rather than parsed.
-3. **Extract settled sessions** — Zips `timestamp` with `indicators.quote[0]`'s `open` / `high` / `low` / `close` / `volume` and `indicators.adjclose[0].adjclose`. Rows whose `close` is `null` (an in-progress session or a data gap) are skipped, so only settled sessions are reported; any other field may still be `null` individually. Each timestamp is shifted by `meta.gmtoffset` before taking the calendar date, so dates match the exchange's local trading day.
+Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_candlestick.py`. This script keeps its own row shaping and output.
+
+1. **Build the query window** — `yahoo_finance.build_params()` turns the args into params: `--start/--end` become `period1`/`period2` epoch bounds (the end is padded a day so the final session is inclusive); `--last N` fetches a generous calendar window (`N*2 + 10` days) to be trimmed later; otherwise `range` is passed through. `interval=1d` and `includeAdjustedClose=true` are always set.
+2. **Fetch** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised as an error rather than parsed.
+3. **Extract settled sessions** — `yahoo_finance.extract_series()` pulls `timestamp`, `indicators.quote[0]`'s `open` / `high` / `low` / `close` / `volume`, `indicators.adjclose[0].adjclose`, and the resolved `gmtoffset` into parallel lists; `extract_rows()` here zips them into row dicts. Rows whose `close` is `null` (an in-progress session or a data gap) are skipped, so only settled sessions are reported; any other field may still be `null` individually. Each timestamp is shifted by `meta.gmtoffset` before taking the calendar date, so dates match the exchange's local trading day.
 4. **Trim and display** — For `--last N`, keeps the final `N` rows. Prints a table of date / open / high / low / close / (adj close if it differs) / volume, then a one-line "Most recent session" OHLC summary. `--json` emits `{symbol, exchange, currency, prices[]}` instead.
 
 ### Configuration
 
-These are set as constants near the top of the file — edit them directly to change behavior:
+`DEFAULT_RANGE` is a constant at the top of this file; the shared fetch constants (`VALID_RANGES`, `REQUEST_TIMEOUT`, `HEADERS`) live in [`yahoo_finance.py`](#yahoo_financepy). Edit them directly to change behavior:
 
-| Constant | Default | Description |
-|---|---|---|
-| `VALID_RANGES` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
-| `DEFAULT_RANGE` | `"1mo"` | Window used when no `--range`, `--last`, or `--start` is given |
-| `REQUEST_TIMEOUT` | 15 | Request timeout in seconds |
-| `HEADERS` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
+| Constant | Where | Default | Description |
+|---|---|---|---|
+| `DEFAULT_RANGE` | this file | `"1mo"` | Window used when no `--range`, `--last`, or `--start` is given |
+| `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
+| `REQUEST_TIMEOUT` | `yahoo_finance.py` | 15 | Request timeout in seconds |
+| `HEADERS` | `yahoo_finance.py` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
 
 ### API reference
 
-- `build_params(args)` — Turns parsed args into the chart-endpoint query params (`range` vs `period1`/`period2`), validating dates and ordering.
-- `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises on a Yahoo error body or an empty result, and returns the first `chart.result` object.
-- `extract_rows(result)` — Returns `(meta, rows)` where `rows` is the list of `{date, open, high, low, close, adj_close, volume}` dicts for settled sessions only.
+- `extract_rows(result)` — Returns `(meta, rows)` where `rows` is the list of `{date, open, high, low, close, adj_close, volume}` dicts for settled sessions only. Calls `yahoo_finance.extract_series()` for the raw arrays, then rounds to 4 dp and formats `date` as a `YYYY-MM-DD` string.
 - `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, and `--json`.
-- `main(argv=None)` — Entry point; builds params, fetches, trims for `--last`, and prints the report (human-readable or JSON).
+- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, trims for `--last`, and prints the report (human-readable or JSON).
+
+See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_history()`.
 
 ### Error handling
 
@@ -418,7 +421,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ## stock_candlestick.py
 
-Fetches the past price history of one stock from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — the same endpoint as [`stock_close_history.py`](#stock_close_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
+Fetches the past price history of one stock from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_close_history.py`](#stock_close_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
 
 ### Requirements
 
@@ -463,34 +466,36 @@ The chart draws one candle per bar: a thin wick from the session low to high, an
 
 ### How it works
 
-1. **Build the query window** — Identical to [`stock_close_history.py`](#stock_close_historypy): `--start/--end` become `period1`/`period2` epoch bounds (end padded a day so the final bar is inclusive); `--last N` fetches a generous calendar window sized to the interval (`N*2 + 10` days for daily, wider for weekly/monthly) to be trimmed later; otherwise `range` is passed through. `interval` is whatever `--interval` selects.
-2. **Fetch** — GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised rather than parsed.
-3. **Extract bars** — Zips `timestamp` with `indicators.quote[0]`'s `open` / `high` / `low` / `close` / `volume`. Any bar missing an OHLC value (an in-progress or gapped period) is skipped. Each timestamp is shifted by `meta.gmtoffset` before taking the date.
+Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_close_history.py`. This script keeps its own bar shaping and the whole render stage.
+
+1. **Build the query window** — `yahoo_finance.build_params(interval=…)`: `--start/--end` become `period1`/`period2` epoch bounds (end padded a day so the final bar is inclusive); `--last N` fetches a generous calendar window sized to the interval (`N*2 + 10` days for daily, wider for weekly/monthly) to be trimmed later; otherwise `range` is passed through. `interval` is whatever `--interval` selects.
+2. **Fetch** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised rather than parsed.
+3. **Extract bars** — `yahoo_finance.extract_series()` pulls `timestamp`, `indicators.quote[0]`'s `open` / `high` / `low` / `close` / `volume`, and `gmtoffset` into parallel lists; `extract_rows()` here zips them into row dicts. Any bar missing an OHLC value (an in-progress or gapped period) is skipped. Each timestamp is shifted by `meta.gmtoffset` before taking the date (kept as a `datetime`).
 4. **Render** — With `--last N`, keeps the final `N` bars. Plots candles against an integer x-index (so weekends and holidays leave no gaps), relabels ~10 x-ticks with the bar dates, optionally adds a volume panel coloured to match each candle, and either writes the figure to the `-o` path (150 dpi) or shows it interactively.
 
 ### Configuration
 
-These are set as constants near the top of the file — edit them directly to change behavior:
+The interval/range/colour constants at the top of this file are local; the shared fetch constants (`VALID_RANGES`, `REQUEST_TIMEOUT`, `HEADERS`) live in [`yahoo_finance.py`](#yahoo_financepy). Edit them directly to change behavior:
 
-| Constant | Default | Description |
-|---|---|---|
-| `VALID_RANGES` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
-| `VALID_INTERVALS` | `["1d", "1wk", "1mo"]` | Accepted `--interval` values |
-| `DEFAULT_RANGE` | `"6mo"` | Window used when no `--range`, `--last`, or `--start` is given |
-| `DEFAULT_INTERVAL` | `"1d"` | Bar size used when `--interval` isn't passed |
-| `COLOR_UP` / `COLOR_DOWN` | `#1a9850` / `#d73027` | Green edge for up bars, red fill for down bars |
-| `COLOR_WICK` / `COLOR_GRID` / `COLOR_SURFACE` | greys / white | Wick, gridline, and background colours |
-| `REQUEST_TIMEOUT` | 15 | Request timeout in seconds |
-| `HEADERS` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
+| Constant | Where | Default | Description |
+|---|---|---|---|
+| `VALID_INTERVALS` | this file | `["1d", "1wk", "1mo"]` | Accepted `--interval` values |
+| `DEFAULT_RANGE` | this file | `"6mo"` | Window used when no `--range`, `--last`, or `--start` is given |
+| `DEFAULT_INTERVAL` | this file | `"1d"` | Bar size used when `--interval` isn't passed |
+| `COLOR_UP` / `COLOR_DOWN` | this file | `#1a9850` / `#d73027` | Green edge for up bars, red fill for down bars |
+| `COLOR_WICK` / `COLOR_GRID` / `COLOR_SURFACE` | this file | greys / white | Wick, gridline, and background colours |
+| `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
+| `REQUEST_TIMEOUT` | `yahoo_finance.py` | 15 | Request timeout in seconds |
+| `HEADERS` | `yahoo_finance.py` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
 
 ### API reference
 
-- `build_params(args)` — Turns parsed args into the chart-endpoint query params (`range` vs `period1`/`period2`), sizing the `--last` look-back to the interval and validating dates.
-- `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises on a Yahoo error body or an empty result, and returns the first `chart.result` object.
-- `extract_rows(result)` — Returns `(meta, rows)` where `rows` is the list of `{date, open, high, low, close, volume}` dicts for complete bars only (`date` is a `datetime`).
+- `extract_rows(result)` — Returns `(meta, rows)` where `rows` is the list of `{date, open, high, low, close, volume}` dicts for complete bars only (`date` is a `datetime`). Calls `yahoo_finance.extract_series()` for the raw arrays.
 - `render_chart(symbol, exchange, currency, interval, rows, out_path, show, with_volume)` — Draws the candlestick figure (and optional volume panel) and either saves it or shows it. Imports matplotlib lazily and selects the `Agg` backend unless `--show`.
 - `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--interval`, `--volume`, `--output`, and `--show`.
-- `main(argv=None)` — Entry point; builds params, fetches, trims for `--last`, resolves the output path, and renders.
+- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, trims for `--last`, resolves the output path, and renders.
+
+See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_history()`.
 
 ### Error handling
 
@@ -509,6 +514,38 @@ These are set as constants near the top of the file — edit them directly to ch
 - The figure width scales with the bar count (`~0.11 in` per bar), so a long daily range produces a very wide, short image — use `--interval 1wk` or `1mo` for multi-year spans.
 - `--show` needs a working matplotlib GUI backend and a display; in a headless environment omit it and read the PNG.
 - Prices are end-of-day snapshots in the listing currency, and some markets quote in minor units — e.g. LSE returns `GBp` (pence).
+
+---
+
+## yahoo_finance.py
+
+Shared helper module for [`stock_close_history.py`](#stock_close_historypy) and [`stock_candlestick.py`](#stock_candlestickpy). It holds everything the two scripts had in common — the Yahoo Finance chart-endpoint constants, the query-window builder, the HTTP call, and the raw-payload navigation. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+
+### Constants
+
+| Constant | Default | Description |
+|---|---|---|
+| `CHART_URL` | `…/v8/finance/chart/{symbol}` | Yahoo chart-endpoint URL template |
+| `HEADERS` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
+| `REQUEST_TIMEOUT` | 15 | Request timeout in seconds |
+| `VALID_RANGES` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
+| `SECONDS_PER_DAY` | 86400 | Used to pad an explicit `--end` by a day so the final bar is inclusive |
+
+### API reference
+
+- `parse_date(value)` — Parses a `YYYY-MM-DD` string to a UTC `datetime`, raising `ValueError` with a clear message on a bad format.
+- `build_params(interval="1d", range_=None, start=None, end=None, last=None)` — Returns the chart-endpoint query params. The window is chosen by, in priority order: an explicit `start`/`end` pair (→ `period1`/`period2`, end padded a day), then `last` (→ a calendar look-back widened for `1wk` / `1mo` bars), then `range_`. Raises `ValueError` for `end` without `start` or an `end` not after `start`. `includeAdjustedClose=true` is always set. Callers pass `interval="1d"` (the default) for daily data.
+- `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
+- `extract_series(result)` — Returns `(meta, series)` where `series` is a dict of parallel lists straight off the payload — `timestamp`, `open`, `high`, `low`, `close`, `volume` — plus `adjclose` (a list or `None`) and the resolved `gmtoffset`. Callers turn these into row dicts.
+
+### Notes / limitations
+
+- Changing a constant or the `build_params` window logic here affects **both** `stock_*` scripts. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_close_history.py` gets the same params it did before.
 
 ---
 
@@ -738,7 +775,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
-- Requires `stock_close_history.py` (and its `requests` dependency) to be present and runnable from the repo root.
+- Requires `stock_close_history.py` and its `yahoo_finance.py` helper module (plus the `requests` dependency) to be present and runnable from the repo root.
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's prices or a "symbol may be delisted" error.
 - Inherits all the limitations of [`stock_close_history.py`](#stock_close_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
 
@@ -777,7 +814,7 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ### Notes / limitations
 
-- Requires `stock_candlestick.py` (and its `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
+- Requires `stock_candlestick.py` and its `yahoo_finance.py` helper module (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's chart or a "symbol may be delisted" error.
 - The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
 - Inherits all the limitations of [`stock_candlestick.py`](#stock_candlestickpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
