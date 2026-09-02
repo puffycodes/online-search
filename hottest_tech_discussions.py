@@ -55,41 +55,40 @@ def get_hottest_tech_discussions(limit=RESULTS_TO_SHOW):
     return stories[:limit]
 
 
-def format_story(rank, story):
-    title = story.get("title", "(no title)")
-    score = story.get("score", 0)
-    comments = story.get("descendants", 0)
-    url = story.get("url", f"https://news.ycombinator.com/item?id={story['id']}")
-    discussion_url = f"https://news.ycombinator.com/item?id={story['id']}"
-    posted = datetime.fromtimestamp(story.get("time", 0), tz=timezone.utc).strftime(
+def discussion_url(story):
+    """The Hacker News comments page for a story/item."""
+    return f"https://news.ycombinator.com/item?id={story['id']}"
+
+
+def posted_at(story):
+    """Story submission time as a 'YYYY-MM-DD HH:MM UTC' string."""
+    return datetime.fromtimestamp(story.get("time", 0), tz=timezone.utc).strftime(
         "%Y-%m-%d %H:%M UTC"
     )
-
-    lines = [
-        f"{rank}. {title}",
-        f"   Score: {score}  |  Comments: {comments}  |  Posted: {posted}",
-        f"   Link: {url}",
-        f"   Discussion: {discussion_url}",
-    ]
-    return "\n".join(lines)
 
 
 def story_to_dict(rank, story):
-    url = story.get("url", f"https://news.ycombinator.com/item?id={story['id']}")
-    discussion_url = f"https://news.ycombinator.com/item?id={story['id']}"
-    posted = datetime.fromtimestamp(story.get("time", 0), tz=timezone.utc).strftime(
-        "%Y-%m-%d %H:%M UTC"
-    )
-
+    """Flatten a raw HN story into the record used for both output modes."""
     return {
         "rank": rank,
         "title": story.get("title", "(no title)"),
         "score": story.get("score", 0),
         "comments": story.get("descendants", 0),
-        "posted": posted,
-        "url": url,
-        "discussion_url": discussion_url,
+        "posted": posted_at(story),
+        "url": story.get("url") or discussion_url(story),
+        "discussion_url": discussion_url(story),
     }
+
+
+def format_story(row):
+    """Render a story record from story_to_dict() as a text block."""
+    lines = [
+        f"{row['rank']}. {row['title']}",
+        f"   Score: {row['score']}  |  Comments: {row['comments']}  |  Posted: {row['posted']}",
+        f"   Link: {row['url']}",
+        f"   Discussion: {row['discussion_url']}",
+    ]
+    return "\n".join(lines)
 
 
 def parse_args(argv=None):
@@ -125,17 +124,18 @@ def main(argv=None):
             print(f"Error fetching data: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    rows = [story_to_dict(rank, s) for rank, s in enumerate(stories, start=1)]
+
     if args.json:
-        results = [story_to_dict(rank, s) for rank, s in enumerate(stories, start=1)]
-        print(json.dumps(results, indent=2))
+        print(json.dumps(rows, indent=2))
         return
 
-    if not stories:
+    if not rows:
         print("No stories found.")
         return
 
-    for rank, story in enumerate(stories, start=1):
-        print(format_story(rank, story))
+    for row in rows:
+        print(format_story(row))
         print()
 
 

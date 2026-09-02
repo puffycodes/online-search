@@ -112,9 +112,10 @@ These are set as constants near the top of the file — edit them directly to ch
 - Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices (e.g. why `CANDIDATE_POOL_SIZE` is 40).
 - `fetch_json(url)` — GETs a URL and returns parsed JSON, raising on HTTP errors.
 - `fetch_story(item_id)` — Fetches a single HN item by ID; returns `None` on any request or parsing failure instead of raising (so one bad story doesn't kill the whole batch).
-- `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of story dicts.
-- `format_story(rank, story)` — Formats a single story dict into a multi-line human-readable string.
-- `story_to_dict(rank, story)` — Converts a single story dict into the flat `{rank, title, score, comments, posted, url, discussion_url}` shape used for `--json` output.
+- `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of raw HN story dicts.
+- `discussion_url(story)` / `posted_at(story)` — Small helpers: the `news.ycombinator.com/item?id=…` comments URL, and the submission time as a `YYYY-MM-DD HH:MM UTC` string. Also reused by [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy).
+- `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url}` record used for **both** output modes.
+- `format_story(row)` — Renders a `story_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses `--limit` and `--json` CLI flags.
 - `main(argv=None)` — Entry point; fetches, handles top-level network errors, and prints results (either human-readable or JSON, depending on `--json`).
 
@@ -722,7 +723,8 @@ These are set as constants near the top of the file — edit them directly to ch
 - `normalize_company_name(name)` — Strips a trailing legal-entity suffix from a company name.
 - `stock_mentions_in_title(quote, title)` — Returns `True` if a quote's ticker symbol or normalized company name appears in a discussion title.
 - `find_stock_buzz(limit_per_exchange=10, discussion_limit=50)` — Orchestrates fetching both data sources and matching; returns `(results, stocks, discussions)`.
-- `format_result(rank, result)` / `result_to_dict(result)` — Format a single stock+discussions match for human-readable or JSON output, respectively.
+- `result_to_dict(result)` — Flattens one `{stock, discussions}` match into the record used for **both** output modes (nested discussion URLs come from `hottest_tech_discussions.discussion_url`).
+- `format_result(rank, row)` — Renders a `result_to_dict()` record as a text block.
 - `parse_args(argv=None)` — Parses `--stock-limit`, `--discussion-limit`, and `--json` CLI flags.
 - `main(argv=None)` — Entry point; fetches, handles top-level network errors, and prints results.
 

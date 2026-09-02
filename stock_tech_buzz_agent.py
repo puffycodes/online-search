@@ -95,6 +95,8 @@ def find_stock_buzz(limit_per_exchange=STOCK_LIMIT_PER_EXCHANGE, discussion_limi
 
 
 def result_to_dict(result):
+    """Flatten a {stock, discussions} match into the record used for both
+    output modes."""
     stock = result["stock"]
     return {
         "symbol": stock.get("symbol", "?"),
@@ -108,27 +110,22 @@ def result_to_dict(result):
                 "title": d.get("title", "(no title)"),
                 "score": d.get("score", 0),
                 "comments": d.get("descendants", 0),
-                "discussion_url": f"https://news.ycombinator.com/item?id={d['id']}",
+                "discussion_url": hn.discussion_url(d),
             }
             for d in result["discussions"]
         ],
     }
 
 
-def format_result(rank, result):
-    stock = result["stock"]
-    symbol = stock.get("symbol", "?")
-    name = stock.get("shortName") or stock.get("longName") or "(unknown)"
-    exchange = stock["_exchange"].upper()
-    volume = stock.get("regularMarketVolume", 0)
-
-    lines = [f"{rank}. {symbol} - {name} ({exchange}, Volume: {volume:,})"]
-    for d in result["discussions"]:
-        title = d.get("title", "(no title)")
-        score = d.get("score", 0)
-        discussion_url = f"https://news.ycombinator.com/item?id={d['id']}"
-        lines.append(f"   - \"{title}\" (Score: {score})")
-        lines.append(f"     {discussion_url}")
+def format_result(rank, row):
+    """Render a record from result_to_dict() as a text block."""
+    lines = [
+        f"{rank}. {row['symbol']} - {row['name']} "
+        f"({row['exchange']}, Volume: {row['volume']:,})"
+    ]
+    for d in row["discussions"]:
+        lines.append(f"   - \"{d['title']}\" (Score: {d['score']})")
+        lines.append(f"     {d['discussion_url']}")
     return "\n".join(lines)
 
 
@@ -179,19 +176,21 @@ def main(argv=None):
             print(f"Error fetching data: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    rows = [result_to_dict(r) for r in results]
+
     if args.json:
-        print(json.dumps([result_to_dict(r) for r in results], indent=2))
+        print(json.dumps(rows, indent=2))
         return
 
-    if not results:
+    if not rows:
         print(
             f"No overlap found between the top {len(stocks)} volume stocks and the "
             f"top {len(discussions)} tech discussions."
         )
         return
 
-    for rank, result in enumerate(results, start=1):
-        print(format_result(rank, result))
+    for rank, row in enumerate(rows, start=1):
+        print(format_result(rank, row))
         print()
 
 
