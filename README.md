@@ -17,6 +17,7 @@ Small standalone scripts that pull live data from public web APIs. Each is self-
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
 - [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_close_history.py` + `indicators.py` and reports whether a named stock is trending up or down
 - [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
+- [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail
 
 ---
 
@@ -568,7 +569,7 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy) and 
 
 ## indicators.py
 
-Small, dependency-free technical indicators over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_close_history.py`](#stock_close_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick.py`](#stock_candlestickpy) (moving-average overlays and cross-flip arrows) and the [`stock-trend`](#claude-code-agent-stock-trend) agent.
+Small, dependency-free technical indicators over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_close_history.py`](#stock_close_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick.py`](#stock_candlestickpy) (moving-average overlays and cross-flip arrows) and the [`stock-trend`](#claude-code-agent-stock-trend) agent. For a concepts-first walkthrough see [`docs/indicators.md`](docs/indicators.md).
 
 ### Requirements
 
@@ -637,7 +638,7 @@ moving_average_cross_flip(closes, 20, 50)[-1]  # -> did the 20/50 cross just fli
 
 ## valuation.py
 
-Small, dependency-free intrinsic-value estimators for a single stock — the arithmetic of the common methods (discounted cash flow, valuation multiples, reverse DCF) made explicit and composable. Intrinsic value is never one number: every function is just a formula over the assumptions you pass it. Rates are fractions, not percents (`0.09` == 9%); cash-flow and value inputs are in whatever currency unit you supply, and per-share outputs are that unit divided by the share count. Not a CLI: it is imported, not run.
+Small, dependency-free intrinsic-value estimators for a single stock — the arithmetic of the common methods (discounted cash flow, valuation multiples, reverse DCF) made explicit and composable. Intrinsic value is never one number: every function is just a formula over the assumptions you pass it. Rates are fractions, not percents (`0.09` == 9%); cash-flow and value inputs are in whatever currency unit you supply, and per-share outputs are that unit divided by the share count. Not a CLI: it is imported, not run. For a concepts-first walkthrough see [`docs/valuations.md`](docs/valuations.md).
 
 ### Requirements
 
