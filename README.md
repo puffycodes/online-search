@@ -5,7 +5,7 @@ Small standalone scripts that pull live data from public web APIs. Each is self-
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
-- [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays, rendered to a PNG with matplotlib
+- [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the two `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
 - [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `trend`
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
@@ -424,7 +424,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_histo
 
 ## stock_candlestick.py
 
-Fetches the past price history of one stock from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_close_history.py`](#stock_close_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/), with simple moving averages of the close overlaid as lines (5 / 10 / 20 / 50 bars by default; via [`indicators.py`](#indicatorspy)). No API key or authentication required. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
+Fetches the past price history of one stock from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_close_history.py`](#stock_close_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/), with simple moving averages of the close overlaid as lines (5 / 10 / 20 / 50 bars by default; via [`indicators.py`](#indicatorspy)) and moving-average-cross flips of a second window pair (20 / 50 by default) marked with arrows. No API key or authentication required. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
 
 ### Requirements
 
@@ -440,7 +440,7 @@ pip install requests matplotlib
 ### Usage
 
 ```bash
-python3 stock_candlestick.py SYMBOL [--range RANGE | --last N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--interval {1d,1wk,1mo}] [--volume] [--ma N,N,...] [-o OUTPUT] [--show]
+python3 stock_candlestick.py SYMBOL [--range RANGE | --last N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--interval {1d,1wk,1mo}] [--volume] [--ma N,N,...] [--flip-ma FAST,SLOW] [-o OUTPUT] [--show]
 ```
 
 | Flag | Default | Description |
@@ -452,6 +452,7 @@ python3 stock_candlestick.py SYMBOL [--range RANGE | --last N] [--start YYYY-MM-
 | `--interval` | `1d` | Bar size: `1d` (daily), `1wk` (weekly), `1mo` (monthly) |
 | `--volume` | off | Add a volume panel beneath the price panel |
 | `--ma N,N,...` | `5,10,20,50` | Comma-separated simple-moving-average windows to overlay as lines. Pass `none` (or `""`) to disable; values are de-duplicated and sorted. Each average is in the bar unit selected by `--interval` |
+| `--flip-ma FAST,SLOW` | `20,50` | The two SMA windows for the `moving_average_cross_flip` markers (in `--interval` bar units). On a bar where the `FAST` SMA crosses **above** the `SLOW` one an up arrow is drawn just below the low; where it crosses **below**, a down arrow just above the high. Runs of ties are stepped over. Pass `none` (or `""`) to disable; needs exactly two positive integers |
 | `-o` / `--output` | `<SYMBOL>_candlestick.png` | PNG path to write (`.` in the ticker becomes `_`) |
 | `--show` | off | Open an interactive matplotlib window instead of writing a file |
 
@@ -460,14 +461,14 @@ python3 stock_candlestick.py SYMBOL [--range RANGE | --last N] [--start YYYY-MM-
 #### Example
 
 ```bash
-python3 stock_candlestick.py NVDA --range 1y --volume --ma 20,50,200
+python3 stock_candlestick.py NVDA --range 1y --volume --ma 20,50,200 --flip-ma 5,20
 ```
 
 ```
 Wrote NVDA_candlestick.png
 ```
 
-The chart draws one candle per bar: a thin wick from the session low to high, and an open-to-close body. Direction is encoded **both** by hue and by fill so it survives greyscale and red/green colour-vision deficiency — up bars (close ≥ open) are hollow with a green edge, down bars (close < open) are filled red. A doji (open == close) collapses to a short horizontal line. Each `--ma` window is drawn as a coloured line over the candles (colours from `COLOR_MA`, cycled if there are more windows than colours), starting only once it has enough bars behind it. The title carries the ticker, exchange, bar count, interval, and date span; the legend maps the two candle styles and every moving-average line.
+The chart draws one candle per bar: a thin wick from the session low to high, and an open-to-close body. Direction is encoded **both** by hue and by fill so it survives greyscale and red/green colour-vision deficiency — up bars (close ≥ open) are hollow with a green edge, down bars (close < open) are filled red. A doji (open == close) collapses to a short horizontal line. Each `--ma` window is drawn as a coloured line over the candles (colours from `COLOR_MA`, cycled if there are more windows than colours), starting only once it has enough bars behind it. The `--flip-ma` pair adds a green up arrow just below a bar's low where its fast SMA crosses above the slow one, and a red down arrow just above a bar's high where it crosses below (arrows offset from the wick by 3% of the visible price range). The title carries the ticker, exchange, bar count, interval, and date span; the legend maps the two candle styles, every moving-average line, and whichever flip arrows appear.
 
 ### How it works
 
@@ -477,7 +478,8 @@ Steps 1–2 (window building and fetching) plus the raw-payload navigation in st
 2. **Fetch** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised rather than parsed.
 3. **Extract bars** — `yahoo_finance.extract_series()` pulls `timestamp`, `indicators.quote[0]`'s `open` / `high` / `low` / `close` / `volume`, and `gmtoffset` into parallel lists; `extract_rows()` here zips them into row dicts. Any bar missing an OHLC value (an in-progress or gapped period) is skipped. Each timestamp is shifted by `meta.gmtoffset` before taking the date (kept as a `datetime`).
 4. **Moving averages** — `indicators.moving_average()` computes each `--ma` window over the close of the **full** fetched series; for `--last N` the average lists are then sliced with the same `[-N:]` as the bars, so a window still shows correct values at the chart's left edge whenever the padded fetch reached back far enough. A window longer than the bars available plots nothing.
-5. **Render** — With `--last N`, keeps the final `N` bars. Plots candles against an integer x-index (so weekends and holidays leave no gaps), draws each moving-average line where it is defined, relabels ~10 x-ticks with the bar dates, optionally adds a volume panel coloured to match each candle, and either writes the figure to the `-o` path (150 dpi) or shows it interactively.
+5. **Cross-flip markers** — when `--flip-ma` is on, `indicators.moving_average_cross_flip()` and `indicators.moving_average_cross()` run over the full-series close to give, per bar, `"above"` / `"below"` on the bars where the flip fires and `None` elsewhere; this list is sliced with the same `[-N:]` as the bars for `--last N`.
+6. **Render** — With `--last N`, keeps the final `N` bars. Plots candles against an integer x-index (so weekends and holidays leave no gaps), draws each moving-average line where it is defined, drops an up/down arrow on each flagged bar, relabels ~10 x-ticks with the bar dates, optionally adds a volume panel coloured to match each candle, and either writes the figure to the `-o` path (150 dpi) or shows it interactively.
 
 ### Configuration
 
@@ -489,7 +491,8 @@ The interval/range/colour constants at the top of this file are local; the share
 | `DEFAULT_RANGE` | this file | `"6mo"` | Window used when no `--range`, `--last`, or `--start` is given |
 | `DEFAULT_INTERVAL` | this file | `"1d"` | Bar size used when `--interval` isn't passed |
 | `DEFAULT_MA` | this file | `"5,10,20,50"` | Moving-average windows used when `--ma` isn't passed |
-| `COLOR_UP` / `COLOR_DOWN` | this file | `#1a9850` / `#d73027` | Green edge for up bars, red fill for down bars |
+| `DEFAULT_FLIP_MA` | this file | `"20,50"` | The two cross-flip windows used when `--flip-ma` isn't passed |
+| `COLOR_UP` / `COLOR_DOWN` | this file | `#1a9850` / `#d73027` | Green edge for up bars, red fill for down bars; also the fill of the up / down cross-flip arrows |
 | `COLOR_WICK` / `COLOR_GRID` / `COLOR_SURFACE` | this file | greys / white | Wick, gridline, and background colours |
 | `COLOR_MA` | this file | 6 hues (blue, purple, gold, brown, pink, grey) | Moving-average line colours, assigned in window order and cycled if exhausted |
 | `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
@@ -500,9 +503,10 @@ The interval/range/colour constants at the top of this file are local; the share
 
 - `extract_rows(result)` — Returns `(meta, rows)` where `rows` is the list of `{date, open, high, low, close, volume}` dicts for complete bars only (`date` is a `datetime`). Calls `yahoo_finance.extract_series()` for the raw arrays.
 - `_parse_ma_arg(value)` — argparse `type` for `--ma`: turns `"5,10,20,50"` into `[5, 10, 20, 50]` (de-duplicated, sorted); `""` / `"none"` / `"off"` give `[]`. Raises `argparse.ArgumentTypeError` on a non-integer or non-positive window.
-- `render_chart(symbol, exchange, currency, interval, rows, ma_series, out_path, show, with_volume)` — Draws the candlestick figure, the moving-average lines from `ma_series` (a `{window: [value|None, …]}` dict aligned to `rows`), and the optional volume panel, then saves or shows it. Imports matplotlib lazily and selects the `Agg` backend unless `--show`.
-- `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--interval`, `--volume`, `--ma`, `--output`, and `--show`.
-- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, computes the `--ma` averages via `indicators.moving_average()`, trims both for `--last`, resolves the output path, and renders.
+- `_parse_flip_ma_arg(value)` — argparse `type` for `--flip-ma`: turns `"20,50"` into the tuple `(20, 50)` (order kept — first is the fast window); `""` / `"none"` / `"off"` give `None`. Raises `argparse.ArgumentTypeError` unless the value is exactly two positive integers.
+- `render_chart(symbol, exchange, currency, interval, rows, ma_series, flip_dir, flip_ma, out_path, show, with_volume)` — Draws the candlestick figure, the moving-average lines from `ma_series` (a `{window: [value|None, …]}` dict aligned to `rows`), the cross-flip arrows from `flip_dir` (a `["above"|"below"|None, …]` list aligned to `rows`; `flip_ma` is the `(fast, slow)` pair, used only for the legend label) when it is not `None`, and the optional volume panel, then saves or shows it. Imports matplotlib lazily and selects the `Agg` backend unless `--show`.
+- `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--interval`, `--volume`, `--ma`, `--flip-ma`, `--output`, and `--show`.
+- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, computes the `--ma` averages via `indicators.moving_average()` and (unless `--flip-ma none`) the per-bar flip directions via `indicators.moving_average_cross_flip()` + `indicators.moving_average_cross()`, trims them all for `--last`, resolves the output path, and renders.
 
 See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_history()`.
 
@@ -561,7 +565,7 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy) and 
 
 ## indicators.py
 
-Small, dependency-free technical indicators over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_close_history.py`](#stock_close_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick.py`](#stock_candlestickpy) (moving-average overlays) and the [`stock-trend`](#claude-code-agent-stock-trend) agent.
+Small, dependency-free technical indicators over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_close_history.py`](#stock_close_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick.py`](#stock_candlestickpy) (moving-average overlays and cross-flip arrows) and the [`stock-trend`](#claude-code-agent-stock-trend) agent.
 
 ### Requirements
 
@@ -879,8 +883,8 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### What it does
 
 1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
-2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, `--volume` when volume is mentioned, and `--ma` only when the user asks for specific moving averages (the script overlays `5,10,20,50` by default) or asks for none.
-3. Runs `python3 stock_candlestick.py SYMBOL <window flags> [--interval …] [--volume] [--ma …] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
+2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, `--volume` when volume is mentioned, `--ma` only when the user asks for specific moving averages (the script overlays `5,10,20,50` by default) or asks for none, and `--flip-ma` only when the user names a crossover pair (the script marks `20/50` cross flips by default) or asks for none.
+3. Runs `python3 stock_candlestick.py SYMBOL <window flags> [--interval …] [--volume] [--ma …] [--flip-ma …] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
 4. Reads the PNG to verify it rendered, then reports a one- or two-sentence summary (ticker, exchange, period, interval, and a brief read of the trend) ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
 
 ### Configuration

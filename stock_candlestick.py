@@ -13,6 +13,11 @@ Simple moving averages of the close are overlaid as lines; the windows
 default to 5, 10, 20 and 50 bars and can be changed (or switched off) with
 --ma.
 
+Moving-average-cross flips of a second pair of windows (default 20 and 50,
+set with --flip-ma) are marked on the price panel: an up arrow below the bar
+where the fast SMA crosses above the slow one, a down arrow above the bar
+where it crosses below.
+
 By default the chart is written to <SYMBOL>_candlestick.png; use --output to
 change the path or --show to open an interactive window instead. Add
 --volume for a volume panel beneath the price panel.
@@ -27,12 +32,13 @@ import sys
 import requests
 
 import yahoo_finance as yf
-from indicators import moving_average
+from indicators import moving_average, moving_average_cross, moving_average_cross_flip
 
 VALID_INTERVALS = ["1d", "1wk", "1mo"]
 DEFAULT_RANGE = "6mo"
 DEFAULT_INTERVAL = "1d"
 DEFAULT_MA = "5,10,20,50"
+DEFAULT_FLIP_MA = "20,50"
 
 # Up candles are drawn hollow (surface fill) with a green edge; down candles
 # are filled solid red. Direction is encoded by BOTH hue and fill, so the
@@ -66,6 +72,30 @@ def _parse_ma_arg(value):
     if any(w < 1 for w in windows):
         raise argparse.ArgumentTypeError("--ma windows must be positive integers")
     return sorted(set(windows))
+
+
+def _parse_flip_ma_arg(value):
+    """Parse --flip-ma: exactly two positive ints, ``fast,slow``.
+
+    ``""`` / ``none`` / ``off`` yields ``None`` (no flip markers). The pair is
+    returned in the order given - the first window is treated as the fast one.
+    """
+    cleaned = value.strip().lower()
+    if cleaned in ("", "none", "off"):
+        return None
+    try:
+        windows = [int(part) for part in cleaned.split(",") if part.strip()]
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"--flip-ma must be two comma-separated integers (or 'none'), got {value!r}"
+        )
+    if len(windows) != 2:
+        raise argparse.ArgumentTypeError(
+            "--flip-ma needs exactly two windows, e.g. 20,50"
+        )
+    if any(w < 1 for w in windows):
+        raise argparse.ArgumentTypeError("--flip-ma windows must be positive integers")
+    return tuple(windows)
 
 
 def extract_rows(result):
@@ -104,7 +134,7 @@ def extract_rows(result):
 
 
 def render_chart(symbol, exchange, currency, interval, rows, ma_series,
-                 out_path, show, with_volume):
+                 flip_dir, flip_ma, out_path, show, with_volume):
     import matplotlib
 
     if not show:
@@ -169,6 +199,35 @@ def render_chart(symbol, exchange, currency, interval, rows, ma_series,
         ma_handles.append(Line2D([0], [0], color=color, linewidth=1.2,
                                  label=f"MA{window}"))
 
+    # Moving-average-cross flip markers: an up arrow just below the bar's low
+    # where the fast SMA crossed above the slow one, a down arrow just above
+    # the bar's high where it crossed below. Offset from the wick by a small
+    # fraction of the visible price range so the arrow clears the candle.
+    flip_handles = []
+    if flip_dir is not None:
+        span_lo = min(r["low"] for r in rows)
+        span_hi = max(r["high"] for r in rows)
+        pad = (span_hi - span_lo) * 0.03 or 1.0
+        up_xs = [x for x, d in zip(xs, flip_dir) if d == "above"]
+        up_ys = [r["low"] - pad for r, d in zip(rows, flip_dir) if d == "above"]
+        down_xs = [x for x, d in zip(xs, flip_dir) if d == "below"]
+        down_ys = [r["high"] + pad for r, d in zip(rows, flip_dir) if d == "below"]
+        fast, slow = flip_ma
+        if up_xs:
+            ax.scatter(up_xs, up_ys, marker="^", s=70, color=COLOR_UP,
+                       edgecolors=COLOR_WICK, linewidths=0.5, zorder=5)
+            flip_handles.append(Line2D(
+                [0], [0], marker="^", color="none", markerfacecolor=COLOR_UP,
+                markeredgecolor=COLOR_WICK, markersize=9,
+                label=f"MA{fast}/{slow} cross ↑"))
+        if down_xs:
+            ax.scatter(down_xs, down_ys, marker="v", s=70, color=COLOR_DOWN,
+                       edgecolors=COLOR_WICK, linewidths=0.5, zorder=5)
+            flip_handles.append(Line2D(
+                [0], [0], marker="v", color="none", markerfacecolor=COLOR_DOWN,
+                markeredgecolor=COLOR_WICK, markersize=9,
+                label=f"MA{fast}/{slow} cross ↓"))
+
     ax.set_xlim(-1, n)
     ax.margins(y=0.05)
     ax.grid(True, color=COLOR_GRID, linewidth=0.5, alpha=0.7)
@@ -221,11 +280,12 @@ def render_chart(symbol, exchange, currency, interval, rows, ma_series,
         ax_vol.yaxis.set_major_formatter(FuncFormatter(fmt_volume))
 
     # Legend: hollow = up (close >= open), filled = down, plus one entry per
-    # moving-average line.
+    # moving-average line and per cross-flip arrow direction that appears.
     up_key = Rectangle((0, 0), 1, 1, facecolor=COLOR_SURFACE, edgecolor=COLOR_UP)
     down_key = Rectangle((0, 0), 1, 1, facecolor=COLOR_DOWN, edgecolor=COLOR_DOWN)
-    handles = [up_key, down_key] + ma_handles
-    labels = ["Close ≥ Open", "Close < Open"] + [h.get_label() for h in ma_handles]
+    handles = [up_key, down_key] + ma_handles + flip_handles
+    labels = (["Close ≥ Open", "Close < Open"]
+              + [h.get_label() for h in ma_handles + flip_handles])
     ax.legend(handles, labels, loc="best", fontsize=9, framealpha=0.9)
 
     if show:
@@ -287,6 +347,16 @@ def parse_args(argv=None):
         help=f"Comma-separated simple-moving-average windows to overlay "
              f"(default: {DEFAULT_MA}; pass 'none' to disable)",
     )
+    parser.add_argument(
+        "--flip-ma",
+        type=_parse_flip_ma_arg,
+        default=_parse_flip_ma_arg(DEFAULT_FLIP_MA),
+        metavar="FAST,SLOW",
+        help=f"Two SMA windows whose cross flips are marked with arrows: up "
+             f"below the bar when the fast SMA crosses above the slow, down "
+             f"above the bar when it crosses below "
+             f"(default: {DEFAULT_FLIP_MA}; pass 'none' to disable)",
+    )
     return parser.parse_args(argv)
 
 
@@ -313,9 +383,22 @@ def main(argv=None):
     # whenever the padded fetch reached back far enough.
     closes = [r["close"] for r in rows]
     ma_series = {w: moving_average(closes, w) for w in args.ma}
+
+    # Cross-flip markers: one entry per bar - "above" / "below" on the bars
+    # where the flip fires, None everywhere else. Computed on the full series
+    # then trimmed in step with rows, same as the moving averages.
+    flip_dir = None
+    if args.flip_ma:
+        fast, slow = args.flip_ma
+        fired = moving_average_cross_flip(closes, fast, slow)
+        side = moving_average_cross(closes, fast, slow)
+        flip_dir = [s if f else None for f, s in zip(fired, side)]
+
     if args.last:
         rows = rows[-args.last:]
         ma_series = {w: s[-args.last:] for w, s in ma_series.items()}
+        if flip_dir is not None:
+            flip_dir = flip_dir[-args.last:]
 
     if not rows:
         print(f"Error: no price data found for {args.symbol!r}", file=sys.stderr)
@@ -329,7 +412,7 @@ def main(argv=None):
     try:
         render_chart(
             symbol, exchange, currency, args.interval, rows, ma_series,
-            out_path, args.show, args.volume,
+            flip_dir, args.flip_ma, out_path, args.show, args.volume,
         )
     except ImportError:
         print("Error: matplotlib is required (pip install matplotlib)", file=sys.stderr)

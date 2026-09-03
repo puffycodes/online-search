@@ -32,6 +32,7 @@ python3 stock_candlestick.py SYMBOL [--last N | --range RANGE | --start YYYY-MM-
 - `--interval` — bar size. Default `1d` (daily candles). Use `1wk` when the user says "weekly candles" or asks for a long horizon (2y+) where daily bars would be too dense; `1mo` for "monthly candles".
 - `--volume` — add a volume panel beneath the price panel. Pass it when the user mentions volume, or when a longer horizon makes it useful context; otherwise omit.
 - `--ma` — comma-separated moving-average windows, overlaid as lines. Defaults to `5,10,20,50`, so leave it off unless the user asks for specific averages (e.g. "with the 50 and 200-day MA" → `--ma 50,200`) or asks for none (`--ma none`). A window needs at least that many bars in the chosen window to show, so widen `--range` / `--last` when the user wants a long average (a 200-bar MA needs `--range 1y`+ of daily bars).
+- `--flip-ma` — the two SMA windows (`FAST,SLOW`) whose crossover flips get an up arrow below the bar (fast crosses above slow) or a down arrow above it (fast crosses below). Defaults to `20,50`, so leave it off unless the user names a pair (e.g. "mark the 5/20 crossover" → `--flip-ma 5,20`) or wants the arrows gone (`--flip-ma none`). The `SLOW` window needs its bars behind it before any arrow can show, same as `--ma`.
 
 ## Output handling
 
