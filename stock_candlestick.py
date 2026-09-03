@@ -199,15 +199,15 @@ def render_chart(symbol, exchange, currency, interval, rows, ma_series,
         ma_handles.append(Line2D([0], [0], color=color, linewidth=1.2,
                                  label=f"MA{window}"))
 
-    # Moving-average-cross flip markers: an up arrow just below the bar's low
-    # where the fast SMA crossed above the slow one, a down arrow just above
-    # the bar's high where it crossed below. Offset from the wick by a small
-    # fraction of the visible price range so the arrow clears the candle.
+    # Moving-average-cross flip markers: an up arrow below the bar's low where
+    # the fast SMA crossed above the slow one, a down arrow above the bar's
+    # high where it crossed below. Offset from the wick by a fraction of the
+    # visible price range so the arrow sits clear of the candle.
     flip_handles = []
     if flip_dir is not None:
         span_lo = min(r["low"] for r in rows)
         span_hi = max(r["high"] for r in rows)
-        pad = (span_hi - span_lo) * 0.03 or 1.0
+        pad = (span_hi - span_lo) * 0.08 or 1.0
         up_xs = [x for x, d in zip(xs, flip_dir) if d == "above"]
         up_ys = [r["low"] - pad for r, d in zip(rows, flip_dir) if d == "above"]
         down_xs = [x for x, d in zip(xs, flip_dir) if d == "below"]
