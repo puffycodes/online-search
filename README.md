@@ -7,7 +7,7 @@ Small standalone scripts that pull live data from public web APIs. Each is self-
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
 - [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays, rendered to a PNG with matplotlib
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the two `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
-- [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `trend`
+- [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `trend`
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
@@ -572,6 +572,7 @@ Small, dependency-free technical indicators over a price series — a plain list
 - `moving_average(prices, n)` — Simple moving average over an `n`-session window. Returns a list the **same length** as `prices`: element `i` is the mean of `prices[i-n+1 .. i]`, or `None` for the first `n-1` positions where a full window isn't available yet, so the result lines up session-for-session with the source rows. Raises `ValueError` if `n < 1`.
 - `price_vs_moving_average(prices, n)` — Where each session's price sits relative to its `n`-session SMA. Returns a list the **same length** as `prices`: `"above"`, `"below"`, or `"equal"` for each session where the SMA is defined, and `None` for the first `n-1` positions where it isn't yet. Take `[-1]` for the current reading. Raises `ValueError` (via `moving_average`) if `n < 1`.
 - `moving_average_cross(prices, fast, slow)` — Where the `fast`-session SMA sits relative to the `slow`-session SMA. Returns a list the **same length** as `prices`: `"above"`, `"below"`, or `"equal"` for each session where **both** averages are defined (from index `max(fast, slow) - 1` on), else `None`. Take `[-1]` for the current reading; a change in the value is a crossover (the golden / death cross for e.g. `fast=50, slow=200`). Raises `ValueError` (via `moving_average`) if either window `< 1`.
+- `moving_average_cross_flip(prices, fast, slow)` — Marks the sessions where `moving_average_cross` flips sides. Returns a list the **same length** as `prices`: `True` on a session where the cross has just gone `"below"` → `"above"` or `"above"` → `"below"` since the last decisive session, `False` otherwise. Runs of `"equal"` between the two sides are stepped over, so the flip still reports on the session where the new side first shows; `"equal"` sessions, unchanged sessions, and the first decisive session are `False`, and undefined sessions are `None`. Take `[-1]` for the current reading. Raises `ValueError` (via `moving_average`) if either window `< 1`.
 - `trend(prices, window=None, flat_threshold=0.01)` — Classifies the series as `"up"`, `"down"`, or `"flat"`. Fits a least-squares line through the closes and measures the move that line implies from its first fitted point to its last, as a fraction of the mean price; if that fitted move is smaller than `flat_threshold` (default `0.01` = 1%) in magnitude the series is `"flat"` (direction is just noise), otherwise its sign decides up vs down. `window=N` restricts the fit to the last `N` prices. Raises `ValueError` on fewer than 2 prices (or `window < 2`).
 - `_ols_slope(values)` — Internal: least-squares slope of `values` against `x = 0, 1, 2, …` (per step).
 
@@ -579,13 +580,16 @@ Small, dependency-free technical indicators over a price series — a plain list
 
 ```python
 >>> from indicators import (
-...     moving_average, price_vs_moving_average, moving_average_cross, trend)
+...     moving_average, price_vs_moving_average, moving_average_cross,
+...     moving_average_cross_flip, trend)
 >>> moving_average([1, 2, 3, 4, 5], 3)
 [None, None, 2.0, 3.0, 4.0]
 >>> price_vs_moving_average([10, 10, 10, 7, 13], 3)
 [None, None, 'equal', 'below', 'above']
 >>> moving_average_cross([1, 2, 3, 4, 5, 6], 2, 4)
 [None, None, None, 'above', 'above', 'above']
+>>> moving_average_cross_flip([3, 1, 1, 2, 3], 1, 2)
+[None, False, False, True, False]
 >>> trend([1, 2, 3, 4, 5])
 'up'
 >>> trend([5, 4, 3, 2, 1])
@@ -599,7 +603,8 @@ Pull real closes straight from the JSON tool:
 ```python
 import json, subprocess
 from indicators import (
-    trend, moving_average, price_vs_moving_average, moving_average_cross)
+    trend, moving_average, price_vs_moving_average, moving_average_cross,
+    moving_average_cross_flip)
 
 out = subprocess.run(
     ["python3", "stock_close_history.py", "AAPL", "--range", "6mo", "--json"],
@@ -609,14 +614,15 @@ closes = [r["close"] for r in json.loads(out)["prices"]]
 
 trend(closes)                 # -> "up" / "down" / "flat" over the whole span
 trend(closes, window=20)      # -> the near-term (last 20 sessions) trend
-moving_average(closes, 50)[-1]              # -> current 50-session SMA
-price_vs_moving_average(closes, 50)[-1]     # -> "above" / "below" / "equal"
-moving_average_cross(closes, 20, 50)[-1]   # -> is the 20-SMA above the 50-SMA?
+moving_average(closes, 50)[-1]                 # -> current 50-session SMA
+price_vs_moving_average(closes, 50)[-1]        # -> "above" / "below" / "equal"
+moving_average_cross(closes, 20, 50)[-1]       # -> is the 20-SMA above the 50-SMA?
+moving_average_cross_flip(closes, 20, 50)[-1]  # -> did the 20/50 cross just flip sides?
 ```
 
 ### Notes / limitations
 
-- `moving_average` re-sums each window, so it is O(len·n) — fine for stock series (hundreds–thousands of points). For very long inputs keep a running sum instead (O(len)), accepting minor floating-point drift. `price_vs_moving_average` and `moving_average_cross` build on it and inherit that cost.
+- `moving_average` re-sums each window, so it is O(len·n) — fine for stock series (hundreds–thousands of points). For very long inputs keep a running sum instead (O(len)), accepting minor floating-point drift. `price_vs_moving_average`, `moving_average_cross`, and `moving_average_cross_flip` build on it and inherit that cost.
 - `trend` is a mechanical read of past closing prices — a straight-line fit, nothing more. It is not a forecast, and `flat_threshold` is a blunt single knob: tune it up to ignore weaker trends, down to be more sensitive. It does not scale with the series' own volatility.
 - All of these take raw `close` values. Pass `adj_close` instead when spanning a split or large dividend.
 

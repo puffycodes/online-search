@@ -5,9 +5,10 @@ Small, dependency-free technical indicators over a price series.
 Every function takes ``prices`` as an iterable of numbers, oldest session
 first (e.g. the ``close`` field of each row from stock_close_history.py's
 ``--json`` output). Series transforms (``moving_average``,
-``price_vs_moving_average``, ``moving_average_cross``) return a list the same
-length as the input so the result lines up session-for-session with the source
-rows; classifiers (``trend``) return a single verdict.
+``price_vs_moving_average``, ``moving_average_cross``,
+``moving_average_cross_flip``) return a list the same length as the input so
+the result lines up session-for-session with the source rows; classifiers
+(``trend``) return a single verdict.
 
 Not a CLI - this module is imported, not run.
 """
@@ -94,6 +95,44 @@ def moving_average_cross(prices, fast, slow):
             out.append("below")
         else:
             out.append("equal")
+    return out
+
+
+def moving_average_cross_flip(prices, fast, slow):
+    """Flag each session where the ``fast``/``slow`` MA cross flips sides.
+
+    prices     : iterable of numbers, oldest session first.
+    fast, slow  : the two moving-average windows in sessions (positive ints),
+                  passed straight through to ``moving_average_cross``.
+
+    Runs ``moving_average_cross`` and returns a list the same length as
+    ``prices``: ``True`` on a session where the cross has just gone from
+    ``"below"`` to ``"above"`` or from ``"above"`` to ``"below"`` since the
+    last session it was decisively one side or the other, and ``False``
+    otherwise. Runs of ``"equal"`` between the two sides are stepped over, so
+    the flip still reports on the session where the new side first shows.
+    ``"equal"`` sessions, sessions where the cross hasn't switched sides, and
+    the first decisive session (nothing before it to differ from) are all
+    ``False``; sessions where the cross isn't defined yet are ``None``, as in
+    ``moving_average_cross``. Take ``[-1]`` for the current reading.
+
+    >>> moving_average_cross_flip([3, 1, 1, 2, 3], 1, 2)
+    [None, False, False, True, False]
+    >>> moving_average_cross_flip([1, 2, 3, 4, 5, 6], 2, 4)
+    [None, None, None, False, False, False]
+    """
+    cross = moving_average_cross(prices, fast, slow)
+    out = []
+    prev_side = None
+    for value in cross:
+        if value is None:
+            out.append(None)
+            continue
+        if value == "equal":
+            out.append(False)
+            continue
+        out.append(prev_side is not None and value != prev_side)
+        prev_side = value
     return out
 
 
