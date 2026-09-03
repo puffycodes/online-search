@@ -8,12 +8,15 @@ Small standalone scripts that pull live data from public web APIs. Each is self-
 - [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the two `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
 - [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `trend`
+- [`valuation.py`](#valuationpy) — dependency-free intrinsic-value estimators: `gordon_growth_value`, `discounted_cash_flow`, `multiple_value` / `ev_multiple_value`, `equity_from_enterprise`, `implied_growth_rate` (reverse DCF)
+- [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) — pulls fundamentals from Yahoo Finance and runs every `valuation.py` method (DCF, reverse DCF, dividend discount, P/E, Graham, EV/EBITDA, P/S) against the current price
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
 - [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_close_history.py` + `indicators.py` and reports whether a named stock is trending up or down
+- [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
 
 ---
 
@@ -632,6 +635,185 @@ moving_average_cross_flip(closes, 20, 50)[-1]  # -> did the 20/50 cross just fli
 
 ---
 
+## valuation.py
+
+Small, dependency-free intrinsic-value estimators for a single stock — the arithmetic of the common methods (discounted cash flow, valuation multiples, reverse DCF) made explicit and composable. Intrinsic value is never one number: every function is just a formula over the assumptions you pass it. Rates are fractions, not percents (`0.09` == 9%); cash-flow and value inputs are in whatever currency unit you supply, and per-share outputs are that unit divided by the share count. Not a CLI: it is imported, not run.
+
+### Requirements
+
+- Python 3.7+ (standard library only)
+
+### API reference
+
+- `gordon_growth_value(cash_flow, discount_rate, growth)` — Present value of a cash flow growing forever at a constant rate: `cash_flow / (discount_rate - growth)`. `cash_flow` is the amount expected **one year out** (D1). One formula, three uses: a perpetuity, a constant-growth dividend discount model, and the terminal value inside a DCF. Raises `ValueError` unless `discount_rate > growth`.
+- `discounted_cash_flow(fcf, discount_rate, growth, years=None, terminal_growth=0.02, net_debt=0.0, shares=None)` — Two-stage DCF. Grows `fcf` (the latest actual free cash flow) for an explicit forecast — `growth` as one rate over `years`, or an iterable of per-year rates — discounts each year at `discount_rate`, adds a `gordon_growth_value` terminal value discounted from the horizon, then nets `net_debt` and divides by `shares` (via `equity_from_enterprise`). Returns total equity value, or per-share value when `shares` is given. Raises `ValueError` on a missing/`< 1` horizon, an empty growth list, or `terminal_growth >= discount_rate`.
+- `multiple_value(metric_per_share, multiple)` — Per-share value from an **equity** multiple: `metric_per_share * multiple`. Pass EPS for P/E, sales/share for P/S, book value/share for P/B, FCF/share for P/FCF.
+- `ev_multiple_value(metric, multiple, net_debt=0.0, shares=None)` — Value from an **enterprise** multiple (EV/EBITDA, EV/Sales): `metric * multiple` is the implied enterprise value, then `equity_from_enterprise` nets debt and divides by shares. `metric` is the whole-company figure (total EBITDA, total sales).
+- `equity_from_enterprise(enterprise_value, net_debt=0.0, shares=None)` — Enterprise value → equity value: subtract `net_debt` (a negative value, i.e. net cash, is added back), then divide by `shares` if given. Raises `ValueError` if `shares <= 0`.
+- `implied_growth_rate(price, fcf, discount_rate, years, terminal_growth=0.02, net_debt=0.0, shares=None, tol=1e-9, max_iter=200)` — Reverse DCF: bisects for the constant forecast-stage growth rate at which `discounted_cash_flow(...)` equals `price` (per share if `shares` is given, else a total equity value). Raises `ValueError` if the price can't be bracketed for growth in `(-0.999, 20]`.
+- `_growth_path(growth, years)` — Internal: normalises `growth` to a list of per-year rates (a single rate repeated `years` times, or an iterable used as-is).
+
+### Examples
+
+```python
+>>> from valuation import (
+...     gordon_growth_value, discounted_cash_flow, multiple_value,
+...     ev_multiple_value, equity_from_enterprise, implied_growth_rate)
+>>> gordon_growth_value(5.0, 0.08, 0.03)          # D1=5, r=8%, g=3%
+100.0
+>>> round(discounted_cash_flow(100, 0.09, 0.05, 5), 2)   # FCF 100, WACC 9%, 5% for 5y
+1656.27
+>>> round(discounted_cash_flow(100, 0.09, [0.08, 0.06, 0.04], shares=100), 4)
+16.2701
+>>> multiple_value(6.5, 28)                       # EPS 6.5 at a 28x P/E
+182.0
+>>> round(ev_multiple_value(120_000, 14, net_debt=200_000, shares=15_000), 4)
+98.6667
+>>> round(implied_growth_rate(1656.27, 100, 0.09, 5), 4)  # reverse the DCF above
+0.05
+```
+
+Feed it real free cash flow from an earnings source and pair it with the price tools here:
+
+```python
+import json, subprocess
+from valuation import discounted_cash_flow, implied_growth_rate
+
+# From a 10-K / earnings feed (not fetched by this repo):
+fcf = 100_000_000_000        # trailing free cash flow
+shares = 15_000_000_000
+net_debt = -50_000_000_000   # net cash
+
+fair = discounted_cash_flow(fcf, 0.09, 0.06, 10,
+                            terminal_growth=0.025,
+                            net_debt=net_debt, shares=shares)
+
+out = subprocess.run(
+    ["python3", "stock_close_history.py", "AAPL", "--last", "1", "--json"],
+    capture_output=True, text=True, check=True,
+).stdout
+price = json.loads(out)["prices"][-1]["close"]
+
+fair                                  # -> per-share DCF value under these assumptions
+price / fair - 1                      # -> premium (+) / discount (-) to that value
+implied_growth_rate(price, fcf, 0.09, 10,
+                    terminal_growth=0.025,
+                    net_debt=net_debt, shares=shares)  # -> growth the price bakes in
+```
+
+### Notes / limitations
+
+- Garbage in, garbage out. A DCF value swings by large multiples on plausible-looking changes to `discount_rate`, `growth`, and `terminal_growth`; treat the output as one point in a range, not a target. Run a few assumption sets and compare.
+- `terminal_growth` must stay below `discount_rate` (and realistically at or below long-run GDP growth). The terminal value is usually the majority of a DCF result, so it dominates the answer.
+- `multiple_value` / `ev_multiple_value` only move the judgement to "what multiple is fair" — they don't remove it. Keep equity multiples (P/E, P/S) and enterprise multiples (EV/EBITDA) with the right metric; mixing them is the common mistake.
+- No taxes, buybacks, dilution, leases, or mid-year discounting are modelled. `fcf` is whatever you define it as — be consistent (levered FCF for an equity discount rate, unlevered FCF for a WACC).
+- These are pure functions with no data source. Feed them fundamentals yourself, or use [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), which pulls the fundamentals from Yahoo Finance and runs every one of them.
+
+---
+
+## stock_intrinsic_value.py
+
+Pulls the fundamentals a stock's intrinsic value needs from Yahoo Finance's public `quoteSummary` endpoint (`query{1,2}.finance.yahoo.com/v10/finance/quoteSummary/<symbol>`), then runs **every** method in [`valuation.py`](#valuationpy) it has inputs for and prints the estimates side by side against the current price. No API key or authentication required — a consent cookie and crumb are fetched automatically.
+
+What it retrieves per ticker: trailing free cash flow, EBITDA, revenue, share count, total debt and cash, trailing/forward EPS, book value per share, beta, dividend rate, the current P/E, P/S and EV/EBITDA multiples, enterprise value, and the analyst growth estimate (`+5y`, falling back to `+1y`).
+
+What it computes:
+
+| Row | `valuation.py` call | Notes |
+|---|---|---|
+| Two-stage DCF | `discounted_cash_flow` | on trailing FCF, per share after netting debt |
+| Reverse DCF → implied growth | `implied_growth_rate` | the forecast growth the current price implies |
+| Dividend discount | `gordon_growth_value` | grown at the terminal rate; skipped for non-payers |
+| P/E multiple | `multiple_value` | on trailing EPS |
+| Graham `EPS × (8.5 + 2g)` | `multiple_value` | multiple capped at 40 |
+| EV/EBITDA multiple | `ev_multiple_value` | on trailing EBITDA |
+| P/S multiple | `multiple_value` | on revenue per share |
+| `[check]` reported EV → equity | `equity_from_enterprise` | a consistency check — should ≈ price |
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `yahoo_finance.py` (for its `HEADERS` / timeout) and `valuation.py` — run from the repo root so they import
+
+### Usage
+
+```bash
+python3 stock_intrinsic_value.py SYMBOL [--discount-rate R] [--growth G] [--terminal-growth G] [--years N] [--risk-free R] [--equity-risk-premium P] [--pe X] [--ev-ebitda X] [--ps X] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, … |
+| `--discount-rate R` | CAPM from the stock's beta, else `0.09` | Annual discount rate / WACC as a fraction (`0.09` = 9%) |
+| `--growth G` | analyst 5-year EPS growth, else 1-year, else `0.05` | Forecast-stage annual FCF growth, as a fraction |
+| `--terminal-growth G` | `0.025` | Perpetual growth past the forecast (also the dividend-model growth) |
+| `--years N` | `10` | Explicit DCF forecast horizon |
+| `--risk-free R` | `0.04` | Risk-free rate for the CAPM discount rate |
+| `--equity-risk-premium P` | `0.05` | Equity risk premium for the CAPM discount rate |
+| `--pe X` | the stock's current trailing P/E | Fair P/E for the multiple valuation |
+| `--ev-ebitda X` | the stock's current EV/EBITDA | Fair EV/EBITDA for the multiple valuation |
+| `--ps X` | the stock's current trailing P/S | Fair P/S for the multiple valuation |
+| `--json` | off | Emit structured JSON on stdout instead of the report |
+
+The three `--pe` / `--ev-ebitda` / `--ps` multiples **default to the stock's own current multiple**, so those rows reproduce the market's valuation until you pass a considered number. Any input a method needs that Yahoo doesn't return (e.g. free cash flow for a loss-making company) leaves that row blank rather than failing.
+
+#### Example
+
+```bash
+python3 stock_intrinsic_value.py AAPL --growth 0.08 --discount-rate 0.09
+```
+
+```
+AAPL - Apple Inc.  (NasdaqGS - USD)
+Price 324.96 USD    Market cap 4.74T    Sector: Technology
+...
+Assumptions
+  Discount rate       9.00%   (user-supplied)
+  FCF growth          8.00%   (user-supplied)
+  Terminal growth     2.50%
+  Forecast years         10
+
+Intrinsic value estimates (per share unless noted)
+  Method                                     Value   Price vs est.
+  Two-stage DCF                             174.83          +85.9%
+  P/E multiple (37.31x)                     324.96           +0.0%
+  Graham EPS x (8.5+2g) (24.50x)            213.40          +52.3%
+  EV/EBITDA multiple (28.37x)               324.96           -0.0%
+  P/S multiple (10.16x)                     324.96           -0.0%
+  Dividend discount (g=2.50%)                17.03        +1808.1%
+  Reverse DCF -> implied growth             16.16%             (vs assumed 8.00%)
+  [check] reported EV -> equity             324.96           -0.0%
+  (dividend yield < 1% - the Gordon dividend model is not meaningful for this stock)
+```
+
+(Figures move with live data; the P/E, EV/EBITDA and P/S rows equal the price here because their multiples default to the stock's current ones.)
+
+`Price vs est.` is `price / estimate - 1`: positive means the market price sits **above** that method's value.
+
+### How it works
+
+1. **Cookie + crumb** — a `requests.Session` GETs `fc.yahoo.com` (then `finance.yahoo.com`) to pick up the EU-consent cookie, then `query1.finance.yahoo.com/v1/test/getcrumb` for the crumb token the fundamentals endpoint now requires.
+2. **Fetch** — GETs `quoteSummary` for `price,summaryDetail,defaultKeyStatistics,financialData,earningsTrend,summaryProfile`, trying `query2` then `query1`, with the crumb and then without. A bad ticker returns an error envelope (raised) or an empty `result` (raised).
+3. **Parse** — `collect_inputs()` digs each figure out of the nested modules, unwrapping Yahoo's `{"raw": …}` wrappers, and derives net debt (`totalDebt − totalCash`) and revenue per share.
+4. **Assumptions** — `resolve_assumptions()`: the discount rate is the CLI value, else CAPM (`risk_free + beta × equity_risk_premium`), else `0.09`; the growth is the CLI value, else the analyst `+5y` estimate, else `+1y`, else `0.05`. If `terminal_growth ≥ discount_rate` the discount rate is nudged up so the model stays defined. Every choice is shown with its source.
+5. **Estimate** — `compute_estimates()` calls each `valuation.py` function whose inputs are present and positive; the rest come back `None` and render blank.
+6. **Report** — a human-readable block (fundamentals, assumptions, estimate table) or, with `--json`, `{symbol, name, price, inputs, assumptions, multiples_used, estimates}`.
+
+### Error handling
+
+- Network failure, a bad ticker, or a response with no usable fundamentals → exits non-zero, printing `Error: …` to stderr (or `{"error": "…"}` with `--json`).
+- `--years` below 1 is rejected before any request.
+
+### Notes / limitations
+
+- Same caveat as [`valuation.py`](#valuationpy): the output is only as good as the assumptions. The defaults (CAPM discount rate, analyst near-term growth as a 10-year rate, current multiples as "fair") are a **starting point**, not a house view — vary `--discount-rate`, `--growth`, `--terminal-growth` and compare.
+- Yahoo's `freeCashflow` is a levered TTM figure; `earningsTrend` growth is an *EPS* estimate used here as an *FCF* growth proxy. Analyst `+5y` is often missing, in which case the `+1y` number stands in and is a poor perpetual-growth guess.
+- One trailing snapshot per field — no multi-year averaging, no normalisation for one-off items, no segment detail. `quoteSummary` is an undocumented endpoint and its crumb/cookie flow can change without notice.
+- Figures come back in the listing currency; the script does not convert.
+
+---
+
 ## stock_tech_buzz_agent.py
 
 An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the ~40 hottest tech discussions from Hacker News (the `--discussion-limit` default is 50 but the underlying script ranks only its first 40 candidates), and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
@@ -943,3 +1125,44 @@ The agent's frontmatter restricts it to `Bash` (run the script and the analysis 
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's trend or a "symbol may be delisted" error.
 - The verdict is a straight-line fit over past closes (see [`indicators.py`](#indicatorspy) limitations): a mechanical description, not a forecast, and sensitive to the window chosen and to `flat_threshold`.
 - Inherits all the limitations of [`stock_close_history.py`](#stock_close_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
+
+---
+
+## Claude Code agent: `stock-intrinsic-value`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-intrinsic-value.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), which fetches the fundamentals from Yahoo Finance and runs every method in [`valuation.py`](#valuationpy).
+
+### Purpose
+
+Lets Claude Code answer requests like "what's AAPL worth?", "is Tesla overvalued?", "run a DCF on Microsoft", "fair value of Novo Nordisk with a 10% discount rate", or "what growth is priced into NVDA?" with model output built from live fundamentals, instead of guessing a number from stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's or ticker's intrinsic / fair value, whether it is over- or under-valued, or a DCF / reverse-DCF / multiples valuation, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-intrinsic-value"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+2. Runs `python3 stock_intrinsic_value.py SYMBOL --json` from the repo root with **no assumption flags by default** (the tool derives the discount rate from CAPM, the growth from the analyst estimate). It adds `--discount-rate` / `--growth` / `--terminal-growth` / `--years` / `--pe` / `--ev-ebitda` / `--ps` only when the user states an assumption, and re-runs the tool 2–3 times with bear / base / bull assumption sets when the user wants a considered over/under-valued call.
+3. Parses the JSON — `price`, `inputs`, `assumptions` (with the source of each), `multiples_used`, and `estimates` (`dcf_two_stage`, `reverse_dcf_implied_growth`, `dividend_discount`, `pe_multiple`, `graham`, `ev_ebitda_multiple`, `ps_multiple`, `ev_reported_to_equity`), where each estimate's `price_vs_estimate` is `price / value - 1` (positive → market above that estimate).
+4. Reports a synthesis: the DCF value (or range across scenarios) versus the price with its key assumptions, then the reverse-DCF implied growth versus what analysts expect, then the other *independent* estimates (a user-set multiple, or the dividend model for real payers), calling out any `null` rows and the missing input behind them. Closes with a caveat that these are assumption-sensitive model outputs from one trailing snapshot, not investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script and read its JSON).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) |
+| Underlying module | [`valuation.py`](#valuationpy) |
+
+### Notes / limitations
+
+- Requires `stock_intrinsic_value.py` (with its `yahoo_finance.py` helper and the `requests` dependency) and `valuation.py` to be present and runnable from the repo root.
+- Only as good as the ticker it picks and the assumptions it runs — a DCF swings by large multiples on plausible changes to the discount rate and growth, which is why the agent prefers a scenario range over a single number.
+- The multiple-based rows are not independent estimates unless the user supplies the multiple; by default they reproduce the stock's current valuation. The dividend model is meaningless for low- or non-payers, and the `[check]` row is a data-quality signal, not a valuation.
+- Inherits all the limitations of [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) and [`valuation.py`](#valuationpy) (undocumented Yahoo `quoteSummary` endpoint, one trailing snapshot per field, EPS-growth estimate used as an FCF-growth proxy, no normalisation for one-off items, listing-currency figures).
