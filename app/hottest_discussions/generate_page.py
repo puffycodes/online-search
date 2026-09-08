@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""
+Generate a static web page shell for the hottest technology discussions.
+
+The generated page starts empty: it does not fetch or embed any
+discussions at generation time. A drop-down lets the visitor pick how
+many discussions to retrieve (10/25/50, default 10), and clicking the
+Refresh button runs an inline script that retrieves and renders that
+many client-side, using the same Hacker News endpoints and ranking
+logic as hottest_tech_discussions.py at the repository root.
+
+Usage:
+    python3 generate_page.py [--limit {10,25,50}] [--output PATH]
+"""
+
+import argparse
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# hottest_tech_discussions.py lives at the repository root, two levels up
+# from this file (app/hottest_discussions/generate_page.py).
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from hottest_tech_discussions import RESULTS_TO_SHOW  # noqa: E402
+
+DEFAULT_OUTPUT = Path(__file__).resolve().parent / "index.html"
+
+# Choices for the page's "how many discussions to retrieve" drop-down.
+# RESULTS_TO_SHOW (from hottest_tech_discussions.py) is the default of 10.
+LIMIT_OPTIONS = (RESULTS_TO_SHOW, 25, 50)
+
+PAGE_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hottest Tech Discussions</title>
+<style>
+  :root {{
+    color-scheme: light dark;
+    --bg: #f6f6ef;
+    --card-bg: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b6b6b;
+    --accent: #ff6600;
+    --border: #e5e5e0;
+  }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{
+      --bg: #121212;
+      --card-bg: #1c1c1c;
+      --text: #eaeaea;
+      --muted: #9a9a9a;
+      --border: #2c2c2c;
+    }}
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }}
+  header {{
+    background: var(--accent);
+    padding: 1.5rem 1rem;
+    text-align: center;
+  }}
+  header h1 {{
+    margin: 0;
+    color: #fff;
+    font-size: 1.6rem;
+  }}
+  header p {{
+    margin: 0.35rem 0 0;
+    color: #fff4ea;
+    font-size: 0.85rem;
+  }}
+  .controls {{
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }}
+  .controls label {{
+    color: #fff4ea;
+    font-size: 0.85rem;
+  }}
+  #limit-select {{
+    padding: 0.35rem 0.6rem;
+    border: 1px solid #fff;
+    border-radius: 999px;
+    background: transparent;
+    color: #fff;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }}
+  #limit-select option {{
+    color: #1a1a1a;
+    background: #fff;
+  }}
+  #refresh-btn {{
+    padding: 0.4rem 1.1rem;
+    border: 1px solid #fff;
+    border-radius: 999px;
+    background: transparent;
+    color: #fff;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }}
+  #refresh-btn:hover {{
+    background: rgba(255, 255, 255, 0.15);
+  }}
+  #refresh-btn:disabled {{
+    opacity: 0.6;
+    cursor: default;
+  }}
+  #refresh-status {{
+    margin: 0.5rem 0 0;
+    color: #fff4ea;
+    font-size: 0.75rem;
+    min-height: 1em;
+  }}
+  main {{
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 1.25rem 1rem 3rem;
+  }}
+  ol {{
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }}
+  li.story {{
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    gap: 0.75rem;
+  }}
+  .rank {{
+    color: var(--muted);
+    font-weight: 600;
+    min-width: 1.75rem;
+    text-align: right;
+  }}
+  .story-body h2 {{
+    margin: 0 0 0.3rem;
+    font-size: 1.05rem;
+    line-height: 1.35;
+  }}
+  .story-body h2 a {{
+    color: var(--text);
+    text-decoration: none;
+  }}
+  .story-body h2 a:hover {{
+    text-decoration: underline;
+  }}
+  .meta {{
+    color: var(--muted);
+    font-size: 0.85rem;
+  }}
+  .meta a {{
+    color: var(--muted);
+  }}
+  .empty {{
+    text-align: center;
+    color: var(--muted);
+    padding: 2rem 0;
+  }}
+  footer {{
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.75rem;
+    padding-bottom: 2rem;
+  }}
+</style>
+</head>
+<body>
+<header>
+  <h1>Hottest Tech Discussions</h1>
+  <p>Top stories on Hacker News right now</p>
+  <div class="controls">
+    <label for="limit-select">Show</label>
+    <select id="limit-select">
+{limit_options}
+    </select>
+    <button id="refresh-btn" type="button">&#8635; Refresh</button>
+  </div>
+  <p id="refresh-status"></p>
+</header>
+<main>
+  <div id="discussions">
+  <p class="empty">No discussions loaded yet &mdash; click Refresh above to fetch the top discussions.</p>
+  </div>
+  <footer id="generated-at">Generated {generated_at} &middot; Source: Hacker News API</footer>
+</main>
+<script>
+(function () {{
+  var HN_BASE = "https://hacker-news.firebaseio.com/v0";
+  // How many candidate stories to fetch per requested result, so the
+  // pool is always big enough to rank accurately by score.
+  var CANDIDATE_POOL_FACTOR = 4;
+
+  var button = document.getElementById("refresh-btn");
+  var status = document.getElementById("refresh-status");
+  var container = document.getElementById("discussions");
+  var footer = document.getElementById("generated-at");
+  var limitSelect = document.getElementById("limit-select");
+
+  function fetchJson(url) {{
+    return fetch(url).then(function (response) {{
+      if (!response.ok) {{
+        throw new Error("HTTP " + response.status);
+      }}
+      return response.json();
+    }});
+  }}
+
+  function discussionUrl(story) {{
+    return "https://news.ycombinator.com/item?id=" + story.id;
+  }}
+
+  function postedAt(story) {{
+    var date = new Date((story.time || 0) * 1000);
+    return date.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  }}
+
+  function buildStoryEl(rank, story) {{
+    var li = document.createElement("li");
+    li.className = "story";
+
+    var rankSpan = document.createElement("span");
+    rankSpan.className = "rank";
+    rankSpan.textContent = rank;
+
+    var body = document.createElement("div");
+    body.className = "story-body";
+
+    var h2 = document.createElement("h2");
+    var link = document.createElement("a");
+    link.href = story.url || discussionUrl(story);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = story.title || "(no title)";
+    h2.appendChild(link);
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.appendChild(document.createTextNode(
+      (story.score || 0) + " points · " + (story.descendants || 0) +
+      " comments · posted " + postedAt(story) + " · "
+    ));
+    var discussLink = document.createElement("a");
+    discussLink.href = discussionUrl(story);
+    discussLink.target = "_blank";
+    discussLink.rel = "noopener noreferrer";
+    discussLink.textContent = "discuss on HN";
+    meta.appendChild(discussLink);
+
+    body.appendChild(h2);
+    body.appendChild(meta);
+    li.appendChild(rankSpan);
+    li.appendChild(body);
+    return li;
+  }}
+
+  function renderStories(stories) {{
+    container.innerHTML = "";
+    if (!stories.length) {{
+      var empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "No discussions found.";
+      container.appendChild(empty);
+      return;
+    }}
+    var ol = document.createElement("ol");
+    stories.forEach(function (story, index) {{
+      ol.appendChild(buildStoryEl(index + 1, story));
+    }});
+    container.appendChild(ol);
+  }}
+
+  function refresh() {{
+    var limit = parseInt(limitSelect.value, 10) || 10;
+    var candidatePoolSize = limit * CANDIDATE_POOL_FACTOR;
+
+    button.disabled = true;
+    status.textContent = "Refreshing…";
+
+    fetchJson(HN_BASE + "/topstories.json")
+      .then(function (ids) {{
+        var candidates = ids.slice(0, candidatePoolSize);
+        return Promise.all(
+          candidates.map(function (id) {{
+            return fetchJson(HN_BASE + "/item/" + id + ".json").catch(function () {{
+              return null;
+            }});
+          }})
+        );
+      }})
+      .then(function (stories) {{
+        stories = stories.filter(function (s) {{
+          return s && s.type === "story";
+        }});
+        stories.sort(function (a, b) {{
+          return (b.score || 0) - (a.score || 0);
+        }});
+        renderStories(stories.slice(0, limit));
+        footer.textContent =
+          "Generated " +
+          new Date().toISOString().slice(0, 16).replace("T", " ") +
+          " UTC · Source: Hacker News API";
+        status.textContent = "Updated just now";
+      }})
+      .catch(function (err) {{
+        status.textContent = "Refresh failed: " + err.message;
+      }})
+      .finally(function () {{
+        button.disabled = false;
+      }});
+  }}
+
+  button.addEventListener("click", refresh);
+}})();
+</script>
+</body>
+</html>
+"""
+
+
+def render_limit_options(selected):
+    return "\n".join(
+        '      <option value="{n}"{sel}>{n}</option>'.format(
+            n=n, sel=" selected" if n == selected else ""
+        )
+        for n in LIMIT_OPTIONS
+    )
+
+
+def render_page(limit=RESULTS_TO_SHOW):
+    if limit not in LIMIT_OPTIONS:
+        raise ValueError(f"limit must be one of {LIMIT_OPTIONS}, got {limit}")
+
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return PAGE_TEMPLATE.format(
+        generated_at=generated_at,
+        limit_options=render_limit_options(limit),
+    )
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Generate a web page showing the hottest tech discussions."
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        choices=LIMIT_OPTIONS,
+        default=RESULTS_TO_SHOW,
+        help=(
+            "Which option the page's drop-down starts pre-selected to "
+            f"(default: {RESULTS_TO_SHOW})"
+        ),
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_OUTPUT,
+        help=f"HTML file to write (default: {DEFAULT_OUTPUT})",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+
+    html_page = render_page(limit=args.limit)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(html_page, encoding="utf-8")
+
+    print(f"Wrote empty page shell to {args.output}")
+    print("Open it in a browser and click Refresh to load discussions.")
+
+
+if __name__ == "__main__":
+    main()
