@@ -5,6 +5,7 @@
 Small standalone scripts that pull live data from public web APIs, plus one small web app built on top of them. Each script is self-contained — no local package, just a `.py` file (the two `stock_*` scripts also share `yahoo_finance.py`, a helper module in the same directory).
 
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
+- [`weather.py`](#weatherpy) — current weather (temperature, condition, wind) for a named location, anywhere in the world
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
 - [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
@@ -15,6 +16,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`app/hottest_discussions/`](#apphottest_discussions) — small web-page generator pairing with `hottest_tech_discussions.py`: a static HTML page with a "Show" drop-down and Refresh button that fetch discussions client-side
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
+- [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location
 - [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
@@ -137,6 +139,107 @@ These are set as constants near the top of the file — edit them directly to ch
 - "Hottest" is defined here as *highest score* among HN's current top stories — it does not itself factor in comment velocity or recency beyond what HN's own top-stories ranking already provides.
 - No filtering is applied for "tech" specifically — it relies on Hacker News' general subject matter (predominantly tech) rather than keyword filtering.
 - Results reflect a live snapshot; scores and rankings will differ between runs.
+
+---
+
+## weather.py
+
+Prints the current weather — condition, temperature, and wind — for a named location anywhere in the world, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and forecast APIs. No API key or authentication required.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 weather.py LOCATION [--unit {celsius,fahrenheit}] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `LOCATION` (positional) | — | Free-text place name, e.g. `"London"`, `"New York"`, `"Tokyo"` |
+| `--unit {celsius,fahrenheit}` | `celsius` | Temperature unit |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Looking up the weather for 'Tokyo'...
+
+Weather for Tokyo, Japan
+  Condition: Light drizzle
+  Temperature: 26.5°C
+  Wind: 2.5 km/h, direction 360°
+  As of: 2026-09-08T07:45
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 weather.py "New York" --json
+```
+
+```json
+{
+  "location": "New York",
+  "admin1": "New York",
+  "country": "United States",
+  "latitude": 40.71427,
+  "longitude": -74.00597,
+  "temperature": 16.6,
+  "unit": "°C",
+  "windspeed": 5.0,
+  "winddirection": 291,
+  "weather_code": 0,
+  "condition": "Clear sky",
+  "time": "2026-09-08T07:45"
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Geocode** — Calls Open-Meteo's geocoding endpoint (`geocoding-api.open-meteo.com/v1/search`) with the free-text `LOCATION` and takes its top match (name, admin region, country, latitude/longitude).
+2. **Fetch current weather** — Calls the forecast endpoint (`api.open-meteo.com/v1/forecast`) with `current_weather=true` at that location's coordinates and the requested `--unit`.
+3. **Decode and display** — Maps the numeric WMO `weathercode` to a short description (`WEATHER_CODES`) and prints location, condition, temperature, wind speed/direction, and the observation time (or the equivalent JSON object with `--json`).
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+| `WEATHER_CODES` | dict of ~27 entries | Maps each WMO `weathercode` to a short human-readable description |
+
+### API reference
+
+- `geocode(location)` — Looks up a free-text location name and returns its top-matching place dict (name, admin1, country, latitude, longitude), or `None` if nothing matches.
+- `fetch_current_weather(latitude, longitude, unit="celsius")` — Fetches the `current_weather` object for a coordinate pair.
+- `weather_description(code)` — Maps a WMO weather code to a short description, or `"Unknown (code N)"` for one not in `WEATHER_CODES`.
+- `get_weather(location, unit="celsius")` — Orchestrates geocoding and the weather fetch; returns the flattened `{location, admin1, country, latitude, longitude, temperature, unit, windspeed, winddirection, weather_code, condition, time}` record, or `None` if the location can't be found.
+- `format_weather(row)` — Renders a `get_weather()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--unit` and `--json`.
+- `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If either API request fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If the location can't be geocoded (no match), the script prints `"No location found matching '<LOCATION>'."` (or `{"error": "..."}` with `--json`) to stderr and exits with status code 1.
+
+### Notes / limitations
+
+- Geocoding always takes Open-Meteo's single top match for the query string — an ambiguous name (e.g. a city that exists in several countries) may resolve to the wrong place; disambiguate by adding a country or region to the query (e.g. `"Springfield, Illinois"`).
+- Reports only the current conditions at a single instant — no forecast, hourly, or historical data (Open-Meteo's forecast endpoint supports both; this script only calls the `current_weather` shortcut).
+- `weathercode` is Open-Meteo's own WMO-based classification; `WEATHER_CODES` covers the documented codes but treats any other value as `"Unknown (code N)"` rather than guessing.
+- Results are a live snapshot; conditions will differ between runs.
 
 ---
 
@@ -1041,6 +1144,44 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 - Requires `hottest_tech_discussions.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Inherits all the limitations of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) itself (score-based "hottest" definition, no tech-specific keyword filtering, live-snapshot results).
+
+---
+
+## Claude Code agent: `weather`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/weather.md`. It calls no API itself — it shells out to [`weather.py`](#weatherpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what's the weather in Tokyo?", "is it raining in London?", "how hot is it in Singapore right now?", or "weather for Long Island" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for current-conditions/temperature/weather questions about a named place, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "weather"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
+2. Runs `python3 weather.py "LOCATION" [--unit celsius|fahrenheit] --json` from the repo root, defaulting to `celsius` unless the user asks for Fahrenheit or the conversation implies it.
+3. Parses the JSON object (`location`, `admin1`, `country`, `temperature`, `unit`, `windspeed`, `winddirection`, `condition`, `time`) and leads with the condition and temperature, adding wind or the resolved place name only when useful. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`weather.py`](#weatherpy) |
+
+### Notes / limitations
+
+- Requires `weather.py` (and its `requests` dependency) to be present and runnable from the repo root.
+- Reports current conditions only — there is no forecast, hourly, or historical data to fall back on, so it says so rather than fabricating one.
+- Inherits all the limitations of [`weather.py`](#weatherpy) itself (geocoding takes only the top match for an ambiguous name, live-snapshot results).
 
 ---
 
