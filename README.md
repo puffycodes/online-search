@@ -6,6 +6,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
 - [`weather.py`](#weatherpy) — current weather (temperature, condition, wind) for a named location, anywhere in the world
+- [`weather_forecast.py`](#weather_forecastpy) — multi-day (1-16 day) weather forecast for a named location, sharing `weather.py`'s geocoding
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
 - [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
@@ -17,6 +18,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`app/hottest_discussions/`](#apphottest_discussions) — small web-page generator pairing with `hottest_tech_discussions.py`: a static HTML page with a "Show" drop-down and Refresh button that fetch discussions client-side
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location
+- [`.claude/agents/weather-forecast.md`](#claude-code-agent-weather-forecast) — Claude Code subagent that calls `weather_forecast.py` and reports the upcoming multi-day forecast for a named location
 - [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
@@ -240,6 +242,135 @@ These are set as constants near the top of the file — edit them directly to ch
 - Reports only the current conditions at a single instant — no forecast, hourly, or historical data (Open-Meteo's forecast endpoint supports both; this script only calls the `current_weather` shortcut).
 - `weathercode` is Open-Meteo's own WMO-based classification; `WEATHER_CODES` covers the documented codes but treats any other value as `"Unknown (code N)"` rather than guessing.
 - Results are a live snapshot; conditions will differ between runs.
+
+---
+
+## weather_forecast.py
+
+Prints the multi-day weather forecast — condition, high/low temperature, rain chance, and max wind — for a named location, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and forecast APIs. No API key or authentication required.
+
+Requires `weather.py` to be present in the same directory — it imports `geocode`, `fetch_json`, `weather_description`, and `FORECAST_URL` directly from it rather than shelling out or duplicating that logic (the same sharing pattern [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) uses for its two underlying scripts).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `weather.py` module (no install — run from the repo root so it imports)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 weather_forecast.py LOCATION [--days N] [--unit {celsius,fahrenheit}] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `LOCATION` (positional) | — | Free-text place name, e.g. `"London"`, `"New York"`, `"Tokyo"` |
+| `--days N` | 5 | Number of forecast days, starting today. Must be 1-16 (Open-Meteo's own daily-forecast limit); other values are rejected by argument parsing |
+| `--unit {celsius,fahrenheit}` | `celsius` | Temperature unit |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Looking up the 5-day forecast for 'Tokyo'...
+
+5-day forecast for Tokyo, Japan
+
+Date        Condition                    High °C    Low °C  Precip %  Wind km/h
+-------------------------------------------------------------------------------
+2026-09-08  Heavy rain                      28.5      22.4        88        9.4
+2026-09-09  Heavy rain                      30.6      18.8        96       11.1
+2026-09-10  Moderate rain                   22.2      18.6        86        5.8
+2026-09-11  Moderate rain                   22.3      18.3        65        5.9
+2026-09-12  Dense drizzle                   25.0      20.4        29        6.3
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 weather_forecast.py "Chicago" --days 2 --json
+```
+
+```json
+{
+  "location": "Chicago",
+  "admin1": "Illinois",
+  "country": "United States",
+  "latitude": 41.85003,
+  "longitude": -87.65005,
+  "unit": "°C",
+  "days": [
+    {
+      "date": "2026-09-08",
+      "weather_code": 3,
+      "condition": "Overcast",
+      "temp_max": 29.0,
+      "temp_min": 16.4,
+      "precipitation_sum": 0.0,
+      "precipitation_probability_max": 3,
+      "windspeed_max": 16.3
+    },
+    {
+      "date": "2026-09-09",
+      "weather_code": 51,
+      "condition": "Light drizzle",
+      "temp_max": 29.7,
+      "temp_min": 20.8,
+      "precipitation_sum": 0.4,
+      "precipitation_probability_max": 42,
+      "windspeed_max": 19.4
+    }
+  ]
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Geocode** — Calls `weather.geocode()` (shared with [`weather.py`](#weatherpy)) to resolve the free-text `LOCATION` to its top-matching place.
+2. **Fetch the daily forecast** — Calls Open-Meteo's forecast endpoint with `daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,windspeed_10m_max`, `forecast_days=N`, `timezone=auto` (so daily buckets follow the location's own local calendar day), and the requested `--unit`.
+3. **Decode and display** — Zips the parallel daily arrays into one record per day, maps each day's `weathercode` via `weather.weather_description()`, and prints a table (or the equivalent JSON object with `--json`).
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `DEFAULT_FORECAST_DAYS` | 5 | Number of days requested when `--days` isn't passed |
+| `MAX_FORECAST_DAYS` | 16 | Upper bound accepted for `--days` (Open-Meteo's own limit) |
+| `DAILY_FIELDS` | 6 fields (see above) | The Open-Meteo `daily=` parameter value |
+
+### API reference
+
+- `fetch_daily_forecast(latitude, longitude, days=5, unit="celsius")` — Fetches the `daily` object for a coordinate pair.
+- `get_forecast(location, days=5, unit="celsius")` — Orchestrates geocoding (via `weather.geocode()`) and the daily-forecast fetch; returns `{location, admin1, country, latitude, longitude, unit, days}` where `days` is a list of `{date, weather_code, condition, temp_max, temp_min, precipitation_sum, precipitation_probability_max, windspeed_max}` in chronological order, or `None` if the location can't be found.
+- `format_forecast(row)` — Renders a `get_forecast()` record as a human-readable table.
+- `_valid_days(value)` — argparse `type` for `--days`: an integer in `[1, MAX_FORECAST_DAYS]`; raises `argparse.ArgumentTypeError` otherwise.
+- `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--days`, `--unit`, and `--json`.
+- `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
+
+See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, and `weather_description()`.
+
+### Error handling
+
+- If either API request fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If the location can't be geocoded (no match), the script prints `"No location found matching '<LOCATION>'."` (or `{"error": "..."}` with `--json`) to stderr and exits with status code 1.
+- A `--days` value outside `1-16` is rejected by argument parsing itself (exit code 2), before any request is made.
+
+### Notes / limitations
+
+- Same geocoding caveat as [`weather.py`](#weatherpy): the query's single top match is used, so an ambiguous name may resolve to the wrong place — disambiguate with a country or region in the query.
+- One high/low/condition summary per calendar day — no hourly breakdown and no current-conditions reading (use [`weather.py`](#weatherpy) for that).
+- `weathercode` is Open-Meteo's daily summary code for the day as a whole; a day with, say, morning rain and an otherwise clear afternoon is reported under a single condition.
+- Forecast accuracy degrades toward the far end of the 16-day window, as with any weather model; Open-Meteo does not report a per-day confidence figure this script could surface.
+- Results are a live snapshot; the forecast for a given date will change between runs as new model data comes in.
 
 ---
 
@@ -1182,6 +1313,45 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Requires `weather.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Reports current conditions only — there is no forecast, hourly, or historical data to fall back on, so it says so rather than fabricating one.
 - Inherits all the limitations of [`weather.py`](#weatherpy) itself (geocoding takes only the top match for an ambiguous name, live-snapshot results).
+
+---
+
+## Claude Code agent: `weather-forecast`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/weather-forecast.md`. It calls no API itself — it shells out to [`weather_forecast.py`](#weather_forecastpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer requests like "what's the forecast for Tokyo this week?", "will it rain in London tomorrow?", "5-day forecast for Chicago", or "is it going to be hot in Singapore this weekend?" by running the script and summarizing its JSON output, instead of guessing or using stale training data. For "what's the weather **right now**" questions (no forecast implied), Claude Code reaches for the [`weather`](#claude-code-agent-weather) agent instead.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for upcoming/future weather questions about a named place, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "weather-forecast"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
+2. Maps the user's phrasing to `--days` — "tomorrow" → 2 (reporting the second day), "this week" → 7, a specific count → that count, otherwise the script default of 5 — and to `--unit`, defaulting to `celsius` unless Fahrenheit is asked for or clearly expected.
+3. Runs `python3 weather_forecast.py "LOCATION" [--days N] [--unit celsius|fahrenheit] --json` from the repo root.
+4. Parses the JSON object's `days` array (`date`, `condition`, `temp_max`, `temp_min`, `precipitation_probability_max`, ...) and reports either a single day's condition/high-low/rain-chance or a compact multi-day table, calling out any day with notably high rain chance or a big temperature swing. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`weather_forecast.py`](#weather_forecastpy) |
+
+### Notes / limitations
+
+- Requires `weather_forecast.py`, its `weather.py` dependency, and the `requests` package to be present and runnable from the repo root.
+- Reports one high/low/condition summary per day, not an hourly breakdown, and has no current-conditions reading — for "right now" it defers to the [`weather`](#claude-code-agent-weather) agent rather than approximating from the forecast's first day.
+- Inherits all the limitations of [`weather_forecast.py`](#weather_forecastpy) itself (geocoding takes only the top match for an ambiguous name, per-day summary codes, forecast accuracy tapering toward day 16, live-snapshot results).
 
 ---
 
