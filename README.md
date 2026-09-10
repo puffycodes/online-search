@@ -24,6 +24,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
+- [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
 - [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_close_history.py` + `indicators.py` and reports whether a named stock is trending up or down
 - [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail
@@ -1615,6 +1616,48 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's chart or a "symbol may be delisted" error.
 - The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
 - Inherits all the limitations of [`stock_candlestick.py`](#stock_candlestickpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
+
+---
+
+## Claude Code agent: `stock-rebased-chart`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-rebased-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_rebased_chart.py`](#stock_rebased_chartpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
+
+### Purpose
+
+Lets Claude Code answer requests like "compare AAPL and MSFT since January", "rebased chart of Shell vs BP this year", "which has done better since June, Nvidia or AMD?", or "normalize Apple, Microsoft and Google to 100 from the start of the year and plot them" by running the script and handing back the chart — a *relative-performance* comparison (every line starts at 100 on a common date), not an absolute-price chart.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for "how have these stocks moved relative to each other since \<date\>" / "compare / index / normalize / rebase \<companies\>" requests, based on the `description` field in its frontmatter. For a single stock's own price history as a chart it reaches for [`stock-candlestick-chart`](#claude-code-agent-stock-candlestick-chart) instead.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-rebased-chart"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), and passes every one as a separate positional argument; if a ticker is uncertain it says so rather than guessing. Mixed exchanges/currencies are fine — rebasing is a ratio.
+2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`.
+3. Chooses the base date: for a "since \<date>" that is also the window start it sets `--start` and lets `--base-date` default to the first date in the first symbol's series; it passes `--base-date` explicitly only when the reference date sits *inside* a longer window, picking a trading day (a symbol with no settled close on that exact date is dropped with a warning).
+4. Runs `python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] <window flags> [--base-date …] -o /tmp/rebased_<TICKERS>.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
+5. Reads the PNG to verify it rendered, then reports a two- to three-sentence summary — the tickers plotted, the period and resolved base date, which line ends furthest above 100 (best relative performer) and which furthest below, any notable crossover, and any requested ticker that was dropped — ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash`, `Read` |
+| Underlying script | [`stock_rebased_chart.py`](#stock_rebased_chartpy) |
+
+### Notes / limitations
+
+- Requires `stock_rebased_chart.py` and its `yahoo_finance.py` + `indicators.py` + `cli_utils.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
+- Only as good as the tickers it picks — a wrong or ambiguous symbol yields the wrong company's line or a "symbol may be delisted" warning that silently drops it from the chart.
+- The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
+- Reads approximate levels off the chart axis for its summary — it does not compute exact ending percentages.
+- Inherits all the limitations of [`stock_rebased_chart.py`](#stock_rebased_chartpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, an **exact** base-date match required per symbol, raw unadjusted closes, `--show` unavailable).
 
 ---
 
