@@ -27,11 +27,11 @@ On failure the process exits non-zero and prints an error to stderr.
 
 import argparse
 import datetime as dt
-import sys
 
 import requests
 
 import yahoo_finance as yf
+from cli_utils import die, positive_int
 from indicators import moving_average, moving_average_cross, moving_average_cross_flip
 
 VALID_INTERVALS = ["1d", "1wk", "1mo"]
@@ -313,7 +313,7 @@ def parse_args(argv=None):
     )
     window.add_argument(
         "--last",
-        type=int,
+        type=positive_int,
         metavar="N",
         help="Plot only the most recent N bars",
     )
@@ -363,10 +363,6 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
 
-    if args.last is not None and args.last < 1:
-        print("Error: --last must be a positive integer", file=sys.stderr)
-        sys.exit(1)
-
     try:
         params = yf.build_params(
             interval=args.interval, range_=args.range,
@@ -375,8 +371,7 @@ def main(argv=None):
         result = yf.fetch_history(args.symbol, params)
         meta, rows = extract_rows(result)
     except (requests.RequestException, ValueError, KeyError) as exc:
-        print(f"Error: failed to fetch prices for {args.symbol!r}: {exc}", file=sys.stderr)
-        sys.exit(1)
+        die(f"failed to fetch prices for {args.symbol!r}: {exc}")
 
     # Compute the moving averages on the full fetched series, then trim in step
     # with rows so a --last window still shows correct values at its left edge
@@ -401,12 +396,9 @@ def main(argv=None):
             flip_dir = flip_dir[-args.last:]
 
     if not rows:
-        print(f"Error: no price data found for {args.symbol!r}", file=sys.stderr)
-        sys.exit(1)
+        die(f"no price data found for {args.symbol!r}")
 
-    symbol = meta.get("symbol", args.symbol)
-    exchange = meta.get("fullExchangeName") or meta.get("exchangeName") or "?"
-    currency = meta.get("currency") or ""
+    symbol, exchange, currency = yf.meta_summary(meta, args.symbol)
     out_path = args.output or f"{symbol.replace('.', '_')}_candlestick.png"
 
     try:
@@ -415,8 +407,7 @@ def main(argv=None):
             flip_dir, args.flip_ma, out_path, args.show, args.volume,
         )
     except ImportError:
-        print("Error: matplotlib is required (pip install matplotlib)", file=sys.stderr)
-        sys.exit(1)
+        die("matplotlib is required (pip install matplotlib)")
 
 
 if __name__ == "__main__":

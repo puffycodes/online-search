@@ -92,6 +92,19 @@ def fetch_history(symbol, params):
     return results[0]
 
 
+def meta_summary(meta, fallback_symbol=None):
+    """Pull the display fields out of a chart result's ``meta`` block.
+
+    Returns a ``(symbol, exchange, currency)`` tuple: ``symbol`` falls back
+    to ``fallback_symbol`` then ``"?"``, ``exchange`` to ``"?"``, and
+    ``currency`` to ``""`` when the payload does not carry them.
+    """
+    symbol = meta.get("symbol") or fallback_symbol or "?"
+    exchange = meta.get("fullExchangeName") or meta.get("exchangeName") or "?"
+    currency = meta.get("currency") or ""
+    return symbol, exchange, currency
+
+
 def extract_series(result):
     """Return (meta, series) from a Yahoo chart result.
 

@@ -29,6 +29,7 @@ import sys
 import requests
 
 import yahoo_finance as yf
+from cli_utils import die, positive_int
 from indicators import rebase
 
 DEFAULT_RANGE = "6mo"
@@ -106,7 +107,7 @@ def parse_args(argv=None):
     )
     window.add_argument(
         "--last",
-        type=int,
+        type=positive_int,
         metavar="N",
         help="Fetch only the most recent N sessions",
     )
@@ -133,18 +134,13 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
 
-    if args.last is not None and args.last < 1:
-        print("Error: --last must be a positive integer", file=sys.stderr)
-        sys.exit(1)
-
     try:
         params = yf.build_params(
             range_=args.range, start=args.start, end=args.end, last=args.last,
         )
         base_date = yf.parse_date(args.base_date).date() if args.base_date else None
     except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        die(str(exc))
 
     fetched = {}
     for symbol in args.symbols:
@@ -161,8 +157,7 @@ def main(argv=None):
         fetched[symbol] = rows
 
     if not fetched:
-        print("Error: no price data found for any symbol", file=sys.stderr)
-        sys.exit(1)
+        die("no price data found for any symbol")
 
     if base_date is None:
         first_symbol = args.symbols[0]
@@ -186,14 +181,12 @@ def main(argv=None):
         series.append((symbol, dates, values))
 
     if not series:
-        print(f"Error: no symbol has a settled close on {base_date:%Y-%m-%d}", file=sys.stderr)
-        sys.exit(1)
+        die(f"no symbol has a settled close on {base_date:%Y-%m-%d}")
 
     try:
         render_chart(series, base_date, args.output, args.show)
     except ImportError:
-        print("Error: matplotlib is required (pip install matplotlib)", file=sys.stderr)
-        sys.exit(1)
+        die("matplotlib is required (pip install matplotlib)")
 
 
 if __name__ == "__main__":

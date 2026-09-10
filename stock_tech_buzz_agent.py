@@ -17,12 +17,12 @@ instead of a human-readable report.
 import argparse
 import json
 import re
-import sys
 
 import requests
 
 import hottest_tech_discussions as hn
 import market_top_volume as market
+from cli_utils import die
 
 STOCK_LIMIT_PER_EXCHANGE = 10
 DISCUSSION_LIMIT = 50
@@ -170,11 +170,7 @@ def main(argv=None):
             limit_per_exchange=args.stock_limit, discussion_limit=args.discussion_limit
         )
     except requests.RequestException as exc:
-        if args.json:
-            print(json.dumps({"error": str(exc)}), file=sys.stderr)
-        else:
-            print(f"Error fetching data: {exc}", file=sys.stderr)
-        sys.exit(1)
+        die(str(exc), args.json)
 
     rows = [result_to_dict(r) for r in results]
 

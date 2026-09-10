@@ -12,9 +12,10 @@ readable report.
 
 import argparse
 import json
-import sys
 
 import requests
+
+from cli_utils import die
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -108,13 +109,24 @@ def get_weather(location, unit="celsius"):
     }
 
 
-def format_weather(row):
-    """Render a get_weather() record as a human-readable text block."""
+def format_place(row):
+    """Assemble a "City, Region, Country" label from a geocoded record.
+
+    Shared by format_weather() here and format_forecast() in
+    weather_forecast.py; the region is dropped when it just repeats the
+    location name, and the country is appended when present.
+    """
     place = row["location"]
     if row.get("admin1") and row["admin1"] != row["location"]:
         place = f"{place}, {row['admin1']}"
     if row.get("country"):
         place = f"{place}, {row['country']}"
+    return place
+
+
+def format_weather(row):
+    """Render a get_weather() record as a human-readable text block."""
+    place = format_place(row)
 
     lines = [
         f"Weather for {place}",
@@ -157,19 +169,10 @@ def main(argv=None):
     try:
         row = get_weather(args.location, unit=args.unit)
     except requests.RequestException as exc:
-        if args.json:
-            print(json.dumps({"error": str(exc)}), file=sys.stderr)
-        else:
-            print(f"Error fetching data: {exc}", file=sys.stderr)
-        sys.exit(1)
+        die(str(exc), args.json)
 
     if row is None:
-        message = f"No location found matching '{args.location}'."
-        if args.json:
-            print(json.dumps({"error": message}), file=sys.stderr)
-        else:
-            print(message, file=sys.stderr)
-        sys.exit(1)
+        die(f"No location found matching '{args.location}'.", args.json)
 
     if args.json:
         print(json.dumps(row, indent=2))

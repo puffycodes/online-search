@@ -19,9 +19,10 @@ non-zero and prints {"error": "..."} to stderr.
 
 import argparse
 import json
-import sys
 
 import requests
+
+from cli_utils import die
 
 # Yahoo rejects requests without a browser-like User-Agent.
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -273,14 +274,7 @@ def main(argv=None):
     try:
         quotes = get_movers(args.market, args.metric, limit)
     except (requests.RequestException, KeyError, ValueError) as exc:
-        message = (
-            f"failed to fetch {args.metric} for market '{args.market}': {exc}"
-        )
-        if args.json:
-            print(json.dumps({"error": message}), file=sys.stderr)
-        else:
-            print(f"Error: {message}", file=sys.stderr)
-        sys.exit(1)
+        die(f"failed to fetch {args.metric} for market '{args.market}': {exc}", args.json)
 
     rows = [quote_to_dict(rank, q) for rank, q in enumerate(quotes, start=1)]
 

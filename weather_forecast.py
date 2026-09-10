@@ -15,11 +15,17 @@ readable report.
 
 import argparse
 import json
-import sys
 
 import requests
 
-from weather import FORECAST_URL, fetch_json, geocode, weather_description
+from cli_utils import die
+from weather import (
+    FORECAST_URL,
+    fetch_json,
+    format_place,
+    geocode,
+    weather_description,
+)
 
 DEFAULT_FORECAST_DAYS = 5
 MAX_FORECAST_DAYS = 16  # Open-Meteo's own limit for the daily forecast.
@@ -88,11 +94,7 @@ def get_forecast(location, days=DEFAULT_FORECAST_DAYS, unit="celsius"):
 
 def format_forecast(row):
     """Render a get_forecast() record as a human-readable table."""
-    place = row["location"]
-    if row.get("admin1") and row["admin1"] != row["location"]:
-        place = f"{place}, {row['admin1']}"
-    if row.get("country"):
-        place = f"{place}, {row['country']}"
+    place = format_place(row)
 
     header = (
         f"{'Date':<12}{'Condition':<26}"
@@ -159,19 +161,10 @@ def main(argv=None):
     try:
         row = get_forecast(args.location, days=args.days, unit=args.unit)
     except requests.RequestException as exc:
-        if args.json:
-            print(json.dumps({"error": str(exc)}), file=sys.stderr)
-        else:
-            print(f"Error fetching data: {exc}", file=sys.stderr)
-        sys.exit(1)
+        die(str(exc), args.json)
 
     if row is None:
-        message = f"No location found matching '{args.location}'."
-        if args.json:
-            print(json.dumps({"error": message}), file=sys.stderr)
-        else:
-            print(message, file=sys.stderr)
-        sys.exit(1)
+        die(f"No location found matching '{args.location}'.", args.json)
 
     if args.json:
         print(json.dumps(row, indent=2))

@@ -26,11 +26,11 @@ structured output. On failure the process exits non-zero and prints
 
 import argparse
 import json
-import sys
 
 import requests
 
 import yahoo_finance as yf
+from cli_utils import die, positive_int
 from valuation import (
     discounted_cash_flow,
     equity_from_enterprise,
@@ -553,7 +553,7 @@ def parse_args(argv=None):
         help=f"Perpetual growth past the forecast (default: {DEFAULT_TERMINAL_GROWTH})",
     )
     parser.add_argument(
-        "--years", type=int, default=DEFAULT_YEARS, metavar="N",
+        "--years", type=positive_int, default=DEFAULT_YEARS, metavar="N",
         help=f"Explicit DCF forecast horizon in years (default: {DEFAULT_YEARS})",
     )
     parser.add_argument(
@@ -589,28 +589,14 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
 
-    if args.years < 1:
-        print("Error: --years must be a positive integer", file=sys.stderr)
-        sys.exit(1)
-
     try:
         modules = fetch_fundamentals(args.symbol)
     except (requests.RequestException, ValueError, KeyError) as exc:
-        message = f"failed to fetch fundamentals for {args.symbol!r}: {exc}"
-        if args.json:
-            print(json.dumps({"error": message}), file=sys.stderr)
-        else:
-            print(f"Error: {message}", file=sys.stderr)
-        sys.exit(1)
+        die(f"failed to fetch fundamentals for {args.symbol!r}: {exc}", args.json)
 
     inputs = collect_inputs(modules)
     if inputs["price"] is None:
-        message = f"no usable fundamentals returned for {args.symbol!r}"
-        if args.json:
-            print(json.dumps({"error": message}), file=sys.stderr)
-        else:
-            print(f"Error: {message}", file=sys.stderr)
-        sys.exit(1)
+        die(f"no usable fundamentals returned for {args.symbol!r}", args.json)
 
     assumptions = resolve_assumptions(inputs, args)
     estimates, used = compute_estimates(inputs, assumptions, args)

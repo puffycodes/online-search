@@ -12,11 +12,12 @@ readable report.
 
 import argparse
 import json
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import requests
+
+from cli_utils import die
 
 HN_BASE = "https://hacker-news.firebaseio.com/v0"
 TOP_STORIES_URL = f"{HN_BASE}/topstories.json"
@@ -118,11 +119,7 @@ def main(argv=None):
     try:
         stories = get_hottest_tech_discussions(limit=args.limit)
     except requests.RequestException as exc:
-        if args.json:
-            print(json.dumps({"error": str(exc)}), file=sys.stderr)
-        else:
-            print(f"Error fetching data: {exc}", file=sys.stderr)
-        sys.exit(1)
+        die(str(exc), args.json)
 
     rows = [story_to_dict(rank, s) for rank, s in enumerate(stories, start=1)]
 

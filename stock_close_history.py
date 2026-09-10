@@ -16,11 +16,11 @@ prints {"error": "..."} to stderr.
 import argparse
 import datetime as dt
 import json
-import sys
 
 import requests
 
 import yahoo_finance as yf
+from cli_utils import die, positive_int
 
 DEFAULT_RANGE = "1mo"
 
@@ -79,7 +79,7 @@ def parse_args(argv=None):
     )
     window.add_argument(
         "--last",
-        type=int,
+        type=positive_int,
         metavar="N",
         help="Return only the most recent N trading sessions",
     )
@@ -96,10 +96,6 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
 
-    if args.last is not None and args.last < 1:
-        print("Error: --last must be a positive integer", file=sys.stderr)
-        sys.exit(1)
-
     try:
         params = yf.build_params(
             range_=args.range, start=args.start, end=args.end, last=args.last
@@ -107,19 +103,12 @@ def main(argv=None):
         result = yf.fetch_history(args.symbol, params)
         meta, rows = extract_rows(result)
     except (requests.RequestException, ValueError, KeyError) as exc:
-        message = f"failed to fetch prices for {args.symbol!r}: {exc}"
-        if args.json:
-            print(json.dumps({"error": message}), file=sys.stderr)
-        else:
-            print(f"Error: {message}", file=sys.stderr)
-        sys.exit(1)
+        die(f"failed to fetch prices for {args.symbol!r}: {exc}", args.json)
 
     if args.last:
         rows = rows[-args.last:]
 
-    symbol = meta.get("symbol", args.symbol)
-    exchange = meta.get("fullExchangeName") or meta.get("exchangeName") or "?"
-    currency = meta.get("currency") or ""
+    symbol, exchange, currency = yf.meta_summary(meta, args.symbol)
 
     if args.json:
         print(
