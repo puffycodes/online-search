@@ -5,7 +5,7 @@ someone who knows a little about stocks but not the underlying maths.
 
 | File | Covers | Module |
 |---|---|---|
-| [indicators.md](indicators.md) | Price indicators: moving averages, price-vs-average, moving-average crossovers and their "flips", and the up/down/flat trend classifier | [`../indicators.py`](../indicators.py) |
+| [indicators.md](indicators.md) | Price indicators: moving averages, price-vs-average, moving-average crossovers and their "flips", rebasing a series to a chosen day, and the up/down/flat trend classifier | [`../indicators.py`](../indicators.py) |
 | [valuations.md](valuations.md) | Intrinsic-value methods: discounted cash flow, reverse DCF, the Gordon growth / dividend model, and price & enterprise multiples | [`../valuation.py`](../valuation.py) |
 
 The project [`README.md`](../README.md) has the precise, function-by-function API

@@ -15,6 +15,7 @@ Quick map:
 | `price_vs_moving_average` | Is today's price above or below that average? |
 | `moving_average_cross` | Which is on top: a fast (short) average or a slow (long) one? |
 | `moving_average_cross_flip` | Flags the exact day the fast/slow order switches. |
+| `rebase` | Redraws the whole series as a ratio to one chosen day, so that day reads 100. |
 | `trend` | One word for a stretch of prices: `up`, `down`, or `flat`. |
 
 ---
@@ -143,7 +144,64 @@ most of them meaningless. Wider pairs (50/200) flip rarely but meaningfully.
 
 ---
 
-## 5. Trend — `trend(prices, window=None, flat_threshold=0.01)`
+## 5. Rebasing — `rebase(prices, n=0)`
+
+**What it tells you.** Not a signal — a change of units. It redraws the whole
+series as a **ratio to one chosen day**, scaled so that day reads exactly 100.
+Every other value becomes "what 100 units invested on that day would be worth
+today."
+
+**Why it exists.** Raw prices don't compare well across different stocks — a
+$900 stock and a $9 stock can't be eyeballed on the same chart, and neither
+tells you which one has *performed* better. Rebasing both to 100 on the same
+starting day turns the comparison into "which line climbed higher," regardless
+of the starting share price or the currency it's quoted in.
+
+**How to picture it.** Pick day `n` (by default the very first day in the
+list). Divide every price — including day `n` itself — by the price on day
+`n`, then multiply by 100.
+
+**Example.**
+
+```
+prices:   50   100   150
+rebased:  100  200   300
+```
+
+Day 0 was 50; by day 2 the price had tripled, so the rebased line reads 300 —
+a 200% gain since day 0, read straight off the chart without doing the percent
+maths yourself.
+
+**Picking a different base day.** Pass `n` to rebase against any day in the
+series, not just the first:
+
+```
+prices:            50   100   150
+rebased (n=1):     50   100   150
+```
+
+Rebasing against day 1 (itself worth 100 before rescaling, coincidentally)
+leaves this particular series unchanged — the point is that `n` can be
+whichever day you want to treat as "the start," e.g. the day you'd have bought
+in, or a date shared across several stocks you're comparing (see
+[`stock_rebased_chart.py`](../README.md#stock_rebased_chartpy), which does
+exactly this for a handful of tickers at once).
+
+**How to read it.** Above 100 = up since the base day; below 100 = down.
+Compare two rebased lines directly — whichever sits higher has done better
+*since that specific day*, even if its raw price is much lower or higher than
+the other stock's.
+
+**Watch out.** The verdict is entirely relative to the base day you chose. The
+same two stocks can look completely different rebased from last month versus
+rebased from last year — there's no "correct" base day, only the one that
+answers the question you're actually asking. It also divides by the base
+day's price, so a base day priced at exactly zero (not realistic for a stock,
+but worth knowing) would fail rather than produce a number.
+
+---
+
+## 6. Trend — `trend(prices, window=None, flat_threshold=0.01)`
 
 **What it tells you.** One word for a run of prices: `"up"`, `"down"`, or
 `"flat"`.
