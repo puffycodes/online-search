@@ -75,6 +75,15 @@ The page is a single HTML file with inline `<style>` — an HN-style card list, 
 - `parse_args(argv=None)` — Parses `--limit` (restricted to `LIMIT_OPTIONS`) and `--output`.
 - `main(argv=None)` — Entry point: renders the page shell, writes it to disk, and prints a one-line summary.
 
+## Tests
+
+`generate_page.py` is covered by the repo's offline `pytest` suite —
+[`tests/test_generate_page.py`](../../tests/test_generate_page.py) exercises
+`render_limit_options`, `render_page` (shell contents, template-brace resolution,
+invalid-limit `ValueError`), `parse_args`, and `main` (writes the file, creates
+parent dirs). Run it from the repo root with `python3 -m pytest`; see
+[`tests/README.md`](../../tests/README.md).
+
 ## Error handling
 
 `generate_page.py` makes no network calls, so generation itself can't fail on a network error.

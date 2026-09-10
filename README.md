@@ -12,6 +12,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for three of the `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
+- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `positive_int` argparse type) imported by the command-line scripts
 - [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `rebase`, `trend`
 - [`valuation.py`](#valuationpy) — dependency-free intrinsic-value estimators: `gordon_growth_value`, `discounted_cash_flow`, `multiple_value` / `ev_multiple_value`, `equity_from_enterprise`, `implied_growth_rate` (reverse DCF)
 - [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) — pulls fundamentals from Yahoo Finance and runs every `valuation.py` method (DCF, reverse DCF, dividend discount, P/E, Graham, EV/EBITDA, P/S) against the current price
@@ -26,6 +27,22 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_close_history.py` + `indicators.py` and reports whether a named stock is trending up or down
 - [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail
+- [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
+
+---
+
+## Tests
+
+Unit tests live in [`tests/`](tests/) and run **offline** — every network call is monkeypatched, so no API is hit.
+
+```bash
+pip install -r requirements-dev.txt
+python3 -m pytest
+```
+
+Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing, `cli_utils.py`), each script's argument parser and output formatters, and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
+
+[`tests/README.md`](tests/README.md) documents the layout, the `FakeResponse` / `FakeSession` doubles and `chart_result` fixture, the monkeypatching conventions, a per-module coverage table, and how to add a test.
 
 ---
 
@@ -37,6 +54,7 @@ Prints the 10 hottest technology discussions currently on [Hacker News](https://
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
 
 ```bash
 pip install requests
@@ -153,6 +171,7 @@ Prints the current weather — condition, temperature, and wind — for a named 
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
 
 ```bash
 pip install requests
@@ -228,14 +247,15 @@ These are set as constants near the top of the file — edit them directly to ch
 - `fetch_current_weather(latitude, longitude, unit="celsius")` — Fetches the `current_weather` object for a coordinate pair.
 - `weather_description(code)` — Maps a WMO weather code to a short description, or `"Unknown (code N)"` for one not in `WEATHER_CODES`.
 - `get_weather(location, unit="celsius")` — Orchestrates geocoding and the weather fetch; returns the flattened `{location, admin1, country, latitude, longitude, temperature, unit, windspeed, winddirection, weather_code, condition, time}` record, or `None` if the location can't be found.
-- `format_weather(row)` — Renders a `get_weather()` record as a multi-line human-readable string.
+- `format_place(row)` — Builds a `"City, Region, Country"` label from a geocoded record (the region is dropped when it just repeats the city, the country appended when present). Shared with `weather_forecast.py`'s `format_forecast()`.
+- `format_weather(row)` — Renders a `get_weather()` record as a multi-line human-readable string (its place line comes from `format_place()`).
 - `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--unit` and `--json`.
 - `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
 
 ### Error handling
 
 - If either API request fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
-- If the location can't be geocoded (no match), the script prints `"No location found matching '<LOCATION>'."` (or `{"error": "..."}` with `--json`) to stderr and exits with status code 1.
+- If the location can't be geocoded (no match), the script prints `Error: No location found matching '<LOCATION>'.` (or `{"error": "No location found matching '<LOCATION>'."}` with `--json`) to stderr and exits with status code 1.
 
 ### Notes / limitations
 
@@ -250,13 +270,13 @@ These are set as constants near the top of the file — edit them directly to ch
 
 Prints the multi-day weather forecast — condition, high/low temperature, rain chance, and max wind — for a named location, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and forecast APIs. No API key or authentication required.
 
-Requires `weather.py` to be present in the same directory — it imports `geocode`, `fetch_json`, `weather_description`, and `FORECAST_URL` directly from it rather than shelling out or duplicating that logic (the same sharing pattern [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) uses for its two underlying scripts).
+Requires `weather.py` to be present in the same directory — it imports `geocode`, `fetch_json`, `weather_description`, `format_place`, and `FORECAST_URL` directly from it rather than shelling out or duplicating that logic (the same sharing pattern [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) uses for its two underlying scripts). It also imports `die` from [`cli_utils.py`](#cli_utilspy).
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `weather.py` module (no install — run from the repo root so it imports)
+- the repo's own `weather.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests
@@ -352,17 +372,17 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - `fetch_daily_forecast(latitude, longitude, days=5, unit="celsius")` — Fetches the `daily` object for a coordinate pair.
 - `get_forecast(location, days=5, unit="celsius")` — Orchestrates geocoding (via `weather.geocode()`) and the daily-forecast fetch; returns `{location, admin1, country, latitude, longitude, unit, days}` where `days` is a list of `{date, weather_code, condition, temp_max, temp_min, precipitation_sum, precipitation_probability_max, windspeed_max}` in chronological order, or `None` if the location can't be found.
-- `format_forecast(row)` — Renders a `get_forecast()` record as a human-readable table.
+- `format_forecast(row)` — Renders a `get_forecast()` record as a human-readable table (its place line comes from `weather.format_place()`).
 - `_valid_days(value)` — argparse `type` for `--days`: an integer in `[1, MAX_FORECAST_DAYS]`; raises `argparse.ArgumentTypeError` otherwise.
 - `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--days`, `--unit`, and `--json`.
 - `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
 
-See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, and `weather_description()`.
+See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `weather_description()`, and `format_place()`.
 
 ### Error handling
 
 - If either API request fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
-- If the location can't be geocoded (no match), the script prints `"No location found matching '<LOCATION>'."` (or `{"error": "..."}` with `--json`) to stderr and exits with status code 1.
+- If the location can't be geocoded (no match), the script prints `Error: No location found matching '<LOCATION>'.` (or `{"error": "No location found matching '<LOCATION>'."}` with `--json`) to stderr and exits with status code 1.
 - A `--days` value outside `1-16` is rejected by argument parsing itself (exit code 2), before any request is made.
 
 ### Notes / limitations
@@ -383,6 +403,7 @@ Prints the top movers on a stock market you name — the highest-volume stocks, 
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
 
 ```bash
 pip install requests
@@ -558,6 +579,7 @@ Prints the past daily open / high / low / close prices (plus adjusted close and 
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
 
 ```bash
 pip install requests
@@ -642,16 +664,16 @@ Steps 1–2 (window building and fetching) plus the raw-payload navigation in st
 
 - `extract_rows(result)` — Returns `(meta, rows)` where `rows` is the list of `{date, open, high, low, close, adj_close, volume}` dicts for settled sessions only. Calls `yahoo_finance.extract_series()` for the raw arrays, then rounds to 4 dp and formats `date` as a `YYYY-MM-DD` string.
 - `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, and `--json`.
-- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, trims for `--last`, and prints the report (human-readable or JSON).
+- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, trims for `--last`, resolves the report header via `yahoo_finance.meta_summary()`, and prints the report (human-readable or JSON). Fatal errors go through `cli_utils.die()`.
 
-See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_history()`.
+See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history()`, and `meta_summary()`.
 
 ### Error handling
 
 - If the request fails (network error, timeout, non-2xx) or Yahoo returns an error body (`"No data found, symbol may be delisted"` for an unknown ticker), the script prints an error and exits with status code 1 — plain text on stderr normally, or `{"error": "..."}` on stderr when `--json` is passed.
 - An invalid `--range` value is rejected by argument parsing (exit code 2); passing both `--range` and `--last` is likewise rejected.
 - A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
-- A `--last` value below 1 exits with status code 1.
+- A `--last` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
 - If no settled sessions fall in the window, the script prints `"No settled price data found for <SYMBOL>."` (or `{"prices": []}` with `--json`) and exits normally.
 
 ### Notes / limitations
@@ -673,7 +695,7 @@ Fetches the past price history of one stock from [Yahoo Finance](https://finance
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
 - [`matplotlib`](https://pypi.org/project/matplotlib/)
-- the repo's own `yahoo_finance.py` and `indicators.py` modules (no install — run from the repo root so they import)
+- the repo's own `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests matplotlib
@@ -748,16 +770,16 @@ The interval/range/colour constants at the top of this file are local; the share
 - `_parse_flip_ma_arg(value)` — argparse `type` for `--flip-ma`: turns `"20,50"` into the tuple `(20, 50)` (order kept — first is the fast window); `""` / `"none"` / `"off"` give `None`. Raises `argparse.ArgumentTypeError` unless the value is exactly two positive integers.
 - `render_chart(symbol, exchange, currency, interval, rows, ma_series, flip_dir, flip_ma, out_path, show, with_volume)` — Draws the candlestick figure, the moving-average lines from `ma_series` (a `{window: [value|None, …]}` dict aligned to `rows`), the cross-flip arrows from `flip_dir` (a `["above"|"below"|None, …]` list aligned to `rows`; `flip_ma` is the `(fast, slow)` pair, used only for the legend label) when it is not `None`, and the optional volume panel, then saves or shows it. Imports matplotlib lazily and selects the `Agg` backend unless `--show`.
 - `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--interval`, `--volume`, `--ma`, `--flip-ma`, `--output`, and `--show`.
-- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, computes the `--ma` averages via `indicators.moving_average()` and (unless `--flip-ma none`) the per-bar flip directions via `indicators.moving_average_cross_flip()` + `indicators.moving_average_cross()`, trims them all for `--last`, resolves the output path, and renders.
+- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, computes the `--ma` averages via `indicators.moving_average()` and (unless `--flip-ma none`) the per-bar flip directions via `indicators.moving_average_cross_flip()` + `indicators.moving_average_cross()`, trims them all for `--last`, resolves the title fields via `yahoo_finance.meta_summary()` and the output path, and renders. Fatal errors go through `cli_utils.die()`.
 
-See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_history()`.
+See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history()`, and `meta_summary()`.
 
 ### Error handling
 
 - If the request fails (network error, timeout, non-2xx) or Yahoo returns an error body (`"No data found, symbol may be delisted"` for an unknown ticker), the script prints `Error: …` to stderr and exits with status code 1.
 - An invalid `--range` or `--interval` value, or a `--ma` list that isn't comma-separated positive integers (or `none`), is rejected by argument parsing (exit code 2); passing both `--range` and `--last` is likewise rejected.
 - A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
-- A `--last` value below 1 exits with status code 1.
+- A `--last` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
 - If no complete bars fall in the window, the script prints `Error: no price data found for '<SYMBOL>'` and exits with status code 1.
 - If matplotlib isn't installed, it prints `Error: matplotlib is required (pip install matplotlib)` and exits with status code 1.
 
@@ -782,7 +804,7 @@ Fetches closing-price history for a series of stocks from [Yahoo Finance](https:
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
 - [`matplotlib`](https://pypi.org/project/matplotlib/)
-- the repo's own `yahoo_finance.py` and `indicators.py` modules (no install — run from the repo root so they import)
+- the repo's own `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests matplotlib
@@ -857,7 +879,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_histo
 - If **every** symbol fails to fetch, or none has a settled close in the window, the script prints `Error: no price data found for any symbol` and exits with status code 1.
 - A symbol with no settled close exactly on the resolved base date prints a `Warning: …` to stderr and is dropped; if that leaves no symbols at all, the script prints `Error: no symbol has a settled close on <date>` and exits with status code 1.
 - An invalid `--range`, `--base-date`, `--start`, or `--end` is rejected (argument parsing exit code 2 for `--range`, or status code 1 with an explanatory message for a malformed date); passing both `--range` and `--last` is likewise rejected.
-- A `--last` value below 1 exits with status code 1.
+- A `--last` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
 - If matplotlib isn't installed, it prints `Error: matplotlib is required (pip install matplotlib)` and exits with status code 1.
 
 ### Notes / limitations
@@ -895,10 +917,30 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`s
 - `build_params(interval="1d", range_=None, start=None, end=None, last=None)` — Returns the chart-endpoint query params. The window is chosen by, in priority order: an explicit `start`/`end` pair (→ `period1`/`period2`, end padded a day), then `last` (→ a calendar look-back widened for `1wk` / `1mo` bars), then `range_`. Raises `ValueError` for `end` without `start` or an `end` not after `start`. `includeAdjustedClose=true` is always set. Callers pass `interval="1d"` (the default) for daily data.
 - `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
 - `extract_series(result)` — Returns `(meta, series)` where `series` is a dict of parallel lists straight off the payload — `timestamp`, `open`, `high`, `low`, `close`, `volume` — plus `adjclose` (a list or `None`) and the resolved `gmtoffset`. Callers turn these into row dicts.
+- `meta_summary(meta, fallback_symbol=None)` — Pulls the display fields out of a chart result's `meta` block: returns `(symbol, exchange, currency)`, with `symbol` falling back to `fallback_symbol` then `"?"`, `exchange` to `"?"`, and `currency` to `""`. Used by `stock_close_history.py` and `stock_candlestick.py` for their report headers.
 
 ### Notes / limitations
 
 - Changing a constant or the `build_params` window logic here affects **all three** `stock_*` scripts that use it. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_close_history.py` gets the same params it did before.
+
+---
+
+## cli_utils.py
+
+Two tiny helpers shared by the command-line scripts, so error exits and integer-argument validation are uniform across them. Not a CLI — it is imported, not run.
+
+### Requirements
+
+- Python 3.7+ (standard library only)
+
+### API reference
+
+- `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
+- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts) and `--years` (`stock_intrinsic_value.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
+
+### Notes / limitations
+
+- `die()` always exits `1`; the argparse layer's own errors (an unparsable value, a rejected `positive_int`) exit `2`. Scripts that had a manual `--last < 1` / `--years < 1` check now get that rejection from argparse instead, so those cases changed from exit `1` to exit `2` and now happen before any network call.
 
 ---
 
@@ -1076,7 +1118,7 @@ What it computes:
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `yahoo_finance.py` (for its `HEADERS` / timeout) and `valuation.py` — run from the repo root so they import
+- the repo's own `yahoo_finance.py` (for its `HEADERS` / timeout), `valuation.py`, and `cli_utils.py` — run from the repo root so they import
 
 ### Usage
 
@@ -1145,7 +1187,7 @@ Intrinsic value estimates (per share unless noted)
 ### Error handling
 
 - Network failure, a bad ticker, or a response with no usable fundamentals → exits non-zero, printing `Error: …` to stderr (or `{"error": "…"}` with `--json`).
-- `--years` below 1 is rejected before any request.
+- A `--years` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
 
 ### Notes / limitations
 
@@ -1166,6 +1208,7 @@ Requires `market_top_volume.py` and `hottest_tech_discussions.py` to be present 
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
 
 ```bash
 pip install requests
