@@ -6,9 +6,9 @@ Every function takes ``prices`` as an iterable of numbers, oldest session
 first (e.g. the ``close`` field of each row from stock_close_history.py's
 ``--json`` output). Series transforms (``moving_average``,
 ``price_vs_moving_average``, ``moving_average_cross``,
-``moving_average_cross_flip``) return a list the same length as the input so
-the result lines up session-for-session with the source rows; classifiers
-(``trend``) return a single verdict.
+``moving_average_cross_flip``, ``rebase``) return a list the same length as
+the input so the result lines up session-for-session with the source rows;
+classifiers (``trend``) return a single verdict.
 
 Not a CLI - this module is imported, not run.
 """
@@ -134,6 +134,28 @@ def moving_average_cross_flip(prices, fast, slow):
         out.append(prev_side is not None and value != prev_side)
         prev_side = value
     return out
+
+
+def rebase(prices, n=0):
+    """Rescale a price series so its ``n``-th session reads as 100.
+
+    prices : iterable of numbers, oldest session first.
+    n      : index of the reference session (default 0, the first price).
+
+    Returns a list the same length as ``prices``: each element is the ratio
+    of that session's price to ``prices[n]``, scaled so ``prices[n]`` itself
+    maps to 100.
+
+    >>> rebase([50, 100, 150])
+    [100.0, 200.0, 300.0]
+    >>> rebase([50, 100, 150], n=1)
+    [50.0, 100.0, 150.0]
+    """
+    prices = list(prices)
+    base = prices[n]
+    if base == 0:
+        raise ValueError("reference price (prices[n]) must be non-zero")
+    return [price / base * 100 for price in prices]
 
 
 def _ols_slope(values):
