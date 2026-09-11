@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Retrieve the top web search results for a query, using the Brave
-Search API: https://api.search.brave.com/app/documentation/web-search/get-started
+Search API: https://api-dashboard.search.brave.com/app/documentation/web-search/get-started
 
 Requires a BRAVE_API_KEY, set as an environment variable or in a .env
 file in the current directory. Get one (free tier: 2,000 queries/month)

@@ -1323,7 +1323,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ## web_search_brave.py
 
-Prints the top web search results for a query, using the [Brave Search API](https://api.search.brave.com/app/documentation/web-search/get-started). Requires a `BRAVE_API_KEY` (free tier: 2,000 queries/month).
+Prints the top web search results for a query, using the [Brave Search API](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started). Requires a `BRAVE_API_KEY` (free tier: 2,000 queries/month).
 
 This isn't the first thing tried: Google's Programmable Search Engine no longer offers free whole-web search, and DuckDuckGo has no official search API — scraping its HTML pages (e.g. via the `duckduckgo_search` package) gets rate-limited almost immediately, including from residential IPs. Brave's API is an official, supported, paid-tier-optional endpoint, so it's what this script settled on.
 
