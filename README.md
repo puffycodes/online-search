@@ -17,6 +17,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`valuation.py`](#valuationpy) — dependency-free intrinsic-value estimators: `gordon_growth_value`, `discounted_cash_flow`, `multiple_value` / `ev_multiple_value`, `equity_from_enterprise`, `implied_growth_rate` (reverse DCF)
 - [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) — pulls fundamentals from Yahoo Finance and runs every `valuation.py` method (DCF, reverse DCF, dividend discount, P/E, Graham, EV/EBITDA, P/S) against the current price
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
+- [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
 - [`app/hottest_discussions/`](#apphottest_discussions) — small web-page generator pairing with `hottest_tech_discussions.py`: a static HTML page with a "Show" drop-down and Refresh button that fetch discussions client-side
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location
@@ -1317,6 +1318,122 @@ These are set as constants near the top of the file — edit them directly to ch
 - Ticker-symbol matching is case-sensitive and whole-word to cut down on false positives, but is inherently heuristic: an all-caps acronym coincidentally matching a real ticker (outside the curated `AMBIGUOUS_SYMBOLS` list) could still produce a false positive, and a legitimate mention using unusual casing could be missed.
 - Company-name matching only strips one legal-entity suffix; a distinctive-enough remaining name (e.g. "NVIDIA", "Moderna") is a solid signal, but this hasn't been tuned against every possible company name shape.
 - Inherits the limitations of both underlying scripts — see [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy)'s own Notes / limitations sections.
+
+---
+
+## web_search_brave.py
+
+Prints the top web search results for a query, using the [Brave Search API](https://api.search.brave.com/app/documentation/web-search/get-started). Requires a `BRAVE_API_KEY` (free tier: 2,000 queries/month).
+
+This isn't the first thing tried: Google's Programmable Search Engine no longer offers free whole-web search, and DuckDuckGo has no official search API — scraping its HTML pages (e.g. via the `duckduckgo_search` package) gets rate-limited almost immediately, including from residential IPs. Brave's API is an official, supported, paid-tier-optional endpoint, so it's what this script settled on.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- a Brave Search API key — register at https://api-dashboard.search.brave.com/register
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 web_search_brave.py QUERY [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `QUERY` (positional) | — | Free-text search query, e.g. `"python programming language"` |
+| `--limit N` | 10 | Number of results to return (paginates in batches of up to 20 if `N` exceeds that) |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Searching for: python programming language
+
+1. Welcome to Python.org
+   https://www.python.org/
+   Python is a programming language that lets you work quickly and integrate systems more effectively.
+
+2. Python (programming language) - Wikipedia
+   https://en.wikipedia.org/wiki/Python_(programming_language)
+   Python is a high-level, general-purpose programming language that emphasizes code readability, simplicity, and ease-of-writing with the use of significant indentation, an extensive ("batteries-included") standard library, and garbage collection. Python supports multiple programming paradigms ...
+
+3. Introduction to Python
+   https://www.w3schools.com/python/python_intro.asp
+   Python is a popular programming language. It was created by Guido van Rossum, and released in 1991.
+
+...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 web_search_brave.py "claude ai" --limit 2 --json
+```
+
+```json
+[
+  {
+    "rank": 1,
+    "title": "Claude",
+    "url": "https://claude.ai/login",
+    "snippet": "Claude is Anthropic's AI, built for problem solvers. Tackle complex challenges, analyze data, write code, and think through your hardest work."
+  },
+  {
+    "rank": 2,
+    "title": "Claude.ai",
+    "url": "https://claude.com/",
+    "snippet": "Claude is an artificial intelligence, trained by Anthropic using Constitutional AI to be safe, accurate, and secure — the trusted assistant for you to do your best work."
+  }
+]
+```
+
+With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `BRAVE_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+2. **Fetch, paginating as needed** — Calls the Brave Search API's `/res/v1/web/search` endpoint with the query and an `X-Subscription-Token` header. The API caps each request at 20 results (`MAX_RESULTS_PER_REQUEST`), so `--limit` values above that page across multiple requests using the `offset` parameter.
+3. **Strip highlighting markup** — Brave wraps matched terms in titles/descriptions with `<strong>` tags and HTML-escapes entities (e.g. `&quot;`); `strip_markup()` removes the tags and unescapes the entities before display.
+4. **Display top N** — Prints each result's rank, title, URL, and snippet.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
+| `MAX_RESULTS_PER_REQUEST` | 20 | Brave API's per-request result cap, used to decide when to paginate |
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
+
+### API reference
+
+- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `strip_markup(text)` — Strips Brave's `<strong>` highlighting tags and unescapes HTML entities from a title/description string.
+- `fetch_results(query, limit, api_key)` — Calls the Brave Search API, paginating via `offset` until `limit` results are collected (or the API returns fewer than requested, meaning there are no more); returns a list of raw result dicts.
+- `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes.
+- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If `BRAVE_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- If a request fails (network error, timeout, non-2xx response — e.g. an invalid key or exceeded quota), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
+
+### Notes / limitations
+
+- Requires a Brave Search API key; the free tier is capped at 2,000 queries/month, beyond which requests fail or incur cost depending on the account's plan.
+- `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
+- Result ranking, freshness, and coverage reflect Brave's independent index, not Google's — they will generally overlap for well-known queries but can diverge for niche or very recent topics.
 
 ---
 
