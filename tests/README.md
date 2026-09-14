@@ -57,6 +57,8 @@ tests/
   test_stock_candlestick.py
   test_stock_rebased_chart.py
   test_stock_tech_buzz_agent.py
+  test_web_search_brave.py
+  test_web_search_duckduckgo.py
   test_generate_page.py
 ```
 
@@ -132,6 +134,8 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_stock_candlestick.py` | `stock_candlestick` | `_parse_ma_arg` / `_parse_flip_ma_arg` full matrices; `extract_rows` skips bars with missing OHLC, date is `datetime` |
 | `test_stock_rebased_chart.py` | `stock_rebased_chart` | `fetch_closes` None-close skip; `main` base-date defaulting + fallback, per-symbol skip when the base date is missing, invalid `--base-date`, all-symbols-fail exit |
 | `test_stock_tech_buzz_agent.py` | `stock_tech_buzz_agent` | `normalize_company_name` (one outer suffix); `stock_mentions_in_title` case-sensitivity / ambiguous symbols / word boundaries / short-name skip; `get_top_volume_stocks` dedup; `find_stock_buzz` match/no-match; `main` |
+| `test_web_search_brave.py` | `web_search_brave` | `strip_markup`; `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` pagination / early-stop / truncation / `raise_for_status`; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
+| `test_web_search_duckduckgo.py` | `web_search_duckduckgo` | `fetch_results` via a fake `DDGS` context manager, including `DDGSException` propagation; `result_to_dict`; `parse_args`; `main` (missing `ddgs` dependency, search error, JSON/text output, no results) |
 | `test_generate_page.py` | `app/hottest_discussions/generate_page` | `render_limit_options` selected marker; `render_page` shell/timestamp/brace-resolution/invalid-limit; `parse_args`; `main` writes file + creates parent dir |
 
 ## Adding a test
