@@ -38,6 +38,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 **[Web Search](#web-search)**
 - [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
 - [`web_search_duckduckgo.py`](#web_search_duckduckgopy) — top web search results for a query, by scraping DuckDuckGo via the `ddgs` package (no API key, but unofficial and rate-limit-prone)
+- [`web_search_serpapi.py`](#web_search_serpapipy) — top web search results for a query, via the SerpApi Google Search API (requires a free `SERPAPI_API_KEY`)
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -1967,6 +1968,121 @@ These are set as constants near the top of the file — edit them directly to ch
 - **Package choice matters a lot here.** The legacy `duckduckgo_search` package rate-limits almost immediately (observed failing on the first request in testing); `ddgs`, the maintained successor, is far less rate-limit-prone. Always prefer `ddgs`; only fall back to `duckduckgo_search` when stuck on Python <3.10, and expect frequent failures in that mode.
 - No pagination beyond what `ddgs` fetches internally for `max_results` — very large `--limit` values may be slower or less reliable than with `web_search_brave.py`.
 - Result ranking, freshness, and coverage reflect DuckDuckGo's index, not Google's or Brave's — they will generally overlap for well-known queries but can diverge for niche or very recent topics.
+
+---
+
+## web_search_serpapi.py
+
+Prints the top web search results for a query, using the [SerpApi Google Search API](https://serpapi.com/search-api). Requires a `SERPAPI_API_KEY` (free tier: 100 searches/month).
+
+See [`web_search_brave.py`](#web_search_bravepy)'s docstring for why Google's own Programmable Search Engine and scraping DuckDuckGo's HTML were ruled out for those two scripts. SerpApi is a third option: it proxies Google's actual search results through an official, supported API, at the cost of a paid-tier-optional subscription and a dependency on a third-party scraping service rather than a first-party search index like Brave's.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- a SerpApi key — register at https://serpapi.com/users/sign_up
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 web_search_serpapi.py QUERY [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `QUERY` (positional) | — | Free-text search query, e.g. `"python programming language"` |
+| `--limit N` | 10 | Number of results to return (paginates in batches of up to 100 if `N` exceeds that) |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Searching for: python programming language
+
+1. Welcome to Python.org
+   https://www.python.org/
+   Python is a programming language that lets you work quickly and integrate systems more effectively.
+
+2. Python (programming language) - Wikipedia
+   https://en.wikipedia.org/wiki/Python_(programming_language)
+   Python is a high-level, general-purpose programming language that emphasizes code readability, simplicity, and ease-of-writing with the use of significant indentation, an extensive ("batteries-included") standard library, and garbage collection. Python supports multiple programming paradigms ...
+
+3. Introduction to Python
+   https://www.w3schools.com/python/python_intro.asp
+   Python is a popular programming language. It was created by Guido van Rossum, and released in 1991.
+
+...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 web_search_serpapi.py "claude ai" --limit 2 --json
+```
+
+```json
+[
+  {
+    "rank": 1,
+    "title": "Claude",
+    "url": "https://claude.ai/login",
+    "snippet": "Claude is Anthropic's AI, built for problem solvers. Tackle complex challenges, analyze data, write code, and think through your hardest work."
+  },
+  {
+    "rank": 2,
+    "title": "Claude.ai",
+    "url": "https://claude.com/",
+    "snippet": "Claude is an artificial intelligence, trained by Anthropic using Constitutional AI to be safe, accurate, and secure — the trusted assistant for you to do your best work."
+  }
+]
+```
+
+With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `SERPAPI_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+2. **Fetch, paginating as needed** — Calls SerpApi's `/search.json` endpoint with `engine=google` and the query. The engine caps each request at 100 organic results (`MAX_RESULTS_PER_REQUEST`), so `--limit` values above that page across multiple requests using the `start` parameter.
+3. **Check for an in-band error** — SerpApi reports failures (e.g. an invalid key or exhausted quota) as an HTTP 200 response with an `"error"` field rather than a non-2xx status, so `fetch_results()` checks for that explicitly and raises to trigger the normal error path.
+4. **Display top N** — Prints each result's rank, title, URL, and snippet.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
+| `MAX_RESULTS_PER_REQUEST` | 100 | SerpApi Google engine's per-request organic-result cap, used to decide when to paginate |
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
+
+### API reference
+
+- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `fetch_results(query, limit, api_key)` — Calls the SerpApi Google Search API, paginating via `start` until `limit` results are collected (or the API returns fewer than requested, meaning there are no more); raises `requests.RequestException` if the response body carries an `"error"` field; returns a list of raw result dicts.
+- `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes.
+- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If `SERPAPI_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- If a request fails (network error, timeout, non-2xx response, or a 200 response carrying an `"error"` field — e.g. an invalid key or exceeded quota), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
+
+### Notes / limitations
+
+- Requires a SerpApi key; the free tier is capped at 100 searches/month, beyond which requests fail or incur cost depending on the account's plan — a much tighter cap than Brave's free tier.
+- `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
+- SerpApi scrapes Google's actual results pages, so ranking, freshness, and coverage reflect Google's index — closer to what a user would see in a browser than Brave's or DuckDuckGo's independent indexes, but dependent on a third party's continued ability to scrape Google reliably.
 
 ---
 
