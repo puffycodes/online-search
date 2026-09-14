@@ -18,6 +18,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) — pulls fundamentals from Yahoo Finance and runs every `valuation.py` method (DCF, reverse DCF, dividend discount, P/E, Graham, EV/EBITDA, P/S) against the current price
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
+- [`web_search_duckduckgo.py`](#web_search_duckduckgopy) — top web search results for a query, by scraping DuckDuckGo via the `ddgs` package (no API key, but unofficial and rate-limit-prone)
 - [`app/hottest_discussions/`](#apphottest_discussions) — small web-page generator pairing with `hottest_tech_discussions.py`: a static HTML page with a "Show" drop-down and Refresh button that fetch discussions client-side
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location
@@ -1434,6 +1435,118 @@ These are set as constants near the top of the file — edit them directly to ch
 - Requires a Brave Search API key; the free tier is capped at 2,000 queries/month, beyond which requests fail or incur cost depending on the account's plan.
 - `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
 - Result ranking, freshness, and coverage reflect Brave's independent index, not Google's — they will generally overlap for well-known queries but can diverge for niche or very recent topics.
+
+---
+
+## web_search_duckduckgo.py
+
+Prints the top web search results for a query, by scraping DuckDuckGo's HTML search results via the [`ddgs`](https://pypi.org/project/ddgs/) package (the maintained successor to `duckduckgo_search`). No API key required.
+
+This is the unofficial method [`web_search_brave.py`](#web_search_bravepy)'s docstring warns about: DuckDuckGo has no supported search API, so scraping can get rate-limited under sustained use, even from residential IPs. This script exists for occasional, key-free lookups; prefer `web_search_brave.py` for anything higher-volume or production-facing.
+
+### Requirements
+
+- Python 3.10+
+- [`ddgs`](https://pypi.org/project/ddgs/) — use this, not its predecessor `duckduckgo_search` (renamed in 2025); see below
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+
+```bash
+pip install ddgs
+```
+
+**Use `ddgs`, not `duckduckgo_search`.** `duckduckgo_search` is the unmaintained pre-rename package name; it hits DuckDuckGo's rate limit ("202 Ratelimit") almost immediately, often on the very first query. `ddgs` is the actively maintained successor and is far less prone to this. The catch: `ddgs` requires Python 3.10+. On an older interpreter that can't install it, this script falls back to importing `duckduckgo_search` if that's what's installed — treat that as a degraded, rate-limit-prone mode, not an equivalent substitute; the real fix is a Python 3.10+ environment with `ddgs`.
+
+### Usage
+
+```bash
+python3 web_search_duckduckgo.py QUERY [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `QUERY` (positional) | — | Free-text search query, e.g. `"python programming language"` |
+| `--limit N` | 10 | Number of results to return |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Searching for: python programming language
+
+1. Welcome to Python.org
+   https://www.python.org/
+   Python is a programming language that lets you work quickly and integrate systems more effectively.
+
+2. Python (programming language) - Wikipedia
+   https://en.wikipedia.org/wiki/Python_(programming_language)
+   Python is a high-level, general-purpose programming language that emphasizes code readability, simplicity, and ease-of-writing with the use of significant indentation, an extensive ("batteries-included") standard library, and garbage collection. Python supports multiple programming paradigms ...
+
+3. Introduction to Python
+   https://www.w3schools.com/python/python_intro.asp
+   Python is a popular programming language. It was created by Guido van Rossum, and released in 1991.
+
+...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 web_search_duckduckgo.py "claude ai" --limit 2 --json
+```
+
+```json
+[
+  {
+    "rank": 1,
+    "title": "Claude",
+    "url": "https://claude.ai/login",
+    "snippet": "Claude is Anthropic's AI, built for problem solvers. Tackle complex challenges, analyze data, write code, and think through your hardest work."
+  },
+  {
+    "rank": 2,
+    "title": "Claude.ai",
+    "url": "https://claude.com/",
+    "snippet": "Claude is an artificial intelligence, trained by Anthropic using Constitutional AI to be safe, accurate, and secure — the trusted assistant for you to do your best work."
+  }
+]
+```
+
+With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Check the dependency** — If neither `ddgs` nor the legacy `duckduckgo_search` package is importable, the script exits with an error before doing anything else.
+2. **Fetch** — Opens a `DDGS()` session and calls `.text(query, max_results=limit)`, which scrapes DuckDuckGo's HTML search results.
+3. **Display top N** — Prints each result's rank, title, URL, and snippet.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
+
+### API reference
+
+- `fetch_results(query, limit)` — Opens a `DDGS()` session and returns up to `limit` raw result dicts from `.text()`.
+- `result_to_dict(rank, item)` — Flattens one raw result into the `{rank, title, url, snippet}` record used for **both** output modes.
+- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; checks the dependency, fetches, handles top-level errors, and prints results (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If neither `ddgs` nor `duckduckgo_search` is installed, the script prints an error and exits with status code 1 before doing anything else.
+- If the search fails (rate limiting, network error, etc. — raised by `ddgs` as a `DDGSException`), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
+
+### Notes / limitations
+
+- Unofficial: scrapes DuckDuckGo's HTML rather than calling a supported API, so it can start returning rate-limit errors under sustained or automated use, independent of IP reputation.
+- **Package choice matters a lot here.** The legacy `duckduckgo_search` package rate-limits almost immediately (observed failing on the first request in testing); `ddgs`, the maintained successor, is far less rate-limit-prone. Always prefer `ddgs`; only fall back to `duckduckgo_search` when stuck on Python <3.10, and expect frequent failures in that mode.
+- No pagination beyond what `ddgs` fetches internally for `max_results` — very large `--limit` values may be slower or less reliable than with `web_search_brave.py`.
+- Result ranking, freshness, and coverage reflect DuckDuckGo's index, not Google's or Brave's — they will generally overlap for well-known queries but can diverge for niche or very recent topics.
 
 ---
 
