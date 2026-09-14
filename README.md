@@ -4,165 +4,48 @@
 
 Small standalone scripts that pull live data from public web APIs, plus one small web app built on top of them. Each script is self-contained — no local package, just a `.py` file (three of the `stock_*` scripts also share `yahoo_finance.py`, a helper module in the same directory).
 
-- [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
+**[Weather](#weather)**
 - [`weather.py`](#weatherpy) — current weather (temperature, condition, wind) for a named location, anywhere in the world
+- [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location
 - [`weather_forecast.py`](#weather_forecastpy) — multi-day (1-16 day) weather forecast for a named location, sharing `weather.py`'s geocoding
+- [`.claude/agents/weather-forecast.md`](#claude-code-agent-weather-forecast) — Claude Code subagent that calls `weather_forecast.py` and reports the upcoming multi-day forecast for a named location
+
+**[Market & Stock Data](#market--stock-data)**
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
+- [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
+- [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
+- [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_close_history.py` + `indicators.py` and reports whether a named stock is trending up or down
 - [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
+- [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
+- [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for three of the `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
-- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `positive_int` argparse type) imported by the command-line scripts
+
+**[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
 - [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `rebase`, `trend`
 - [`valuation.py`](#valuationpy) — dependency-free intrinsic-value estimators: `gordon_growth_value`, `discounted_cash_flow`, `multiple_value` / `ev_multiple_value`, `equity_from_enterprise`, `implied_growth_rate` (reverse DCF)
 - [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) — pulls fundamentals from Yahoo Finance and runs every `valuation.py` method (DCF, reverse DCF, dividend discount, P/E, Graham, EV/EBITDA, P/S) against the current price
-- [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
-- [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
-- [`web_search_duckduckgo.py`](#web_search_duckduckgopy) — top web search results for a query, by scraping DuckDuckGo via the `ddgs` package (no API key, but unofficial and rate-limit-prone)
-- [`app/hottest_discussions/`](#apphottest_discussions) — small web-page generator pairing with `hottest_tech_discussions.py`: a static HTML page with a "Show" drop-down and Refresh button that fetch discussions client-side
-- [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
-- [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location
-- [`.claude/agents/weather-forecast.md`](#claude-code-agent-weather-forecast) — Claude Code subagent that calls `weather_forecast.py` and reports the upcoming multi-day forecast for a named location
-- [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
-- [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
-- [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
-- [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
-- [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_close_history.py` + `indicators.py` and reports whether a named stock is trending up or down
 - [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail
+
+**[Tech News & Discussions](#tech-news--discussions)**
+- [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
+- [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
+- [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
+- [`app/hottest_discussions/`](#apphottest_discussions) — small web-page generator pairing with `hottest_tech_discussions.py`: a static HTML page with a "Show" drop-down and Refresh button that fetch discussions client-side
+
+**[Web Search](#web-search)**
+- [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
+- [`web_search_duckduckgo.py`](#web_search_duckduckgopy) — top web search results for a query, by scraping DuckDuckGo via the `ddgs` package (no API key, but unofficial and rate-limit-prone)
+
+**[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
+- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `positive_int` argparse type) imported by the command-line scripts
 
 ---
 
-## Tests
-
-Unit tests live in [`tests/`](tests/) and run **offline** — every network call is monkeypatched, so no API is hit.
-
-```bash
-pip install -r requirements-dev.txt
-python3 -m pytest
-```
-
-Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing, `cli_utils.py`), each script's argument parser and output formatters, and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
-
-[`tests/README.md`](tests/README.md) documents the layout, the `FakeResponse` / `FakeSession` doubles and `chart_result` fixture, the monkeypatching conventions, a per-module coverage table, and how to add a test.
-
----
-
-## hottest_tech_discussions.py
-
-Prints the 10 hottest technology discussions currently on [Hacker News](https://news.ycombinator.com/), using the public [Hacker News API](https://github.com/HackerNews/API). No API key or authentication required.
-
-### Requirements
-
-- Python 3.7+
-- [`requests`](https://pypi.org/project/requests/)
-- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
-
-```bash
-pip install requests
-```
-
-### Usage
-
-```bash
-python3 hottest_tech_discussions.py [--limit N] [--json]
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--limit N` | 10 | Number of stories to return |
-| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
-
-#### Example output
-
-```
-Fetching the hottest technology discussions from Hacker News...
-
-1. Some Story Title
-   Score: 512  |  Comments: 234  |  Posted: 2026-08-21 09:15 UTC
-   Link: https://example.com/article
-   Discussion: https://news.ycombinator.com/item?id=12345678
-
-2. Another Story Title
-   Score: 480  |  Comments: 190  |  Posted: 2026-08-21 07:42 UTC
-   Link: https://example.com/other-article
-   Discussion: https://news.ycombinator.com/item?id=12345679
-
-...
-```
-
-#### Tool usage (`--json`)
-
-```bash
-python3 hottest_tech_discussions.py --json --limit 2
-```
-
-```json
-[
-  {
-    "rank": 1,
-    "title": "Some Story Title",
-    "score": 512,
-    "comments": 234,
-    "posted": "2026-08-21 09:15 UTC",
-    "url": "https://example.com/article",
-    "discussion_url": "https://news.ycombinator.com/item?id=12345678"
-  },
-  {
-    "rank": 2,
-    "title": "Another Story Title",
-    "score": 480,
-    "comments": 190,
-    "posted": "2026-08-21 07:42 UTC",
-    "url": "https://example.com/other-article",
-    "discussion_url": "https://news.ycombinator.com/item?id=12345679"
-  }
-]
-```
-
-With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
-
-### How it works
-
-1. **Fetch candidate pool** — Calls `topstories.json` on the HN API to get the current top story IDs (already ranked by HN's own hotness algorithm) and takes the first `CANDIDATE_POOL_SIZE` (40) of them.
-2. **Fetch story details concurrently** — Uses a `ThreadPoolExecutor` (10 workers) to fetch the full item data (`item/{id}.json`) for each candidate in parallel, since each is a separate HTTP request.
-3. **Filter and rank** — Discards anything that failed to fetch or isn't a `story` (e.g. jobs, polls get excluded implicitly since only `type == "story"` is kept), then sorts the remaining stories by `score` descending.
-4. **Display top N** — Prints the top 10 (`RESULTS_TO_SHOW`), each with rank, title, score, comment count, posting time (UTC), the external article link, and a link to the HN discussion thread.
-
-### Configuration
-
-These are set as constants near the top of the file — edit them directly to change behavior:
-
-| Constant | Default | Description |
-|---|---|---|
-| `CANDIDATE_POOL_SIZE` | 40 | Number of top stories to fetch details for before ranking |
-| `RESULTS_TO_SHOW` | 10 | Number of stories to display |
-| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
-
-### API reference
-
-- Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices (e.g. why `CANDIDATE_POOL_SIZE` is 40).
-- `fetch_json(url)` — GETs a URL and returns parsed JSON, raising on HTTP errors.
-- `fetch_story(item_id)` — Fetches a single HN item by ID; returns `None` on any request or parsing failure instead of raising (so one bad story doesn't kill the whole batch).
-- `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of raw HN story dicts.
-- `discussion_url(story)` / `posted_at(story)` — Small helpers: the `news.ycombinator.com/item?id=…` comments URL, and the submission time as a `YYYY-MM-DD HH:MM UTC` string. Also reused by [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy).
-- `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url}` record used for **both** output modes.
-- `format_story(row)` — Renders a `story_to_dict()` record as a multi-line human-readable string.
-- `parse_args(argv=None)` — Parses `--limit` and `--json` CLI flags.
-- `main(argv=None)` — Entry point; fetches, handles top-level network errors, and prints results (either human-readable or JSON, depending on `--json`).
-
-### Error handling
-
-- If the initial `topstories.json` request fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
-- If an individual story's detail fetch fails, that story is silently dropped from consideration rather than aborting the whole run.
-- If no stories are found after filtering, the script prints `"No stories found."` (or `[]` with `--json`) and exits normally.
-
-### Notes / limitations
-
-- "Hottest" is defined here as *highest score* among HN's current top stories — it does not itself factor in comment velocity or recency beyond what HN's own top-stories ranking already provides.
-- No filtering is applied for "tech" specifically — it relies on Hacker News' general subject matter (predominantly tech) rather than keyword filtering.
-- Results reflect a live snapshot; scores and rankings will differ between runs.
+# Weather
 
 ---
 
@@ -266,6 +149,44 @@ These are set as constants near the top of the file — edit them directly to ch
 - Reports only the current conditions at a single instant — no forecast, hourly, or historical data (Open-Meteo's forecast endpoint supports both; this script only calls the `current_weather` shortcut).
 - `weathercode` is Open-Meteo's own WMO-based classification; `WEATHER_CODES` covers the documented codes but treats any other value as `"Unknown (code N)"` rather than guessing.
 - Results are a live snapshot; conditions will differ between runs.
+
+---
+
+## Claude Code agent: `weather`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/weather.md`. It calls no API itself — it shells out to [`weather.py`](#weatherpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what's the weather in Tokyo?", "is it raining in London?", "how hot is it in Singapore right now?", or "weather for Long Island" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for current-conditions/temperature/weather questions about a named place, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "weather"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
+2. Runs `python3 weather.py "LOCATION" [--unit celsius|fahrenheit] --json` from the repo root, defaulting to `celsius` unless the user asks for Fahrenheit or the conversation implies it.
+3. Parses the JSON object (`location`, `admin1`, `country`, `temperature`, `unit`, `windspeed`, `winddirection`, `condition`, `time`) and leads with the condition and temperature, adding wind or the resolved place name only when useful. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`weather.py`](#weatherpy) |
+
+### Notes / limitations
+
+- Requires `weather.py` (and its `requests` dependency) to be present and runnable from the repo root.
+- Reports current conditions only — there is no forecast, hourly, or historical data to fall back on, so it says so rather than fabricating one.
+- Inherits all the limitations of [`weather.py`](#weatherpy) itself (geocoding takes only the top match for an ambiguous name, live-snapshot results).
 
 ---
 
@@ -395,6 +316,49 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `weather_descrip
 - `weathercode` is Open-Meteo's daily summary code for the day as a whole; a day with, say, morning rain and an otherwise clear afternoon is reported under a single condition.
 - Forecast accuracy degrades toward the far end of the 16-day window, as with any weather model; Open-Meteo does not report a per-day confidence figure this script could surface.
 - Results are a live snapshot; the forecast for a given date will change between runs as new model data comes in.
+
+---
+
+## Claude Code agent: `weather-forecast`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/weather-forecast.md`. It calls no API itself — it shells out to [`weather_forecast.py`](#weather_forecastpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer requests like "what's the forecast for Tokyo this week?", "will it rain in London tomorrow?", "5-day forecast for Chicago", or "is it going to be hot in Singapore this weekend?" by running the script and summarizing its JSON output, instead of guessing or using stale training data. For "what's the weather **right now**" questions (no forecast implied), Claude Code reaches for the [`weather`](#claude-code-agent-weather) agent instead.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for upcoming/future weather questions about a named place, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "weather-forecast"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
+2. Maps the user's phrasing to `--days` — "tomorrow" → 2 (reporting the second day), "this week" → 7, a specific count → that count, otherwise the script default of 5 — and to `--unit`, defaulting to `celsius` unless Fahrenheit is asked for or clearly expected.
+3. Runs `python3 weather_forecast.py "LOCATION" [--days N] [--unit celsius|fahrenheit] --json` from the repo root.
+4. Parses the JSON object's `days` array (`date`, `condition`, `temp_max`, `temp_min`, `precipitation_probability_max`, ...) and reports either a single day's condition/high-low/rain-chance or a compact multi-day table, calling out any day with notably high rain chance or a big temperature swing. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`weather_forecast.py`](#weather_forecastpy) |
+
+### Notes / limitations
+
+- Requires `weather_forecast.py`, its `weather.py` dependency, and the `requests` package to be present and runnable from the repo root.
+- Reports one high/low/condition summary per day, not an hourly breakdown, and has no current-conditions reading — for "right now" it defers to the [`weather`](#claude-code-agent-weather) agent rather than approximating from the forecast's first day.
+- Inherits all the limitations of [`weather_forecast.py`](#weather_forecastpy) itself (geocoding takes only the top match for an ambiguous name, per-day summary codes, forecast accuracy tapering toward day 16, live-snapshot results).
+
+---
+
+# Market & Stock Data
 
 ---
 
@@ -574,6 +538,44 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
+## Claude Code agent: `top-volume-stock`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/top-volume-stock.md`. Like the `hottest-tech-discussions` agent, it calls no API itself — it shells out to [`market_top_volume.py`](#market_top_volumepy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what's the top volume stock on the NYSE?", "biggest gainers on NASDAQ today", "worst-performing stocks on the LSE", or "most active stock in Singapore" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for "which stocks are trading the most / up the most / down the most on \<market\>" questions, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "top-volume-stock"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Maps the user's phrasing to a `--market` value (e.g. "London" → `uk`, "Frankfurt" / "DAX" → `germany`, "Toronto" → `canada`, "Bombay" → `bse`), defaulting to `us` when no market is named.
+2. Maps the user's intent to a `--metric` value — `volume` for "most active" / "highest volume" (the default), `gainers` for "top gainers" / "biggest risers", `losers` for "top losers" / "biggest fallers".
+3. Runs `python3 market_top_volume.py --market MARKET --metric METRIC --limit N --json` from the repo root (`--limit 1` when the user wants only the single leader).
+4. Parses the JSON array (already ordered by the chosen metric) and leads with the rank-1 stock — symbol, company name, and the stats with the metric's own figure first — then lists any further rows requested. If the command fails, it surfaces the `{"error": "..."}` from stderr and retries at most once. It notes when a market has no matching `--market` choice rather than guessing.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`market_top_volume.py`](#market_top_volumepy) |
+
+### Notes / limitations
+
+- Requires `market_top_volume.py` (and its `requests` dependency) to be present and runnable from the repo root.
+- Inherits all the limitations of [`market_top_volume.py`](#market_top_volumepy) itself (unofficial Yahoo endpoints, best-effort exchange filtering, live-snapshot figures, minor-unit prices on some markets, small-cap-heavy and cross-listing-prone `gainers` / `losers` lists).
+
+---
+
 ## stock_close_history.py
 
 Prints the past daily open / high / low / close prices (plus adjusted close and volume) of one stock, using [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`). No API key or authentication required.
@@ -689,6 +691,85 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history(
 
 ---
 
+## Claude Code agent: `stock-closing-price`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-closing-price.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_close_history.py`](#stock_close_historypy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what did AAPL close at yesterday?", "Tesla's OHLC last week", or "DBS high and low for August" by running the script and summarizing its JSON output, instead of guessing or using stale training data. Despite the name, it reports the full daily open / high / low / close, not just the close.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for "past / previous / historical open, high, low, or closing price of \<company\>" questions, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-closing-price"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+2. Chooses the window from the user's phrasing — `--last 2` for "yesterday" / "last session", `--last N` for "past N days", `--start`/`--end` for a named month or span, `--range ytd|1y|5y|…` for a longer horizon, otherwise the default `--range 1mo`.
+3. Runs `python3 stock_close_history.py SYMBOL <window flags> --json` from the repo root, parses the `{symbol, exchange, currency, prices[]}` object (each price row carrying `open`, `high`, `low`, `close`, `adj_close`, `volume`), and leads with the figure the user asked for — the most recent close by default, or the full OHLC when they asked for open / high / low / a range — followed by a compact table if a series was requested. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_close_history.py`](#stock_close_historypy) |
+
+### Notes / limitations
+
+- Requires `stock_close_history.py` and its `yahoo_finance.py` helper module (plus the `requests` dependency) to be present and runnable from the repo root.
+- Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's prices or a "symbol may be delisted" error.
+- Inherits all the limitations of [`stock_close_history.py`](#stock_close_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
+
+---
+
+## Claude Code agent: `stock-trend`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-trend.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_close_history.py`](#stock_close_historypy) for the price history and then to the [`indicators.py`](#indicatorspy) functions (`trend`, `moving_average`) to classify it.
+
+### Purpose
+
+Lets Claude Code answer requests like "is AAPL trending up?", "what's the trend on Tesla?", "is Vodafone in a downtrend?", "has DBS been going up or down lately?", or "is NVDA on an uptrend this quarter?" with a mechanical read of recent closing prices, instead of guessing a direction from stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about the direction, trend, or momentum of a named company or ticker over time, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-trend"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+2. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` for "this year" / "past year", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise `--range 6mo`.
+3. Runs `python3 stock_close_history.py SYMBOL <window flags> --json > /tmp/stock_trend.json` from the repo root, then a `python3` heredoc that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions, the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages.
+4. Reports a one-line verdict (up trend / down trend / roughly flat over the dates examined) plus a few supporting lines, calling out when the short-window trend disagrees with the overall one, and closes with a caveat that this is not a prediction or investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script and the analysis snippet).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_close_history.py`](#stock_close_historypy) |
+| Underlying module | [`indicators.py`](#indicatorspy) |
+
+### Notes / limitations
+
+- Requires `stock_close_history.py` (with its `yahoo_finance.py` helper and the `requests` dependency) and `indicators.py` to be present and runnable from the repo root — the analysis step must run with the repo root on `sys.path` so `import indicators` resolves.
+- Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's trend or a "symbol may be delisted" error.
+- The verdict is a straight-line fit over past closes (see [`indicators.py`](#indicatorspy) limitations): a mechanical description, not a forecast, and sensitive to the window chosen and to `flat_threshold`.
+- Inherits all the limitations of [`stock_close_history.py`](#stock_close_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
+
+---
+
 ## stock_candlestick.py
 
 Fetches the past price history of one stock from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_close_history.py`](#stock_close_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/), with simple moving averages of the close overlaid as lines (5 / 10 / 20 / 50 bars by default; via [`indicators.py`](#indicatorspy)) and moving-average-cross flips of a second window pair (20 / 50 by default) marked with arrows. No API key or authentication required. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
@@ -798,6 +879,46 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history(
 
 ---
 
+## Claude Code agent: `stock-candlestick-chart`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-candlestick-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_candlestick.py`](#stock_candlestickpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
+
+### Purpose
+
+Lets Claude Code answer requests like "show me a candlestick chart of AAPL", "chart Tesla's last 3 months", "plot DBS weekly candles for the first half of the year", or "candlestick chart for Vodafone since June with volume" by running the script and handing back the chart, instead of describing prices from stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for "see / plot / draw / visualize \<company\>'s price history as a chart" requests, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-candlestick-chart"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, `--volume` when volume is mentioned, `--ma` only when the user asks for specific moving averages (the script overlays `5,10,20,50` by default) or asks for none, and `--flip-ma` only when the user names a crossover pair (the script marks `20/50` cross flips by default) or asks for none.
+3. Runs `python3 stock_candlestick.py SYMBOL <window flags> [--interval …] [--volume] [--ma …] [--flip-ma …] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
+4. Reads the PNG to verify it rendered, then reports a one- or two-sentence summary (ticker, exchange, period, interval, and a brief read of the trend) ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash`, `Read` |
+| Underlying script | [`stock_candlestick.py`](#stock_candlestickpy) |
+
+### Notes / limitations
+
+- Requires `stock_candlestick.py` and its `yahoo_finance.py` + `indicators.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
+- Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's chart or a "symbol may be delisted" error.
+- The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
+- Inherits all the limitations of [`stock_candlestick.py`](#stock_candlestickpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
+
+---
+
 ## stock_rebased_chart.py
 
 Fetches closing-price history for a series of stocks from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_close_history.py`](#stock_close_historypy) and [`stock_candlestick.py`](#stock_candlestickpy) — rescales each series with [`indicators.py`](#indicatorspy)'s `rebase()` so its price on a common reference date reads as 100, and plots the rebased series together on one chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. This is a relative-performance comparison chart: it answers "which of these stocks has done better *since a given date*", not "which is priced higher". The chart is written to a PNG by default, or shown in an interactive window with `--show`.
@@ -895,6 +1016,48 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_histo
 
 ---
 
+## Claude Code agent: `stock-rebased-chart`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-rebased-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_rebased_chart.py`](#stock_rebased_chartpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
+
+### Purpose
+
+Lets Claude Code answer requests like "compare AAPL and MSFT since January", "rebased chart of Shell vs BP this year", "which has done better since June, Nvidia or AMD?", or "normalize Apple, Microsoft and Google to 100 from the start of the year and plot them" by running the script and handing back the chart — a *relative-performance* comparison (every line starts at 100 on a common date), not an absolute-price chart.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for "how have these stocks moved relative to each other since \<date\>" / "compare / index / normalize / rebase \<companies\>" requests, based on the `description` field in its frontmatter. For a single stock's own price history as a chart it reaches for [`stock-candlestick-chart`](#claude-code-agent-stock-candlestick-chart) instead.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-rebased-chart"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), and passes every one as a separate positional argument; if a ticker is uncertain it says so rather than guessing. Mixed exchanges/currencies are fine — rebasing is a ratio.
+2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`.
+3. Chooses the base date: for a "since \<date>" that is also the window start it sets `--start` and lets `--base-date` default to the first date in the first symbol's series; it passes `--base-date` explicitly only when the reference date sits *inside* a longer window, picking a trading day (a symbol with no settled close on that exact date is dropped with a warning).
+4. Runs `python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] <window flags> [--base-date …] -o /tmp/rebased_<TICKERS>.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
+5. Reads the PNG to verify it rendered, then reports a two- to three-sentence summary — the tickers plotted, the period and resolved base date, which line ends furthest above 100 (best relative performer) and which furthest below, any notable crossover, and any requested ticker that was dropped — ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash`, `Read` |
+| Underlying script | [`stock_rebased_chart.py`](#stock_rebased_chartpy) |
+
+### Notes / limitations
+
+- Requires `stock_rebased_chart.py` and its `yahoo_finance.py` + `indicators.py` + `cli_utils.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
+- Only as good as the tickers it picks — a wrong or ambiguous symbol yields the wrong company's line or a "symbol may be delisted" warning that silently drops it from the chart.
+- The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
+- Reads approximate levels off the chart axis for its summary — it does not compute exact ending percentages.
+- Inherits all the limitations of [`stock_rebased_chart.py`](#stock_rebased_chartpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, an **exact** base-date match required per symbol, raw unadjusted closes, `--show` unavailable).
+
+---
+
 ## yahoo_finance.py
 
 Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`stock_candlestick.py`](#stock_candlestickpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy). It holds everything those scripts had in common — the Yahoo Finance chart-endpoint constants, the query-window builder, the HTTP call, and the raw-payload navigation. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
@@ -928,22 +1091,7 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`s
 
 ---
 
-## cli_utils.py
-
-Two tiny helpers shared by the command-line scripts, so error exits and integer-argument validation are uniform across them. Not a CLI — it is imported, not run.
-
-### Requirements
-
-- Python 3.7+ (standard library only)
-
-### API reference
-
-- `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
-- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts) and `--years` (`stock_intrinsic_value.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
-
-### Notes / limitations
-
-- `die()` always exits `1`; the argparse layer's own errors (an unparsable value, a rejected `positive_int`) exit `2`. Scripts that had a manual `--last < 1` / `--years < 1` check now get that rejection from argparse instead, so those cases changed from exit `1` to exit `2` and now happen before any network call.
+# Valuation & Fundamental Analysis
 
 ---
 
@@ -1201,6 +1349,205 @@ Intrinsic value estimates (per share unless noted)
 
 ---
 
+## Claude Code agent: `stock-intrinsic-value`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-intrinsic-value.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), which fetches the fundamentals from Yahoo Finance and runs every method in [`valuation.py`](#valuationpy).
+
+### Purpose
+
+Lets Claude Code answer requests like "what's AAPL worth?", "is Tesla overvalued?", "run a DCF on Microsoft", "fair value of Novo Nordisk with a 10% discount rate", or "what growth is priced into NVDA?" with model output built from live fundamentals, instead of guessing a number from stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's or ticker's intrinsic / fair value, whether it is over- or under-valued, or a DCF / reverse-DCF / multiples valuation, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-intrinsic-value"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+2. Runs `python3 stock_intrinsic_value.py SYMBOL --json` from the repo root with **no assumption flags by default** (the tool derives the discount rate from CAPM, the growth from the analyst estimate). It adds `--discount-rate` / `--growth` / `--terminal-growth` / `--years` / `--pe` / `--ev-ebitda` / `--ps` only when the user states an assumption, and re-runs the tool 2–3 times with bear / base / bull assumption sets when the user wants a considered over/under-valued call.
+3. Parses the JSON — `price`, `inputs`, `assumptions` (with the source of each), `multiples_used`, and `estimates` (`dcf_two_stage`, `reverse_dcf_implied_growth`, `dividend_discount`, `pe_multiple`, `graham`, `ev_ebitda_multiple`, `ps_multiple`, `ev_reported_to_equity`), where each estimate's `price_vs_estimate` is `price / value - 1` (positive → market above that estimate).
+4. Reports a synthesis: the DCF value (or range across scenarios) versus the price with its key assumptions, then the reverse-DCF implied growth versus what analysts expect, then the other *independent* estimates (a user-set multiple, or the dividend model for real payers), calling out any `null` rows and the missing input behind them. Closes with a caveat that these are assumption-sensitive model outputs from one trailing snapshot, not investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script and read its JSON).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) |
+| Underlying module | [`valuation.py`](#valuationpy) |
+
+### Notes / limitations
+
+- Requires `stock_intrinsic_value.py` (with its `yahoo_finance.py` helper and the `requests` dependency) and `valuation.py` to be present and runnable from the repo root.
+- Only as good as the ticker it picks and the assumptions it runs — a DCF swings by large multiples on plausible changes to the discount rate and growth, which is why the agent prefers a scenario range over a single number.
+- The multiple-based rows are not independent estimates unless the user supplies the multiple; by default they reproduce the stock's current valuation. The dividend model is meaningless for low- or non-payers, and the `[check]` row is a data-quality signal, not a valuation.
+- Inherits all the limitations of [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) and [`valuation.py`](#valuationpy) (undocumented Yahoo `quoteSummary` endpoint, one trailing snapshot per field, EPS-growth estimate used as an FCF-growth proxy, no normalisation for one-off items, listing-currency figures).
+
+---
+
+# Tech News & Discussions
+
+---
+
+## hottest_tech_discussions.py
+
+Prints the 10 hottest technology discussions currently on [Hacker News](https://news.ycombinator.com/), using the public [Hacker News API](https://github.com/HackerNews/API). No API key or authentication required.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 hottest_tech_discussions.py [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--limit N` | 10 | Number of stories to return |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Fetching the hottest technology discussions from Hacker News...
+
+1. Some Story Title
+   Score: 512  |  Comments: 234  |  Posted: 2026-08-21 09:15 UTC
+   Link: https://example.com/article
+   Discussion: https://news.ycombinator.com/item?id=12345678
+
+2. Another Story Title
+   Score: 480  |  Comments: 190  |  Posted: 2026-08-21 07:42 UTC
+   Link: https://example.com/other-article
+   Discussion: https://news.ycombinator.com/item?id=12345679
+
+...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 hottest_tech_discussions.py --json --limit 2
+```
+
+```json
+[
+  {
+    "rank": 1,
+    "title": "Some Story Title",
+    "score": 512,
+    "comments": 234,
+    "posted": "2026-08-21 09:15 UTC",
+    "url": "https://example.com/article",
+    "discussion_url": "https://news.ycombinator.com/item?id=12345678"
+  },
+  {
+    "rank": 2,
+    "title": "Another Story Title",
+    "score": 480,
+    "comments": 190,
+    "posted": "2026-08-21 07:42 UTC",
+    "url": "https://example.com/other-article",
+    "discussion_url": "https://news.ycombinator.com/item?id=12345679"
+  }
+]
+```
+
+With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Fetch candidate pool** — Calls `topstories.json` on the HN API to get the current top story IDs (already ranked by HN's own hotness algorithm) and takes the first `CANDIDATE_POOL_SIZE` (40) of them.
+2. **Fetch story details concurrently** — Uses a `ThreadPoolExecutor` (10 workers) to fetch the full item data (`item/{id}.json`) for each candidate in parallel, since each is a separate HTTP request.
+3. **Filter and rank** — Discards anything that failed to fetch or isn't a `story` (e.g. jobs, polls get excluded implicitly since only `type == "story"` is kept), then sorts the remaining stories by `score` descending.
+4. **Display top N** — Prints the top 10 (`RESULTS_TO_SHOW`), each with rank, title, score, comment count, posting time (UTC), the external article link, and a link to the HN discussion thread.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `CANDIDATE_POOL_SIZE` | 40 | Number of top stories to fetch details for before ranking |
+| `RESULTS_TO_SHOW` | 10 | Number of stories to display |
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+
+### API reference
+
+- Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices (e.g. why `CANDIDATE_POOL_SIZE` is 40).
+- `fetch_json(url)` — GETs a URL and returns parsed JSON, raising on HTTP errors.
+- `fetch_story(item_id)` — Fetches a single HN item by ID; returns `None` on any request or parsing failure instead of raising (so one bad story doesn't kill the whole batch).
+- `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of raw HN story dicts.
+- `discussion_url(story)` / `posted_at(story)` — Small helpers: the `news.ycombinator.com/item?id=…` comments URL, and the submission time as a `YYYY-MM-DD HH:MM UTC` string. Also reused by [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy).
+- `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url}` record used for **both** output modes.
+- `format_story(row)` — Renders a `story_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses `--limit` and `--json` CLI flags.
+- `main(argv=None)` — Entry point; fetches, handles top-level network errors, and prints results (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If the initial `topstories.json` request fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If an individual story's detail fetch fails, that story is silently dropped from consideration rather than aborting the whole run.
+- If no stories are found after filtering, the script prints `"No stories found."` (or `[]` with `--json`) and exits normally.
+
+### Notes / limitations
+
+- "Hottest" is defined here as *highest score* among HN's current top stories — it does not itself factor in comment velocity or recency beyond what HN's own top-stories ranking already provides.
+- No filtering is applied for "tech" specifically — it relies on Hacker News' general subject matter (predominantly tech) rather than keyword filtering.
+- Results reflect a live snapshot; scores and rankings will differ between runs.
+
+---
+
+## Claude Code agent: `hottest-tech-discussions`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hottest-tech-discussions.md`. It doesn't call any external API itself — it shells out to [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) via the `Bash` tool and reports the results conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what's trending in tech today?" or "top HN discussions" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for tech-news/trends questions, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "hottest-tech-discussions"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Runs `python3 hottest_tech_discussions.py --json --limit N` (default `N=10`, or whatever count the user asked for) from the repo root.
+2. Parses the JSON array of stories.
+3. Reports them as a concise list — title, score, comment count, and links — without fabricating data. If the command fails, it surfaces the `{"error": "..."}` from stderr instead of retrying repeatedly or inventing results.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) |
+
+### Notes / limitations
+
+- Requires `hottest_tech_discussions.py` (and its `requests` dependency) to be present and runnable from the repo root.
+- Inherits all the limitations of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) itself (score-based "hottest" definition, no tech-specific keyword filtering, live-snapshot results).
+
+---
+
 ## stock_tech_buzz_agent.py
 
 An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the ~40 hottest tech discussions from Hacker News (the `--discussion-limit` default is 50 but the underlying script ranks only its first 40 candidates), and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
@@ -1319,6 +1666,79 @@ These are set as constants near the top of the file — edit them directly to ch
 - Ticker-symbol matching is case-sensitive and whole-word to cut down on false positives, but is inherently heuristic: an all-caps acronym coincidentally matching a real ticker (outside the curated `AMBIGUOUS_SYMBOLS` list) could still produce a false positive, and a legitimate mention using unusual casing could be missed.
 - Company-name matching only strips one legal-entity suffix; a distinctive-enough remaining name (e.g. "NVIDIA", "Moderna") is a solid signal, but this hasn't been tuned against every possible company name shape.
 - Inherits the limitations of both underlying scripts — see [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy)'s own Notes / limitations sections.
+
+---
+
+## app/hottest_discussions/
+
+A small static-site generator, separate from the CLI scripts above, at `app/hottest_discussions/generate_page.py`. It pairs with [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) to produce a self-contained HTML page for the top Hacker News discussions — no server, no build step. The generated page starts **empty**; a "Show" drop-down (10 / 25 / 50, default 10) and a **Refresh** button let the visitor fetch and render discussions client-side, on demand, using the same Hacker News endpoints and ranking logic as the CLI script. See [`app/hottest_discussions/README.md`](app/hottest_discussions/README.md) for the full walkthrough and [`app/hottest_discussions/docs/features.md`](app/hottest_discussions/docs/features.md) for the feature spec it was built against.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/) — not called directly by this script, but pulled in transitively because it imports a constant from `hottest_tech_discussions.py`
+
+```bash
+pip install requests
+```
+
+### Usage
+
+Run from anywhere; paths are resolved relative to `generate_page.py`, not your working directory.
+
+```bash
+python3 app/hottest_discussions/generate_page.py [--limit {10,25,50}] [--output PATH]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--limit {10,25,50}` | 10 | Which option the page's "Show" drop-down starts pre-selected to — the visitor can still change it in the browser before clicking Refresh |
+| `--output PATH` | `app/hottest_discussions/index.html` | Where to write the generated HTML file |
+
+#### Example
+
+```bash
+python3 app/hottest_discussions/generate_page.py --limit 25
+# Wrote empty page shell to .../app/hottest_discussions/index.html
+# Open it in a browser and click Refresh to load discussions.
+```
+
+Opening the file loads instantly with no discussions shown; picking a count and clicking **Refresh** fetches and renders that many stories in place.
+
+### How it works
+
+1. **Generate the shell** — Renders a page template (header, "Show" drop-down, Refresh button, an empty discussions container, and a "Generated `<UTC timestamp>`" footer) with no network call and no discussions embedded.
+2. **Write file** — The finished HTML string is written to `--output` (creating parent directories if needed).
+3. **Refresh in the browser** — Clicking Refresh runs an inline `<script>` that mirrors `hottest_tech_discussions.py`'s `get_hottest_tech_discussions` logic in JavaScript: it calls the same Hacker News Firebase endpoints (`topstories.json`, then `item/{id}.json` for a candidate pool 4x the selected count), filters to `type === "story"`, sorts by score, and renders the top N as cards directly into the page — no server or Python process involved.
+
+### Configuration
+
+| Constant | Default | Description |
+|---|---|---|
+| `LIMIT_OPTIONS` | `(10, 25, 50)` | The drop-down's choices; the first entry is `RESULTS_TO_SHOW`, imported from `hottest_tech_discussions.py` |
+| `DEFAULT_OUTPUT` | `app/hottest_discussions/index.html` | Where the page is written when `--output` isn't passed |
+
+### API reference
+
+- `render_limit_options(selected)` — Returns the `<option>` tags for the drop-down, marking `selected` as pre-selected.
+- `render_page(limit=RESULTS_TO_SHOW)` — Returns the full HTML document as a string: the empty page shell with the drop-down pre-selected to `limit`. Raises `ValueError` if `limit` isn't one of `LIMIT_OPTIONS`.
+- `parse_args(argv=None)` — Parses `--limit` (restricted to `LIMIT_OPTIONS`) and `--output`.
+- `main(argv=None)` — Entry point: renders the page shell, writes it to disk, and prints a one-line summary.
+
+### Error handling
+
+- Generation makes no network calls, so it can't fail on a network error; an invalid `--limit` is rejected by argument parsing (exit code 2).
+- In the browser, a failed Refresh (network error, HN API down) leaves the current state untouched and shows "Refresh failed: `<message>`" under the button instead.
+
+### Notes / limitations
+
+- Inherits the same "hottest" definition as [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): highest score among HN's current top stories, no tech-specific keyword filtering, live-snapshot results that will differ between clicks.
+- Nothing appears until Refresh is clicked — there's no polling/interval or auto-refresh, and the drop-down only offers 10/25/50.
+- Static output only — no backend, no API endpoint. The Refresh button calls the public Hacker News Firebase API directly from the visitor's browser, so it needs outbound network access but no server of its own.
+
+---
+
+# Web Search
 
 ---
 
@@ -1550,423 +1970,39 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
-## app/hottest_discussions/
+# Development
 
-A small static-site generator, separate from the CLI scripts above, at `app/hottest_discussions/generate_page.py`. It pairs with [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) to produce a self-contained HTML page for the top Hacker News discussions — no server, no build step. The generated page starts **empty**; a "Show" drop-down (10 / 25 / 50, default 10) and a **Refresh** button let the visitor fetch and render discussions client-side, on demand, using the same Hacker News endpoints and ranking logic as the CLI script. See [`app/hottest_discussions/README.md`](app/hottest_discussions/README.md) for the full walkthrough and [`app/hottest_discussions/docs/features.md`](app/hottest_discussions/docs/features.md) for the feature spec it was built against.
+---
+
+## Tests
+
+Unit tests live in [`tests/`](tests/) and run **offline** — every network call is monkeypatched, so no API is hit.
+
+```bash
+pip install -r requirements-dev.txt
+python3 -m pytest
+```
+
+Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing, `cli_utils.py`), each script's argument parser and output formatters, and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
+
+[`tests/README.md`](tests/README.md) documents the layout, the `FakeResponse` / `FakeSession` doubles and `chart_result` fixture, the monkeypatching conventions, a per-module coverage table, and how to add a test.
+
+---
+
+## cli_utils.py
+
+Two tiny helpers shared by the command-line scripts, so error exits and integer-argument validation are uniform across them. Not a CLI — it is imported, not run.
 
 ### Requirements
 
-- Python 3.7+
-- [`requests`](https://pypi.org/project/requests/) — not called directly by this script, but pulled in transitively because it imports a constant from `hottest_tech_discussions.py`
-
-```bash
-pip install requests
-```
-
-### Usage
-
-Run from anywhere; paths are resolved relative to `generate_page.py`, not your working directory.
-
-```bash
-python3 app/hottest_discussions/generate_page.py [--limit {10,25,50}] [--output PATH]
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--limit {10,25,50}` | 10 | Which option the page's "Show" drop-down starts pre-selected to — the visitor can still change it in the browser before clicking Refresh |
-| `--output PATH` | `app/hottest_discussions/index.html` | Where to write the generated HTML file |
-
-#### Example
-
-```bash
-python3 app/hottest_discussions/generate_page.py --limit 25
-# Wrote empty page shell to .../app/hottest_discussions/index.html
-# Open it in a browser and click Refresh to load discussions.
-```
-
-Opening the file loads instantly with no discussions shown; picking a count and clicking **Refresh** fetches and renders that many stories in place.
-
-### How it works
-
-1. **Generate the shell** — Renders a page template (header, "Show" drop-down, Refresh button, an empty discussions container, and a "Generated `<UTC timestamp>`" footer) with no network call and no discussions embedded.
-2. **Write file** — The finished HTML string is written to `--output` (creating parent directories if needed).
-3. **Refresh in the browser** — Clicking Refresh runs an inline `<script>` that mirrors `hottest_tech_discussions.py`'s `get_hottest_tech_discussions` logic in JavaScript: it calls the same Hacker News Firebase endpoints (`topstories.json`, then `item/{id}.json` for a candidate pool 4x the selected count), filters to `type === "story"`, sorts by score, and renders the top N as cards directly into the page — no server or Python process involved.
-
-### Configuration
-
-| Constant | Default | Description |
-|---|---|---|
-| `LIMIT_OPTIONS` | `(10, 25, 50)` | The drop-down's choices; the first entry is `RESULTS_TO_SHOW`, imported from `hottest_tech_discussions.py` |
-| `DEFAULT_OUTPUT` | `app/hottest_discussions/index.html` | Where the page is written when `--output` isn't passed |
+- Python 3.7+ (standard library only)
 
 ### API reference
 
-- `render_limit_options(selected)` — Returns the `<option>` tags for the drop-down, marking `selected` as pre-selected.
-- `render_page(limit=RESULTS_TO_SHOW)` — Returns the full HTML document as a string: the empty page shell with the drop-down pre-selected to `limit`. Raises `ValueError` if `limit` isn't one of `LIMIT_OPTIONS`.
-- `parse_args(argv=None)` — Parses `--limit` (restricted to `LIMIT_OPTIONS`) and `--output`.
-- `main(argv=None)` — Entry point: renders the page shell, writes it to disk, and prints a one-line summary.
-
-### Error handling
-
-- Generation makes no network calls, so it can't fail on a network error; an invalid `--limit` is rejected by argument parsing (exit code 2).
-- In the browser, a failed Refresh (network error, HN API down) leaves the current state untouched and shows "Refresh failed: `<message>`" under the button instead.
+- `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
+- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts) and `--years` (`stock_intrinsic_value.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
 
 ### Notes / limitations
 
-- Inherits the same "hottest" definition as [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): highest score among HN's current top stories, no tech-specific keyword filtering, live-snapshot results that will differ between clicks.
-- Nothing appears until Refresh is clicked — there's no polling/interval or auto-refresh, and the drop-down only offers 10/25/50.
-- Static output only — no backend, no API endpoint. The Refresh button calls the public Hacker News Firebase API directly from the visitor's browser, so it needs outbound network access but no server of its own.
+- `die()` always exits `1`; the argparse layer's own errors (an unparsable value, a rejected `positive_int`) exit `2`. Scripts that had a manual `--last < 1` / `--years < 1` check now get that rejection from argparse instead, so those cases changed from exit `1` to exit `2` and now happen before any network call.
 
----
-
-## Claude Code agent: `hottest-tech-discussions`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hottest-tech-discussions.md`. It doesn't call any external API itself — it shells out to [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) via the `Bash` tool and reports the results conversationally.
-
-### Purpose
-
-Lets Claude Code answer questions like "what's trending in tech today?" or "top HN discussions" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for tech-news/trends questions, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "hottest-tech-discussions"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Runs `python3 hottest_tech_discussions.py --json --limit N` (default `N=10`, or whatever count the user asked for) from the repo root.
-2. Parses the JSON array of stories.
-3. Reports them as a concise list — title, score, comment count, and links — without fabricating data. If the command fails, it surfaces the `{"error": "..."}` from stderr instead of retrying repeatedly or inventing results.
-
-### Configuration
-
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash` |
-| Underlying script | [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) |
-
-### Notes / limitations
-
-- Requires `hottest_tech_discussions.py` (and its `requests` dependency) to be present and runnable from the repo root.
-- Inherits all the limitations of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) itself (score-based "hottest" definition, no tech-specific keyword filtering, live-snapshot results).
-
----
-
-## Claude Code agent: `weather`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/weather.md`. It calls no API itself — it shells out to [`weather.py`](#weatherpy) via the `Bash` tool and reports the result conversationally.
-
-### Purpose
-
-Lets Claude Code answer questions like "what's the weather in Tokyo?", "is it raining in London?", "how hot is it in Singapore right now?", or "weather for Long Island" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for current-conditions/temperature/weather questions about a named place, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "weather"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
-2. Runs `python3 weather.py "LOCATION" [--unit celsius|fahrenheit] --json` from the repo root, defaulting to `celsius` unless the user asks for Fahrenheit or the conversation implies it.
-3. Parses the JSON object (`location`, `admin1`, `country`, `temperature`, `unit`, `windspeed`, `winddirection`, `condition`, `time`) and leads with the condition and temperature, adding wind or the resolved place name only when useful. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
-
-### Configuration
-
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash` |
-| Underlying script | [`weather.py`](#weatherpy) |
-
-### Notes / limitations
-
-- Requires `weather.py` (and its `requests` dependency) to be present and runnable from the repo root.
-- Reports current conditions only — there is no forecast, hourly, or historical data to fall back on, so it says so rather than fabricating one.
-- Inherits all the limitations of [`weather.py`](#weatherpy) itself (geocoding takes only the top match for an ambiguous name, live-snapshot results).
-
----
-
-## Claude Code agent: `weather-forecast`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/weather-forecast.md`. It calls no API itself — it shells out to [`weather_forecast.py`](#weather_forecastpy) via the `Bash` tool and reports the result conversationally.
-
-### Purpose
-
-Lets Claude Code answer requests like "what's the forecast for Tokyo this week?", "will it rain in London tomorrow?", "5-day forecast for Chicago", or "is it going to be hot in Singapore this weekend?" by running the script and summarizing its JSON output, instead of guessing or using stale training data. For "what's the weather **right now**" questions (no forecast implied), Claude Code reaches for the [`weather`](#claude-code-agent-weather) agent instead.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for upcoming/future weather questions about a named place, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "weather-forecast"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
-2. Maps the user's phrasing to `--days` — "tomorrow" → 2 (reporting the second day), "this week" → 7, a specific count → that count, otherwise the script default of 5 — and to `--unit`, defaulting to `celsius` unless Fahrenheit is asked for or clearly expected.
-3. Runs `python3 weather_forecast.py "LOCATION" [--days N] [--unit celsius|fahrenheit] --json` from the repo root.
-4. Parses the JSON object's `days` array (`date`, `condition`, `temp_max`, `temp_min`, `precipitation_probability_max`, ...) and reports either a single day's condition/high-low/rain-chance or a compact multi-day table, calling out any day with notably high rain chance or a big temperature swing. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
-
-### Configuration
-
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash` |
-| Underlying script | [`weather_forecast.py`](#weather_forecastpy) |
-
-### Notes / limitations
-
-- Requires `weather_forecast.py`, its `weather.py` dependency, and the `requests` package to be present and runnable from the repo root.
-- Reports one high/low/condition summary per day, not an hourly breakdown, and has no current-conditions reading — for "right now" it defers to the [`weather`](#claude-code-agent-weather) agent rather than approximating from the forecast's first day.
-- Inherits all the limitations of [`weather_forecast.py`](#weather_forecastpy) itself (geocoding takes only the top match for an ambiguous name, per-day summary codes, forecast accuracy tapering toward day 16, live-snapshot results).
-
----
-
-## Claude Code agent: `top-volume-stock`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/top-volume-stock.md`. Like the `hottest-tech-discussions` agent, it calls no API itself — it shells out to [`market_top_volume.py`](#market_top_volumepy) via the `Bash` tool and reports the result conversationally.
-
-### Purpose
-
-Lets Claude Code answer questions like "what's the top volume stock on the NYSE?", "biggest gainers on NASDAQ today", "worst-performing stocks on the LSE", or "most active stock in Singapore" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for "which stocks are trading the most / up the most / down the most on \<market\>" questions, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "top-volume-stock"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Maps the user's phrasing to a `--market` value (e.g. "London" → `uk`, "Frankfurt" / "DAX" → `germany`, "Toronto" → `canada`, "Bombay" → `bse`), defaulting to `us` when no market is named.
-2. Maps the user's intent to a `--metric` value — `volume` for "most active" / "highest volume" (the default), `gainers` for "top gainers" / "biggest risers", `losers` for "top losers" / "biggest fallers".
-3. Runs `python3 market_top_volume.py --market MARKET --metric METRIC --limit N --json` from the repo root (`--limit 1` when the user wants only the single leader).
-4. Parses the JSON array (already ordered by the chosen metric) and leads with the rank-1 stock — symbol, company name, and the stats with the metric's own figure first — then lists any further rows requested. If the command fails, it surfaces the `{"error": "..."}` from stderr and retries at most once. It notes when a market has no matching `--market` choice rather than guessing.
-
-### Configuration
-
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash` |
-| Underlying script | [`market_top_volume.py`](#market_top_volumepy) |
-
-### Notes / limitations
-
-- Requires `market_top_volume.py` (and its `requests` dependency) to be present and runnable from the repo root.
-- Inherits all the limitations of [`market_top_volume.py`](#market_top_volumepy) itself (unofficial Yahoo endpoints, best-effort exchange filtering, live-snapshot figures, minor-unit prices on some markets, small-cap-heavy and cross-listing-prone `gainers` / `losers` lists).
-
----
-
-## Claude Code agent: `stock-closing-price`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-closing-price.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_close_history.py`](#stock_close_historypy) via the `Bash` tool and reports the result conversationally.
-
-### Purpose
-
-Lets Claude Code answer questions like "what did AAPL close at yesterday?", "Tesla's OHLC last week", or "DBS high and low for August" by running the script and summarizing its JSON output, instead of guessing or using stale training data. Despite the name, it reports the full daily open / high / low / close, not just the close.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for "past / previous / historical open, high, low, or closing price of \<company\>" questions, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-closing-price"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
-2. Chooses the window from the user's phrasing — `--last 2` for "yesterday" / "last session", `--last N` for "past N days", `--start`/`--end` for a named month or span, `--range ytd|1y|5y|…` for a longer horizon, otherwise the default `--range 1mo`.
-3. Runs `python3 stock_close_history.py SYMBOL <window flags> --json` from the repo root, parses the `{symbol, exchange, currency, prices[]}` object (each price row carrying `open`, `high`, `low`, `close`, `adj_close`, `volume`), and leads with the figure the user asked for — the most recent close by default, or the full OHLC when they asked for open / high / low / a range — followed by a compact table if a series was requested. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
-
-### Configuration
-
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash` |
-| Underlying script | [`stock_close_history.py`](#stock_close_historypy) |
-
-### Notes / limitations
-
-- Requires `stock_close_history.py` and its `yahoo_finance.py` helper module (plus the `requests` dependency) to be present and runnable from the repo root.
-- Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's prices or a "symbol may be delisted" error.
-- Inherits all the limitations of [`stock_close_history.py`](#stock_close_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
-
----
-
-## Claude Code agent: `stock-candlestick-chart`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-candlestick-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_candlestick.py`](#stock_candlestickpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
-
-### Purpose
-
-Lets Claude Code answer requests like "show me a candlestick chart of AAPL", "chart Tesla's last 3 months", "plot DBS weekly candles for the first half of the year", or "candlestick chart for Vodafone since June with volume" by running the script and handing back the chart, instead of describing prices from stale training data.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for "see / plot / draw / visualize \<company\>'s price history as a chart" requests, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-candlestick-chart"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
-2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, `--volume` when volume is mentioned, `--ma` only when the user asks for specific moving averages (the script overlays `5,10,20,50` by default) or asks for none, and `--flip-ma` only when the user names a crossover pair (the script marks `20/50` cross flips by default) or asks for none.
-3. Runs `python3 stock_candlestick.py SYMBOL <window flags> [--interval …] [--volume] [--ma …] [--flip-ma …] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
-4. Reads the PNG to verify it rendered, then reports a one- or two-sentence summary (ticker, exchange, period, interval, and a brief read of the trend) ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
-
-### Configuration
-
-The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG).
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash`, `Read` |
-| Underlying script | [`stock_candlestick.py`](#stock_candlestickpy) |
-
-### Notes / limitations
-
-- Requires `stock_candlestick.py` and its `yahoo_finance.py` + `indicators.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
-- Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's chart or a "symbol may be delisted" error.
-- The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
-- Inherits all the limitations of [`stock_candlestick.py`](#stock_candlestickpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
-
----
-
-## Claude Code agent: `stock-rebased-chart`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-rebased-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_rebased_chart.py`](#stock_rebased_chartpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
-
-### Purpose
-
-Lets Claude Code answer requests like "compare AAPL and MSFT since January", "rebased chart of Shell vs BP this year", "which has done better since June, Nvidia or AMD?", or "normalize Apple, Microsoft and Google to 100 from the start of the year and plot them" by running the script and handing back the chart — a *relative-performance* comparison (every line starts at 100 on a common date), not an absolute-price chart.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for "how have these stocks moved relative to each other since \<date\>" / "compare / index / normalize / rebase \<companies\>" requests, based on the `description` field in its frontmatter. For a single stock's own price history as a chart it reaches for [`stock-candlestick-chart`](#claude-code-agent-stock-candlestick-chart) instead.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-rebased-chart"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), and passes every one as a separate positional argument; if a ticker is uncertain it says so rather than guessing. Mixed exchanges/currencies are fine — rebasing is a ratio.
-2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`.
-3. Chooses the base date: for a "since \<date>" that is also the window start it sets `--start` and lets `--base-date` default to the first date in the first symbol's series; it passes `--base-date` explicitly only when the reference date sits *inside* a longer window, picking a trading day (a symbol with no settled close on that exact date is dropped with a warning).
-4. Runs `python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] <window flags> [--base-date …] -o /tmp/rebased_<TICKERS>.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
-5. Reads the PNG to verify it rendered, then reports a two- to three-sentence summary — the tickers plotted, the period and resolved base date, which line ends furthest above 100 (best relative performer) and which furthest below, any notable crossover, and any requested ticker that was dropped — ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
-
-### Configuration
-
-The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG).
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash`, `Read` |
-| Underlying script | [`stock_rebased_chart.py`](#stock_rebased_chartpy) |
-
-### Notes / limitations
-
-- Requires `stock_rebased_chart.py` and its `yahoo_finance.py` + `indicators.py` + `cli_utils.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
-- Only as good as the tickers it picks — a wrong or ambiguous symbol yields the wrong company's line or a "symbol may be delisted" warning that silently drops it from the chart.
-- The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
-- Reads approximate levels off the chart axis for its summary — it does not compute exact ending percentages.
-- Inherits all the limitations of [`stock_rebased_chart.py`](#stock_rebased_chartpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, an **exact** base-date match required per symbol, raw unadjusted closes, `--show` unavailable).
-
----
-
-## Claude Code agent: `stock-trend`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-trend.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_close_history.py`](#stock_close_historypy) for the price history and then to the [`indicators.py`](#indicatorspy) functions (`trend`, `moving_average`) to classify it.
-
-### Purpose
-
-Lets Claude Code answer requests like "is AAPL trending up?", "what's the trend on Tesla?", "is Vodafone in a downtrend?", "has DBS been going up or down lately?", or "is NVDA on an uptrend this quarter?" with a mechanical read of recent closing prices, instead of guessing a direction from stale training data.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for questions about the direction, trend, or momentum of a named company or ticker over time, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-trend"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
-2. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` for "this year" / "past year", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise `--range 6mo`.
-3. Runs `python3 stock_close_history.py SYMBOL <window flags> --json > /tmp/stock_trend.json` from the repo root, then a `python3` heredoc that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions, the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages.
-4. Reports a one-line verdict (up trend / down trend / roughly flat over the dates examined) plus a few supporting lines, calling out when the short-window trend disagrees with the overall one, and closes with a caveat that this is not a prediction or investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
-
-### Configuration
-
-The agent's frontmatter restricts it to `Bash` (run the script and the analysis snippet).
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash` |
-| Underlying script | [`stock_close_history.py`](#stock_close_historypy) |
-| Underlying module | [`indicators.py`](#indicatorspy) |
-
-### Notes / limitations
-
-- Requires `stock_close_history.py` (with its `yahoo_finance.py` helper and the `requests` dependency) and `indicators.py` to be present and runnable from the repo root — the analysis step must run with the repo root on `sys.path` so `import indicators` resolves.
-- Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's trend or a "symbol may be delisted" error.
-- The verdict is a straight-line fit over past closes (see [`indicators.py`](#indicatorspy) limitations): a mechanical description, not a forecast, and sensitive to the window chosen and to `flat_threshold`.
-- Inherits all the limitations of [`stock_close_history.py`](#stock_close_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
-
----
-
-## Claude Code agent: `stock-intrinsic-value`
-
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-intrinsic-value.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), which fetches the fundamentals from Yahoo Finance and runs every method in [`valuation.py`](#valuationpy).
-
-### Purpose
-
-Lets Claude Code answer requests like "what's AAPL worth?", "is Tesla overvalued?", "run a DCF on Microsoft", "fair value of Novo Nordisk with a 10% discount rate", or "what growth is priced into NVDA?" with model output built from live fundamentals, instead of guessing a number from stale training data.
-
-### How it's invoked
-
-- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's or ticker's intrinsic / fair value, whether it is over- or under-valued, or a DCF / reverse-DCF / multiples valuation, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-intrinsic-value"`.
-
-Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
-
-### What it does
-
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
-2. Runs `python3 stock_intrinsic_value.py SYMBOL --json` from the repo root with **no assumption flags by default** (the tool derives the discount rate from CAPM, the growth from the analyst estimate). It adds `--discount-rate` / `--growth` / `--terminal-growth` / `--years` / `--pe` / `--ev-ebitda` / `--ps` only when the user states an assumption, and re-runs the tool 2–3 times with bear / base / bull assumption sets when the user wants a considered over/under-valued call.
-3. Parses the JSON — `price`, `inputs`, `assumptions` (with the source of each), `multiples_used`, and `estimates` (`dcf_two_stage`, `reverse_dcf_implied_growth`, `dividend_discount`, `pe_multiple`, `graham`, `ev_ebitda_multiple`, `ps_multiple`, `ev_reported_to_equity`), where each estimate's `price_vs_estimate` is `price / value - 1` (positive → market above that estimate).
-4. Reports a synthesis: the DCF value (or range across scenarios) versus the price with its key assumptions, then the reverse-DCF implied growth versus what analysts expect, then the other *independent* estimates (a user-set multiple, or the dividend model for real payers), calling out any `null` rows and the missing input behind them. Closes with a caveat that these are assumption-sensitive model outputs from one trailing snapshot, not investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
-
-### Configuration
-
-The agent's frontmatter restricts it to `Bash` (run the script and read its JSON).
-
-| Field | Value |
-|---|---|
-| `tools` | `Bash` |
-| Underlying script | [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) |
-| Underlying module | [`valuation.py`](#valuationpy) |
-
-### Notes / limitations
-
-- Requires `stock_intrinsic_value.py` (with its `yahoo_finance.py` helper and the `requests` dependency) and `valuation.py` to be present and runnable from the repo root.
-- Only as good as the ticker it picks and the assumptions it runs — a DCF swings by large multiples on plausible changes to the discount rate and growth, which is why the agent prefers a scenario range over a single number.
-- The multiple-based rows are not independent estimates unless the user supplies the multiple; by default they reproduce the stock's current valuation. The dividend model is meaningless for low- or non-payers, and the `[check]` row is a data-quality signal, not a valuation.
-- Inherits all the limitations of [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) and [`valuation.py`](#valuationpy) (undocumented Yahoo `quoteSummary` endpoint, one trailing snapshot per field, EPS-growth estimate used as an FCF-growth proxy, no normalisation for one-off items, listing-currency figures).
