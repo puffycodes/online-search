@@ -39,6 +39,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
 - [`web_search_duckduckgo.py`](#web_search_duckduckgopy) — top web search results for a query, by scraping DuckDuckGo via the `ddgs` package (no API key, but unofficial and rate-limit-prone)
 - [`web_search_serpapi.py`](#web_search_serpapipy) — top web search results for a query, via the SerpApi Google Search API (requires a free `SERPAPI_API_KEY`)
+- [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries `web_search_brave.py`, then `web_search_serpapi.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -2083,6 +2084,47 @@ These are set as constants near the top of the file — edit them directly to ch
 - Requires a SerpApi key; the free tier is capped at 100 searches/month, beyond which requests fail or incur cost depending on the account's plan — a much tighter cap than Brave's free tier.
 - `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
 - SerpApi scrapes Google's actual results pages, so ranking, freshness, and coverage reflect Google's index — closer to what a user would see in a browser than Brave's or DuckDuckGo's independent indexes, but dependent on a third party's continued ability to scrape Google reliably.
+
+---
+
+## Claude Code agent: `web-search`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/web-search.md`. It calls no API itself — it shells out via the `Bash` tool to whichever of [`web_search_brave.py`](#web_search_bravepy), [`web_search_serpapi.py`](#web_search_serpapipy), or [`web_search_duckduckgo.py`](#web_search_duckduckgopy) it picks, and reports the results conversationally.
+
+### Purpose
+
+Lets Claude Code answer general "search the web for X" / "look up Y online" requests by running one of the three `web_search_*` scripts and summarizing its JSON output, instead of guessing or using stale training data — while automatically working around a missing API key or an exhausted quota on the preferred engine.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for general web-search requests, based on the `description` field in its frontmatter. It defers to a more specific agent (e.g. `stock-trend`, `weather`, `hottest-tech-discussions`) when the request matches one of those instead.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "web-search"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Runs `python3 web_search_brave.py "QUERY" --json` from the repo root (`--limit N` only if the user asked for a specific count).
+2. If that fails (missing `BRAVE_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_serpapi.py "QUERY" --json`.
+3. If that also fails (missing `SERPAPI_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_duckduckgo.py "QUERY" --json`, which needs no key but is unofficial and rate-limit-prone.
+4. Reports the first successful script's results as a numbered list (title, URL, snippet), noting when a fallback occurred so the user knows results came from a lower-quota or unofficial source. If all three fail, it says so plainly rather than answering from its own knowledge.
+
+It never runs more than one script once a prior one has already returned results, and retries a given script at most once, only for a transient-looking network error.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the scripts and reading their stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying scripts (in fallback order) | [`web_search_brave.py`](#web_search_bravepy), [`web_search_serpapi.py`](#web_search_serpapipy), [`web_search_duckduckgo.py`](#web_search_duckduckgopy) |
+
+### Notes / limitations
+
+- Requires at least one of the three underlying scripts to be runnable from the repo root; full quality search additionally needs a `BRAVE_API_KEY` and/or `SERPAPI_API_KEY`.
+- Inherits all the limitations of whichever underlying script actually serves the request — see that script's own "Notes / limitations" section.
+- The fallback order favors quota and official-API-ness over result quality; it does not compare or merge results across engines, it just uses the first one that works.
 
 ---
 
