@@ -24,7 +24,6 @@ readable report.
 """
 
 import argparse
-import json
 
 try:
     from ddgs import DDGS
@@ -41,7 +40,7 @@ except ImportError:
         DDGS = None
         DDGSException = Exception
 
-from cli_utils import die, positive_int
+from cli_utils import die, positive_int, print_results
 
 RESULTS_TO_SHOW = 10
 
@@ -59,16 +58,6 @@ def result_to_dict(rank, item):
         "url": item.get("href", ""),
         "snippet": item.get("body", "").replace("\n", " "),
     }
-
-
-def format_result(row):
-    """Render a result record from result_to_dict() as a text block."""
-    lines = [
-        f"{row['rank']}. {row['title']}",
-        f"   {row['url']}",
-        f"   {row['snippet']}",
-    ]
-    return "\n".join(lines)
 
 
 def parse_args(argv=None):
@@ -108,18 +97,7 @@ def main(argv=None):
         die(str(exc), args.json)
 
     rows = [result_to_dict(rank, item) for rank, item in enumerate(items, start=1)]
-
-    if args.json:
-        print(json.dumps(rows, indent=2))
-        return
-
-    if not rows:
-        print("No results found.")
-        return
-
-    for row in rows:
-        print(format_result(row))
-        print()
+    print_results(rows, args.json)
 
 
 if __name__ == "__main__":

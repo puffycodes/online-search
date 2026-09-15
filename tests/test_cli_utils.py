@@ -1,11 +1,67 @@
-"""Tests for cli_utils: the die() error-exit helper and the positive_int argparse type."""
+"""Tests for cli_utils: dotenv loading, result formatting/printing, the
+die() error-exit helper, and the positive_int argparse type."""
 
 import argparse
 import json
+import os
 
 import pytest
 
-from cli_utils import die, positive_int
+from cli_utils import die, format_result, load_dotenv, positive_int, print_results
+
+
+class TestLoadDotenv:
+    def test_missing_file_is_silently_ignored(self, tmp_path):
+        load_dotenv(path=str(tmp_path / "nope.env"))
+
+    def test_populates_environ(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CLI_UTILS_TEST_KEY", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("CLI_UTILS_TEST_KEY=abc123\n# a comment\n\nBAD_LINE_NO_EQUALS\n")
+        load_dotenv(path=str(env_file))
+        assert os.environ["CLI_UTILS_TEST_KEY"] == "abc123"
+
+    def test_quoted_value_is_unquoted(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CLI_UTILS_TEST_KEY", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text('CLI_UTILS_TEST_KEY="quoted value"\n')
+        load_dotenv(path=str(env_file))
+        assert os.environ["CLI_UTILS_TEST_KEY"] == "quoted value"
+
+    def test_real_env_var_takes_precedence(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CLI_UTILS_TEST_KEY", "real")
+        env_file = tmp_path / ".env"
+        env_file.write_text("CLI_UTILS_TEST_KEY=fromfile\n")
+        load_dotenv(path=str(env_file))
+        assert os.environ["CLI_UTILS_TEST_KEY"] == "real"
+
+
+class TestFormatResult:
+    def test_formats_three_lines(self):
+        row = {"rank": 1, "title": "T", "url": "U", "snippet": "S"}
+        assert format_result(row) == "1. T\n   U\n   S"
+
+
+class TestPrintResults:
+    def test_json_mode_prints_array(self, capsys):
+        rows = [{"rank": 1, "title": "T", "url": "U", "snippet": "S"}]
+        print_results(rows, True)
+        assert json.loads(capsys.readouterr().out) == rows
+
+    def test_text_mode_no_results(self, capsys):
+        print_results([], False)
+        assert capsys.readouterr().out.strip() == "No results found."
+
+    def test_text_mode_formats_each_row(self, capsys):
+        rows = [
+            {"rank": 1, "title": "A", "url": "u1", "snippet": "s1"},
+            {"rank": 2, "title": "B", "url": "u2", "snippet": "s2"},
+        ]
+        print_results(rows, False)
+        out = capsys.readouterr().out
+        assert "1. A" in out
+        assert "2. B" in out
+        assert out.index("1. A") < out.index("2. B")
 
 
 class TestPositiveInt:

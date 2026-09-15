@@ -28,12 +28,11 @@ readable report.
 """
 
 import argparse
-import json
 import os
 
 import requests
 
-from cli_utils import die, positive_int
+from cli_utils import die, load_dotenv, positive_int, print_results
 
 SEARCH_URL = "https://api.exa.ai/search"
 REQUEST_TIMEOUT = 10
@@ -45,31 +44,6 @@ MAX_RESULTS_PER_REQUEST = 100
 # Exa can return full page text; ask it to truncate each result's
 # "text" field to a snippet-sized excerpt server-side.
 SNIPPET_MAX_CHARACTERS = 300
-
-ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-
-
-def load_dotenv(path=ENV_FILE):
-    """Populate os.environ from a simple KEY=VALUE .env file.
-
-    Existing environment variables are never overwritten, so real env
-    vars always take precedence over .env values. Missing files are
-    silently ignored.
-    """
-    try:
-        with open(path, encoding="utf-8") as env_file:
-            lines = env_file.readlines()
-    except FileNotFoundError:
-        return
-
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip("'\"")
-        os.environ.setdefault(key, value)
 
 
 def fetch_results(query, limit, api_key):
@@ -100,16 +74,6 @@ def result_to_dict(rank, item):
         "url": item.get("url", ""),
         "snippet": (item.get("text") or "").replace("\n", " "),
     }
-
-
-def format_result(row):
-    """Render a result record from result_to_dict() as a text block."""
-    lines = [
-        f"{row['rank']}. {row['title']}",
-        f"   {row['url']}",
-        f"   {row['snippet']}",
-    ]
-    return "\n".join(lines)
 
 
 def parse_args(argv=None):
@@ -153,18 +117,7 @@ def main(argv=None):
         die(str(exc), args.json)
 
     rows = [result_to_dict(rank, item) for rank, item in enumerate(items, start=1)]
-
-    if args.json:
-        print(json.dumps(rows, indent=2))
-        return
-
-    if not rows:
-        print("No results found.")
-        return
-
-    for row in rows:
-        print(format_result(row))
-        print()
+    print_results(rows, args.json)
 
 
 if __name__ == "__main__":

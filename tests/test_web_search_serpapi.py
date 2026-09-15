@@ -128,12 +128,6 @@ class TestResultToDict:
         assert row["snippet"] == ""
 
 
-class TestFormatResult:
-    def test_formats_three_lines(self):
-        row = {"rank": 1, "title": "T", "url": "U", "snippet": "S"}
-        assert wss.format_result(row) == "1. T\n   U\n   S"
-
-
 class TestParseArgs:
     def test_defaults(self):
         args = wss.parse_args(["python"])
