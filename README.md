@@ -9,6 +9,8 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location
 - [`weather_forecast.py`](#weather_forecastpy) — multi-day (1-16 day) weather forecast for a named location, sharing `weather.py`'s geocoding
 - [`.claude/agents/weather-forecast.md`](#claude-code-agent-weather-forecast) — Claude Code subagent that calls `weather_forecast.py` and reports the upcoming multi-day forecast for a named location
+- [`air_quality.py`](#air_qualitypy) — current air quality (US AQI, European AQI, and pollutant levels) for a named location, sharing `weather.py`'s geocoding
+- [`.claude/agents/air-quality.md`](#claude-code-agent-air-quality) — Claude Code subagent that calls `air_quality.py` and reports the current air quality / AQI for a named location
 
 **[Market & Stock Data](#market--stock-data)**
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
@@ -361,6 +363,160 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Requires `weather_forecast.py`, its `weather.py` dependency, and the `requests` package to be present and runnable from the repo root.
 - Reports one high/low/condition summary per day, not an hourly breakdown, and has no current-conditions reading — for "right now" it defers to the [`weather`](#claude-code-agent-weather) agent rather than approximating from the forecast's first day.
 - Inherits all the limitations of [`weather_forecast.py`](#weather_forecastpy) itself (geocoding takes only the top match for an ambiguous name, per-day summary codes, forecast accuracy tapering toward day 16, live-snapshot results).
+
+---
+
+## air_quality.py
+
+Prints the current air quality — US AQI, European AQI, and raw pollutant concentrations — for a named location, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and air quality APIs. No API key or authentication required.
+
+Requires `weather.py` to be present in the same directory — it imports `fetch_json`, `format_place`, and `geocode` directly from it rather than shelling out or duplicating that logic (the same sharing pattern [`weather_forecast.py`](#weather_forecastpy) uses). It also imports `die` from [`cli_utils.py`](#cli_utilspy).
+
+Reports both the US AQI (EPA scale — the "AQI" most commonly referenced in US media and apps) and the European AQI (EAQI scale) side by side. The two indices use different breakpoints and are **not directly comparable** — a European AQI of 49 and a US AQI of 132 for the same air can both be correct.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `weather.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 air_quality.py LOCATION [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `LOCATION` (positional) | — | Free-text place name, e.g. `"London"`, `"New York"`, `"Tokyo"` |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Looking up air quality for 'Singapore'...
+
+Air quality for Singapore, Singapore
+  US AQI: 132 (Unhealthy for Sensitive Groups)
+  European AQI: 49
+  PM2.5: 30.2 µg/m³
+  PM10: 35.0 µg/m³
+  Carbon monoxide: 388.0 µg/m³
+  Nitrogen dioxide: 12.1 µg/m³
+  Sulphur dioxide: 6.8 µg/m³
+  Ozone: 99.0 µg/m³
+  As of: 2026-09-15T14:00
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 air_quality.py "Beijing" --json
+```
+
+```json
+{
+  "location": "Beijing",
+  "admin1": "Beijing Municipality",
+  "country": "China",
+  "latitude": 39.9075,
+  "longitude": 116.39723,
+  "us_aqi": 152,
+  "us_aqi_category": "Unhealthy",
+  "european_aqi": 59,
+  "pm2_5": 44.0,
+  "pm10": 54.8,
+  "carbon_monoxide": 582.0,
+  "nitrogen_dioxide": 58.7,
+  "sulphur_dioxide": 11.2,
+  "ozone": 70.0,
+  "time": "2026-09-15T14:00"
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Geocode** — Calls `weather.geocode()` (shared with [`weather.py`](#weatherpy)) to resolve the free-text `LOCATION` to its top-matching place.
+2. **Fetch current air quality** — Calls Open-Meteo's air quality endpoint (`air-quality-api.open-meteo.com/v1/air-quality`) with `current=us_aqi,european_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone` (`CURRENT_FIELDS`) and `timezone=auto` at that location's coordinates.
+3. **Categorize and display** — Maps the numeric US AQI to its EPA category label via `us_aqi_category()` (`US_AQI_CATEGORIES`), and prints location, both AQI values, the raw pollutant concentrations, and the observation time (or the equivalent JSON object with `--json`).
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `CURRENT_FIELDS` | `us_aqi,european_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone` | The Open-Meteo `current=` parameter value |
+| `US_AQI_CATEGORIES` | 6 EPA bands, `Good` through `Hazardous` | Upper-bound/label pairs used by `us_aqi_category()` |
+| `REQUEST_TIMEOUT` | 10 (from `weather.py`) | Per-request timeout in seconds |
+
+### API reference
+
+- `us_aqi_category(us_aqi)` — Maps a US AQI value to its EPA category label (`Good`, `Moderate`, `Unhealthy for Sensitive Groups`, `Unhealthy`, `Very Unhealthy`, `Hazardous`); returns `None` if `us_aqi` is `None`.
+- `fetch_current_air_quality(latitude, longitude)` — Fetches the `current` object for a coordinate pair from Open-Meteo's air quality endpoint.
+- `get_air_quality(location)` — Orchestrates geocoding (via `weather.geocode()`) and the current-air-quality fetch; returns the flattened `{location, admin1, country, latitude, longitude, us_aqi, us_aqi_category, european_aqi, pm2_5, pm10, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, time}` record, or `None` if the location can't be found.
+- `format_air_quality(row)` — Renders a `get_air_quality()` record as a multi-line human-readable string (its place line comes from `weather.format_place()`).
+- `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--json`.
+- `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
+
+See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, and `format_place()`.
+
+### Error handling
+
+- If either API request fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If the location can't be geocoded (no match), the script prints `Error: No location found matching '<LOCATION>'.` (or `{"error": "No location found matching '<LOCATION>'."}` with `--json`) to stderr and exits with status code 1.
+
+### Notes / limitations
+
+- Same geocoding caveat as [`weather.py`](#weatherpy): the query's single top match is used, so an ambiguous name may resolve to the wrong place — disambiguate by adding a country or region to the query.
+- Reports only the current reading at a single instant — no forecast or historical air quality (Open-Meteo's air quality API supports both `hourly=` forecasts and archived history; this script only calls the `current` shortcut).
+- The US AQI and European AQI are **not directly comparable** — they use different pollutant breakpoints and scales (US AQI runs roughly 0-500, European AQI roughly 0-100+). Don't average or otherwise combine them.
+- Open-Meteo's air quality model (CAMS) is coarser-resolution than a dedicated ground-station network like WAQI/AirNow, so readings can differ somewhat from a country's own official monitoring stations, especially for hyper-local pollution sources.
+- Results are a live snapshot; conditions will differ between runs.
+
+---
+
+## Claude Code agent: `air-quality`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/air-quality.md`. It calls no API itself — it shells out to [`air_quality.py`](#air_qualitypy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what's the air quality in Beijing?", "is the air bad in Singapore right now?", "AQI for Delhi", or "how polluted is it in Los Angeles today?" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for current air pollution / AQI / smog questions about a named place, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "air-quality"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
+2. Runs `python3 air_quality.py "LOCATION" --json` from the repo root.
+3. Parses the JSON object (`us_aqi`, `us_aqi_category`, `european_aqi`, `pm2_5`, `pm10`, `carbon_monoxide`, `nitrogen_dioxide`, `sulphur_dioxide`, `ozone`, `time`) and leads with the US AQI and its category, mentioning the European AQI only when relevant and never combining the two scales. It calls out a specific pollutant only if the user asked for detail or one is notably elevated. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`air_quality.py`](#air_qualitypy) |
+
+### Notes / limitations
+
+- Requires `air_quality.py` (and its `weather.py` and `requests` dependencies) to be present and runnable from the repo root.
+- Reports current conditions only — there is no forecast or historical air quality to fall back on, so it says so rather than fabricating one.
+- Inherits all the limitations of [`air_quality.py`](#air_qualitypy) itself (geocoding takes only the top match for an ambiguous name, the two AQI scales aren't comparable, Open-Meteo's model resolution versus dedicated ground stations, live-snapshot results).
 
 ---
 

@@ -2,8 +2,8 @@
 
 Unit tests for the scripts and helper modules at the repository root. Everything
 runs **offline** — every network call is monkeypatched, so running the suite
-never touches Yahoo Finance, Open-Meteo, Hacker News, or any of the web search
-APIs (Brave, Serper, Tavily, SerpApi, Exa, Perplexity).
+never touches Yahoo Finance, Open-Meteo (weather or air quality), Hacker News,
+or any of the web search APIs (Brave, Serper, Tavily, SerpApi, Exa, Perplexity).
 
 ## Running
 
@@ -52,6 +52,7 @@ tests/
   test_doctests.py            – runs the indicators.py / valuation.py doctests
   test_weather.py
   test_weather_forecast.py
+  test_air_quality.py
   test_hottest_tech_discussions.py
   test_market_top_volume.py
   test_stock_close_history.py
@@ -134,6 +135,7 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_doctests.py` | `indicators`, `valuation` | keeps the in-module doctests running under pytest |
 | `test_weather.py` | `weather` | `weather_description`, `format_place`, `geocode`, `get_weather`, `parse_args`, `main` |
 | `test_weather_forecast.py` | `weather_forecast` | `_valid_days`, `get_forecast` day-record assembly, `format_forecast`, `main` |
+| `test_air_quality.py` | `air_quality` | `us_aqi_category` band boundaries + `None`; `get_air_quality` record assembly + missing-`us_aqi` case; `format_air_quality`; `parse_args`; `main` (request error, not found, JSON/text output) |
 | `test_hottest_tech_discussions.py` | `hottest_tech_discussions` | `discussion_url`/`posted_at`/`story_to_dict`; `fetch_story` error-swallowing; `get_hottest_tech_discussions` type filter / score sort / limit / candidate-pool slice; `main` |
 | `test_market_top_volume.py` | `market_top_volume` | `METRICS`/`MARKETS` structural consistency; `quote_to_dict`; `format_quote` ordering; `get_movers` predefined vs region path, filters, sort; `fetch_region_quotes` crumb/error/success; `main` limit clamp |
 | `test_stock_close_history.py` | `stock_close_history` | `extract_rows` rounding / unsettled-bar skip / gmtoffset date shift / None-safety; `main` `--last` trim, JSON shape, adj-close column, error exit |
