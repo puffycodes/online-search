@@ -39,7 +39,8 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
 - [`web_search_duckduckgo.py`](#web_search_duckduckgopy) — top web search results for a query, by scraping DuckDuckGo via the `ddgs` package (no API key, but unofficial and rate-limit-prone)
 - [`web_search_serpapi.py`](#web_search_serpapipy) — top web search results for a query, via the SerpApi Google Search API (requires a free `SERPAPI_API_KEY`)
-- [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries `web_search_brave.py`, then `web_search_serpapi.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds
+- [`web_search_serper.py`](#web_search_serperpy) — top web search results for a query, via the Serper Google Search API (requires a free `SERPER_API_KEY`)
+- [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries `web_search_brave.py`, then `web_search_serper.py`, then `web_search_serpapi.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -2087,13 +2088,128 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
+## web_search_serper.py
+
+Prints the top web search results for a query, using the [Serper Google Search API](https://serper.dev/). Requires a `SERPER_API_KEY` (free tier: 2,500 one-time credits, not recurring).
+
+See [`web_search_brave.py`](#web_search_bravepy)'s docstring for why Google's own Programmable Search Engine and scraping DuckDuckGo's HTML were ruled out for those scripts. Serper is a fourth option, alongside SerpApi: it also proxies Google's actual search results through an official, supported API, at the cost of a paid-tier-optional subscription and a dependency on a third-party scraping service rather than a first-party search index like Brave's.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- a Serper key — register at https://serper.dev/
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 web_search_serper.py QUERY [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `QUERY` (positional) | — | Free-text search query, e.g. `"python programming language"` |
+| `--limit N` | 10 | Number of results to return (paginates in batches of up to 100 if `N` exceeds that) |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Searching for: python programming language
+
+1. Welcome to Python.org
+   https://www.python.org/
+   Python is a programming language that lets you work quickly and integrate systems more effectively.
+
+2. Python (programming language) - Wikipedia
+   https://en.wikipedia.org/wiki/Python_(programming_language)
+   Python is a high-level, general-purpose programming language that emphasizes code readability, simplicity, and ease-of-writing with the use of significant indentation, an extensive ("batteries-included") standard library, and garbage collection. Python supports multiple programming paradigms ...
+
+3. Introduction to Python
+   https://www.w3schools.com/python/python_intro.asp
+   Python is a popular programming language. It was created by Guido van Rossum, and released in 1991.
+
+...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 web_search_serper.py "claude ai" --limit 2 --json
+```
+
+```json
+[
+  {
+    "rank": 1,
+    "title": "Claude",
+    "url": "https://claude.ai/login",
+    "snippet": "Claude is Anthropic's AI, built for problem solvers. Tackle complex challenges, analyze data, write code, and think through your hardest work."
+  },
+  {
+    "rank": 2,
+    "title": "Claude.ai",
+    "url": "https://claude.com/",
+    "snippet": "Claude is an artificial intelligence, trained by Anthropic using Constitutional AI to be safe, accurate, and secure — the trusted assistant for you to do your best work."
+  }
+]
+```
+
+With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `SERPER_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+2. **Fetch, paginating as needed** — POSTs to Serper's `/search` endpoint with the query as a JSON body. The engine caps each page at 100 organic results (`MAX_RESULTS_PER_REQUEST`), so `--limit` values above that page across multiple requests using the `page` parameter.
+3. **Check for an in-band error** — Serper reports some failures (e.g. an invalid key) as an HTTP 200 (well, sometimes non-2xx) response carrying a `"message"` field instead of `"organic"` results, so `fetch_results()` checks for that explicitly and raises to trigger the normal error path; an actual non-2xx status (e.g. `403` for an unauthorized key) is raised by `raise_for_status()` beforehand.
+4. **Display top N** — Prints each result's rank, title, URL, and snippet.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
+| `MAX_RESULTS_PER_REQUEST` | 100 | Serper's per-page organic-result cap, used to decide when to paginate |
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
+
+### API reference
+
+- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `fetch_results(query, limit, api_key)` — Calls the Serper Search API, paginating via `page` until `limit` results are collected (or the API returns fewer than requested, meaning there are no more); raises `requests.RequestException` if the response body carries a `"message"` field with no `"organic"` results; returns a list of raw result dicts.
+- `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes.
+- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If `SERPER_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- If a request fails (network error, timeout, non-2xx response such as `403 Unauthorized` for a bad key, or a response body carrying a `"message"` field instead of results — e.g. exhausted credits), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
+
+### Notes / limitations
+
+- Requires a Serper key; the free tier is a one-time grant of 2,500 credits rather than a recurring monthly quota — once spent, requests fail until the account is topped up.
+- `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
+- Serper scrapes Google's actual results pages, so ranking, freshness, and coverage reflect Google's index — closer to what a user would see in a browser than Brave's or DuckDuckGo's independent indexes, but dependent on a third party's continued ability to scrape Google reliably.
+
+---
+
 ## Claude Code agent: `web-search`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/web-search.md`. It calls no API itself — it shells out via the `Bash` tool to whichever of [`web_search_brave.py`](#web_search_bravepy), [`web_search_serpapi.py`](#web_search_serpapipy), or [`web_search_duckduckgo.py`](#web_search_duckduckgopy) it picks, and reports the results conversationally.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/web-search.md`. It calls no API itself — it shells out via the `Bash` tool to whichever of [`web_search_brave.py`](#web_search_bravepy), [`web_search_serper.py`](#web_search_serperpy), [`web_search_serpapi.py`](#web_search_serpapipy), or [`web_search_duckduckgo.py`](#web_search_duckduckgopy) it picks, and reports the results conversationally.
 
 ### Purpose
 
-Lets Claude Code answer general "search the web for X" / "look up Y online" requests by running one of the three `web_search_*` scripts and summarizing its JSON output, instead of guessing or using stale training data — while automatically working around a missing API key or an exhausted quota on the preferred engine.
+Lets Claude Code answer general "search the web for X" / "look up Y online" requests by running one of the four `web_search_*` scripts and summarizing its JSON output, instead of guessing or using stale training data — while automatically working around a missing API key or an exhausted quota on the preferred engine.
 
 ### How it's invoked
 
@@ -2105,9 +2221,10 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### What it does
 
 1. Runs `python3 web_search_brave.py "QUERY" --json` from the repo root (`--limit N` only if the user asked for a specific count).
-2. If that fails (missing `BRAVE_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_serpapi.py "QUERY" --json`.
-3. If that also fails (missing `SERPAPI_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_duckduckgo.py "QUERY" --json`, which needs no key but is unofficial and rate-limit-prone.
-4. Reports the first successful script's results as a numbered list (title, URL, snippet), noting when a fallback occurred so the user knows results came from a lower-quota or unofficial source. If all three fail, it says so plainly rather than answering from its own knowledge.
+2. If that fails (missing `BRAVE_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_serper.py "QUERY" --json`.
+3. If that also fails (missing `SERPER_API_KEY`, exhausted credits, request error), falls back to `python3 web_search_serpapi.py "QUERY" --json`.
+4. If that also fails (missing `SERPAPI_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_duckduckgo.py "QUERY" --json`, which needs no key but is unofficial and rate-limit-prone.
+5. Reports the first successful script's results as a numbered list (title, URL, snippet), noting when a fallback occurred so the user knows results came from a lower-quota or unofficial source. If all four fail, it says so plainly rather than answering from its own knowledge.
 
 It never runs more than one script once a prior one has already returned results, and retries a given script at most once, only for a transient-looking network error.
 
@@ -2118,11 +2235,11 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
-| Underlying scripts (in fallback order) | [`web_search_brave.py`](#web_search_bravepy), [`web_search_serpapi.py`](#web_search_serpapipy), [`web_search_duckduckgo.py`](#web_search_duckduckgopy) |
+| Underlying scripts (in fallback order) | [`web_search_brave.py`](#web_search_bravepy), [`web_search_serper.py`](#web_search_serperpy), [`web_search_serpapi.py`](#web_search_serpapipy), [`web_search_duckduckgo.py`](#web_search_duckduckgopy) |
 
 ### Notes / limitations
 
-- Requires at least one of the three underlying scripts to be runnable from the repo root; full quality search additionally needs a `BRAVE_API_KEY` and/or `SERPAPI_API_KEY`.
+- Requires at least one of the four underlying scripts to be runnable from the repo root; full quality search additionally needs a `BRAVE_API_KEY`, `SERPER_API_KEY`, and/or `SERPAPI_API_KEY`.
 - Inherits all the limitations of whichever underlying script actually serves the request — see that script's own "Notes / limitations" section.
 - The fallback order favors quota and official-API-ness over result quality; it does not compare or merge results across engines, it just uses the first one that works.
 
