@@ -42,7 +42,8 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`web_search_serper.py`](#web_search_serperpy) — top web search results for a query, via the Serper Google Search API (requires a free `SERPER_API_KEY`)
 - [`web_search_tavily.py`](#web_search_tavilypy) — top web search results for a query, via the Tavily Search API — its own crawl/index built for LLM/agent use (requires a free `TAVILY_API_KEY`)
 - [`web_search_exa.py`](#web_search_exapy) — top web search results for a query, via the Exa neural/semantic Search API (requires a free `EXA_API_KEY`)
-- [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds
+- [`web_search_perplexity.py`](#web_search_perplexitypy) — a synthesized, cited answer to a query, via the Perplexity Sonar API (requires a paid `PERPLEXITY_API_KEY`; a different output shape from the other five — see its section below)
+- [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds (`web_search_perplexity.py` is a standalone tool, not part of this fallback chain)
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -2428,6 +2429,121 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
+## web_search_perplexity.py
+
+Gets a synthesized, cited answer to a query, using the [Perplexity Sonar API](https://docs.perplexity.ai/). Requires a `PERPLEXITY_API_KEY`. Unlike the other five engines in this repo, Perplexity's API has no ongoing free tier — billing must be set up on the account (new accounts sometimes get a small one-time credit).
+
+**This script's output shape is different from the other five.** `web_search_brave.py`, `web_search_serpapi.py`, `web_search_serper.py`, `web_search_tavily.py`, and `web_search_exa.py` all return a flat `[{rank, title, url, snippet}, ...]` array, because each of those APIs hands back a ranked list of independent search results. Sonar models don't — they run their own web search internally and return one synthesized natural-language answer, plus the sources it drew on. So this script's `--json` output is `{"answer": "...", "sources": [{rank, title, url, date}, ...]}` instead. It is **not** wired into the `web-search` agent's fallback chain for that reason — see [Claude Code agent: `web-search`](#claude-code-agent-web-search).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- a Perplexity API key with billing enabled — see https://www.perplexity.ai/settings/api
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 web_search_perplexity.py QUERY [--model MODEL] [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `QUERY` (positional) | — | Question or search query, e.g. `"what is the latest stable python version"` |
+| `--model MODEL` | `sonar` | Perplexity Sonar model id, e.g. `sonar`, `sonar-pro`, `sonar-reasoning`, `sonar-reasoning-pro` |
+| `--limit N` | 10 | Max number of sources to display; Perplexity itself decides how many it cites — this only trims that list locally |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Asking: what is the latest stable python version
+
+Python's latest stable release is Python 3.14, with 3.13 and 3.12 also
+receiving active support. [1][2]
+
+Sources:
+  1. Python Releases (2026-01-05)
+     https://www.python.org/downloads/
+  2. Status of Python versions
+     https://devguide.python.org/versions/
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 web_search_perplexity.py "what is the latest stable python version" --limit 2 --json
+```
+
+```json
+{
+  "answer": "Python's latest stable release is Python 3.14, with 3.13 and 3.12 also receiving active support. [1][2]",
+  "sources": [
+    {
+      "rank": 1,
+      "title": "Python Releases",
+      "url": "https://www.python.org/downloads/",
+      "date": "2026-01-05"
+    },
+    {
+      "rank": 2,
+      "title": "Status of Python versions",
+      "url": "https://devguide.python.org/versions/",
+      "date": null
+    }
+  ]
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `PERPLEXITY_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+2. **Ask the model** — POSTs to Perplexity's OpenAI-compatible `/chat/completions` endpoint with the query as a single user message and the chosen `--model`. Sonar performs its own web search server-side as part of answering.
+3. **Extract the answer and its sources** — The synthesized answer comes from `choices[0].message.content`; the sources it cited come from the response's `search_results` array (`title`, `url`, `date`). A response with no `choices` at all is treated as a failure and raised as an error, since there's no answer to show.
+4. **Trim and display** — The sources list is trimmed to `--limit` locally (Perplexity has no request-time parameter to ask for fewer citations), then the answer and numbered source list are printed (or the equivalent `{answer, sources}` JSON object with `--json`).
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `DEFAULT_MODEL` | `"sonar"` | Model used when `--model` isn't passed |
+| `SOURCES_TO_SHOW` | 10 | Number of sources to display by default |
+| `REQUEST_TIMEOUT` | 30 | Per-request timeout in seconds (higher than the other scripts, since Sonar synthesizes an answer before responding) |
+| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
+
+### API reference
+
+- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `fetch_answer(query, api_key, model=DEFAULT_MODEL)` — Calls the Sonar chat-completions endpoint; returns `(answer, sources)`, where `sources` is the raw `search_results` list (possibly empty); raises `requests.RequestException` if the response carries no `choices` at all.
+- `source_to_dict(rank, item)` — Flattens one raw citation into the `{rank, title, url, date}` record used for **both** output modes.
+- `format_answer(answer, sources)` — Renders the answer plus a numbered source list (or just the answer, if there are no sources) as a human-readable string.
+- `parse_args(argv=None)` — Parses the `query` positional plus `--model`, `--limit`, and `--json` CLI flags.
+- `main(argv=None)` — Entry point; loads credentials, asks the model, handles top-level network/credential errors, trims sources to `--limit`, and prints the result (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If `PERPLEXITY_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- If the request fails (network error, timeout, or a non-2xx response) or the response carries no `choices`, the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed. Perplexity returns `401` both for an invalid/missing key and for a billing/quota problem on an otherwise-valid key (`"type": "insufficient_quota"` in the body) — since there's no free tier, a `401` on a key you know is correct usually means billing needs to be set up or topped up at https://www.perplexity.ai/settings/api, not that the key itself is wrong.
+
+### Notes / limitations
+
+- Requires a Perplexity API key with billing enabled; there is no recurring free query allowance.
+- The output shape is intentionally different from the other five `web_search_*.py` scripts — see the callout above. Don't assume the flat `[{rank, title, url, snippet}, ...]` array shape when scripting against this one.
+- `--limit` only trims the source list this script already received — it cannot ask Perplexity for more or fewer citations up front, since Sonar decides that itself based on what it needed to answer.
+- The answer is a model-generated synthesis, not a verbatim quote from any one source — treat it the way you would any LLM-generated summary, and check the cited sources for anything load-bearing.
+- `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
+
+---
+
 ## Claude Code agent: `web-search`
 
 A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/web-search.md`. It calls no API itself — it shells out via the `Bash` tool to whichever of [`web_search_brave.py`](#web_search_bravepy), [`web_search_serper.py`](#web_search_serperpy), [`web_search_tavily.py`](#web_search_tavilypy), [`web_search_serpapi.py`](#web_search_serpapipy), [`web_search_exa.py`](#web_search_exapy), or [`web_search_duckduckgo.py`](#web_search_duckduckgopy) it picks, and reports the results conversationally.
@@ -2467,6 +2583,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 ### Notes / limitations
 
 - Requires at least one of the six underlying scripts to be runnable from the repo root; full quality search additionally needs a `BRAVE_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, `SERPAPI_API_KEY`, and/or `EXA_API_KEY`.
+- [`web_search_perplexity.py`](#web_search_perplexitypy) is deliberately excluded from this agent's fallback chain — it returns a synthesized answer plus sources, not a ranked `[{rank, title, url, snippet}, ...]` array, so it doesn't fit this agent's uniform result-list parsing. Use it directly (or via a dedicated agent) for "give me a cited answer" requests rather than "give me a list of pages" requests.
 - Inherits all the limitations of whichever underlying script actually serves the request — see that script's own "Notes / limitations" section.
 - The fallback order favors quota and official-API-ness over result quality; it does not compare or merge results across engines, it just uses the first one that works.
 

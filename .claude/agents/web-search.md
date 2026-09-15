@@ -80,3 +80,5 @@ Mention which engine actually produced the results only if it's not Brave (the d
 If a script's error output complains about an invalid or unauthorized key (not just a missing/quota-exhausted one), fall through to the next script as usual, but flag the specific key as possibly misconfigured when you report back — don't silently mask it.
 
 Do not fabricate results, titles, or URLs — only report what the script returned. If a script returns an empty list, say so plainly instead of inventing content.
+
+`web_search_perplexity.py` is not part of this fallback chain — it returns a synthesized answer plus a source list (`{"answer": ..., "sources": [...]}`), not the flat `[{rank, title, url, snippet}, ...]` array the six scripts above share, so it doesn't fit this agent's uniform parsing. Never substitute it into this chain.
