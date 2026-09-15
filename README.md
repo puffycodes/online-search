@@ -47,7 +47,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
-- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `positive_int` argparse type) imported by the command-line scripts
+- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `positive_int` argparse type, `.env` loading, result-list formatting/printing) imported by the command-line scripts
 
 ---
 
@@ -1838,15 +1838,14 @@ These are set as constants near the top of the file — edit them directly to ch
 | `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
 | `MAX_RESULTS_PER_REQUEST` | 20 | Brave API's per-request result cap, used to decide when to paginate |
 | `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
-| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
 
 ### API reference
 
-- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `load_dotenv(path=cli_utils.ENV_FILE)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
 - `strip_markup(text)` — Strips Brave's `<strong>` highlighting tags and unescapes HTML entities from a title/description string.
 - `fetch_results(query, limit, api_key)` — Calls the Brave Search API, paginating via `offset` until `limit` results are collected (or the API returns fewer than requested, meaning there are no more); returns a list of raw result dicts.
 - `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes.
-- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `format_result(row)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Renders a `result_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
 - `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
 
@@ -1957,7 +1956,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - `fetch_results(query, limit)` — Opens a `DDGS()` session and returns up to `limit` raw result dicts from `.text()`.
 - `result_to_dict(rank, item)` — Flattens one raw result into the `{rank, title, url, snippet}` record used for **both** output modes.
-- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `format_result(row)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Renders a `result_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
 - `main(argv=None)` — Entry point; checks the dependency, fetches, handles top-level errors, and prints results (either human-readable or JSON, depending on `--json`).
 
@@ -2066,14 +2065,13 @@ These are set as constants near the top of the file — edit them directly to ch
 | `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
 | `MAX_RESULTS_PER_REQUEST` | 100 | SerpApi Google engine's per-request organic-result cap, used to decide when to paginate |
 | `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
-| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
 
 ### API reference
 
-- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `load_dotenv(path=cli_utils.ENV_FILE)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
 - `fetch_results(query, limit, api_key)` — Calls the SerpApi Google Search API, paginating via `start` until `limit` results are collected (or the API returns fewer than requested, meaning there are no more); raises `requests.RequestException` if the response body carries an `"error"` field; returns a list of raw result dicts.
 - `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes.
-- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `format_result(row)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Renders a `result_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
 - `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
 
@@ -2181,14 +2179,13 @@ These are set as constants near the top of the file — edit them directly to ch
 | `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
 | `MAX_RESULTS_PER_REQUEST` | 100 | Serper's per-page organic-result cap, used to decide when to paginate |
 | `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
-| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
 
 ### API reference
 
-- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `load_dotenv(path=cli_utils.ENV_FILE)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
 - `fetch_results(query, limit, api_key)` — Calls the Serper Search API, paginating via `page` until `limit` results are collected (or the API returns fewer than requested, meaning there are no more); raises `requests.RequestException` if the response body carries a `"message"` field with no `"organic"` results; returns a list of raw result dicts.
 - `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes.
-- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `format_result(row)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Renders a `result_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
 - `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
 
@@ -2291,14 +2288,13 @@ These are set as constants near the top of the file — edit them directly to ch
 | `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
 | `MAX_RESULTS_PER_REQUEST` | 20 | Tavily's documented `max_results` ceiling per request; also the hard cap on `--limit`, since there is no pagination |
 | `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
-| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
 
 ### API reference
 
-- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `load_dotenv(path=cli_utils.ENV_FILE)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
 - `fetch_results(query, limit, api_key)` — POSTs a single request to the Tavily Search API with `max_results` capped at `MAX_RESULTS_PER_REQUEST`; returns up to `limit` raw result dicts.
 - `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes (Tavily's `content` field becomes `snippet`).
-- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `format_result(row)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Renders a `result_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
 - `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
 
@@ -2403,14 +2399,13 @@ These are set as constants near the top of the file — edit them directly to ch
 | `MAX_RESULTS_PER_REQUEST` | 100 | Exa's documented `numResults` ceiling per request; also the hard cap on `--limit`, since there is no pagination |
 | `SNIPPET_MAX_CHARACTERS` | 300 | Requested via `contents.text.maxCharacters` so Exa truncates each result's page text server-side |
 | `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
-| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
 
 ### API reference
 
-- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `load_dotenv(path=cli_utils.ENV_FILE)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
 - `fetch_results(query, limit, api_key)` — POSTs a single request to the Exa Search API with `numResults` capped at `MAX_RESULTS_PER_REQUEST` and text contents truncated to `SNIPPET_MAX_CHARACTERS`; returns up to `limit` raw result dicts.
 - `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes (Exa's `text` field becomes `snippet`; a `null` text field becomes an empty string).
-- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `format_result(row)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Renders a `result_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
 - `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
 
@@ -2518,11 +2513,10 @@ These are set as constants near the top of the file — edit them directly to ch
 | `DEFAULT_MODEL` | `"sonar"` | Model used when `--model` isn't passed |
 | `SOURCES_TO_SHOW` | 10 | Number of sources to display by default |
 | `REQUEST_TIMEOUT` | 30 | Per-request timeout in seconds (higher than the other scripts, since Sonar synthesizes an answer before responding) |
-| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
 
 ### API reference
 
-- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `load_dotenv(path=cli_utils.ENV_FILE)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
 - `fetch_answer(query, api_key, model=DEFAULT_MODEL)` — Calls the Sonar chat-completions endpoint; returns `(answer, sources)`, where `sources` is the raw `search_results` list (possibly empty); raises `requests.RequestException` if the response carries no `choices` at all.
 - `source_to_dict(rank, item)` — Flattens one raw citation into the `{rank, title, url, date}` record used for **both** output modes.
 - `format_answer(answer, sources)` — Renders the answer plus a numbered source list (or just the answer, if there are no sources) as a human-readable string.
@@ -2610,7 +2604,7 @@ Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.p
 
 ## cli_utils.py
 
-Two tiny helpers shared by the command-line scripts, so error exits and integer-argument validation are uniform across them. Not a CLI — it is imported, not run.
+Small helpers shared by the command-line scripts: uniform error exits, integer-argument validation, `.env` loading, and the result-list formatting/printing shared by the six `web_search_*.py` scripts that return a flat `[{rank, title, url, snippet}, ...]` array (`web_search_perplexity.py`'s different answer-plus-sources shape doesn't use these last two). Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -2620,8 +2614,13 @@ Two tiny helpers shared by the command-line scripts, so error exits and integer-
 
 - `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
 - `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts) and `--years` (`stock_intrinsic_value.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
+- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).
+- `format_result(row)` — Renders a `{rank, title, url, snippet}` record (the shape every `web_search_*.py` script but `web_search_perplexity.py` produces) as a multi-line human-readable string.
+- `print_results(rows, as_json)` — Prints a list of `{rank, title, url, snippet}` records: the list as JSON with `as_json=True`; otherwise `"No results found."` for an empty list, or each row through `format_result()` separated by a blank line. This is the shared tail of each of those scripts' `main()`.
 
 ### Notes / limitations
 
 - `die()` always exits `1`; the argparse layer's own errors (an unparsable value, a rejected `positive_int`) exit `2`. Scripts that had a manual `--last < 1` / `--years < 1` check now get that rejection from argparse instead, so those cases changed from exit `1` to exit `2` and now happen before any network call.
+- `load_dotenv()`'s `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
+- `format_result()` / `print_results()` assume the `{rank, title, url, snippet}` shape; they aren't used by `web_search_perplexity.py`, whose Sonar-based output shape is a synthesized answer plus a source list rather than a flat results array (see that script's own section for why).
 

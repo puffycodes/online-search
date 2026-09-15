@@ -2,7 +2,8 @@
 
 Unit tests for the scripts and helper modules at the repository root. Everything
 runs **offline** — every network call is monkeypatched, so running the suite
-never touches Yahoo Finance, Open-Meteo, or Hacker News.
+never touches Yahoo Finance, Open-Meteo, Hacker News, or any of the web search
+APIs (Brave, Serper, Tavily, SerpApi, Exa, Perplexity).
 
 ## Running
 
@@ -59,7 +60,11 @@ tests/
   test_stock_tech_buzz_agent.py
   test_web_search_brave.py
   test_web_search_duckduckgo.py
+  test_web_search_exa.py
+  test_web_search_perplexity.py
   test_web_search_serpapi.py
+  test_web_search_serper.py
+  test_web_search_tavily.py
   test_generate_page.py
 ```
 
@@ -122,7 +127,7 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 
 | Test module | Under test | Focus |
 |---|---|---|
-| `test_cli_utils.py` | `cli_utils` | `positive_int` accept/reject; `die` plain vs JSON, exit code, stream |
+| `test_cli_utils.py` | `cli_utils` | `positive_int` accept/reject; `die` plain vs JSON, exit code, stream; `load_dotenv` (missing file, populate, quoting, real-env precedence); `format_result`; `print_results` (JSON array, empty-list message, multi-row text output) |
 | `test_yahoo_finance.py` | `yahoo_finance` | `parse_date`; `build_params` window branches, priority order, look-back math, errors; `meta_summary`; `extract_series`; `fetch_history` payload/error handling |
 | `test_indicators.py` | `indicators` | every transform + `trend` + `_ols_slope`; MA-cross-flip "double flip" and "equal run" behavior; error paths |
 | `test_valuation.py` | `valuation` | `_growth_path` branches; reference values; `implied_growth_rate` round-trips `discounted_cash_flow`, monotonicity, out-of-range raises |
@@ -137,7 +142,11 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_stock_tech_buzz_agent.py` | `stock_tech_buzz_agent` | `normalize_company_name` (one outer suffix); `stock_mentions_in_title` case-sensitivity / ambiguous symbols / word boundaries / short-name skip; `get_top_volume_stocks` dedup; `find_stock_buzz` match/no-match; `main` |
 | `test_web_search_brave.py` | `web_search_brave` | `strip_markup`; `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` pagination / early-stop / truncation / `raise_for_status`; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
 | `test_web_search_duckduckgo.py` | `web_search_duckduckgo` | `fetch_results` via a fake `DDGS` context manager, including `DDGSException` propagation; `result_to_dict`; `parse_args`; `main` (missing `ddgs` dependency, search error, JSON/text output, no results) |
+| `test_web_search_exa.py` | `web_search_exa` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` single-request `numResults` capping / truncation / `raise_for_status` / missing `results` key; `result_to_dict` (including `null` text field); `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
+| `test_web_search_perplexity.py` | `web_search_perplexity` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_answer` (answer + sources, custom `--model`, missing `search_results`, `raise_for_status`, empty/missing `choices` raises); `source_to_dict`; `format_answer` (with/without sources); `parse_args`; `main` (missing key, request error, JSON output with source-list trimming, text output) |
 | `test_web_search_serpapi.py` | `web_search_serpapi` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` pagination / early-stop / truncation / `raise_for_status` / in-band `"error"` field; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
+| `test_web_search_serper.py` | `web_search_serper` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` pagination / early-stop / truncation / `raise_for_status` / in-band `"message"` field; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
+| `test_web_search_tavily.py` | `web_search_tavily` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` single-request `max_results` capping / truncation / `raise_for_status` / missing `results` key; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
 | `test_generate_page.py` | `app/hottest_discussions/generate_page` | `render_limit_options` selected marker; `render_page` shell/timestamp/brace-resolution/invalid-limit; `parse_args`; `main` writes file + creates parent dir |
 
 ## Adding a test
