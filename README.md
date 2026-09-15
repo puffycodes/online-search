@@ -40,7 +40,9 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`web_search_duckduckgo.py`](#web_search_duckduckgopy) — top web search results for a query, by scraping DuckDuckGo via the `ddgs` package (no API key, but unofficial and rate-limit-prone)
 - [`web_search_serpapi.py`](#web_search_serpapipy) — top web search results for a query, via the SerpApi Google Search API (requires a free `SERPAPI_API_KEY`)
 - [`web_search_serper.py`](#web_search_serperpy) — top web search results for a query, via the Serper Google Search API (requires a free `SERPER_API_KEY`)
-- [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries `web_search_brave.py`, then `web_search_serper.py`, then `web_search_serpapi.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds
+- [`web_search_tavily.py`](#web_search_tavilypy) — top web search results for a query, via the Tavily Search API — its own crawl/index built for LLM/agent use (requires a free `TAVILY_API_KEY`)
+- [`web_search_exa.py`](#web_search_exapy) — top web search results for a query, via the Exa neural/semantic Search API (requires a free `EXA_API_KEY`)
+- [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -2203,13 +2205,236 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
+## web_search_tavily.py
+
+Prints the top web search results for a query, using the [Tavily Search API](https://tavily.com/). Requires a `TAVILY_API_KEY` (free tier: 1,000 API credits/month).
+
+Unlike `web_search_serpapi.py` and `web_search_serper.py`, this script doesn't proxy Google — Tavily crawls and ranks its own index, built specifically for LLM/agent consumption, so content tends to arrive pre-cleaned and relevance-ranked rather than SEO-ranked.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- a Tavily key — register at https://app.tavily.com/
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 web_search_tavily.py QUERY [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `QUERY` (positional) | — | Free-text search query, e.g. `"python programming language"` |
+| `--limit N` | 10 | Number of results to return, capped at 20 (Tavily's per-request `max_results` ceiling — there is no pagination) |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Searching for: python programming language
+
+1. Welcome to Python.org
+   https://www.python.org/
+   The official home of the Python Programming Language.
+
+2. Python (programming language) - Wikipedia
+   https://en.wikipedia.org/wiki/Python_(programming_language)
+   Python is a high-level, general-purpose programming language...
+
+...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 web_search_tavily.py "claude ai" --limit 2 --json
+```
+
+```json
+[
+  {
+    "rank": 1,
+    "title": "Claude",
+    "url": "https://claude.ai/",
+    "snippet": "Claude is a next generation AI assistant built by Anthropic..."
+  },
+  {
+    "rank": 2,
+    "title": "Claude (AI) - Wikipedia",
+    "url": "https://en.wikipedia.org/wiki/Claude_(AI)",
+    "snippet": "Claude is a series of large language models (LLMs) developed by Anthropic..."
+  }
+]
+```
+
+With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `TAVILY_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+2. **Fetch in a single request** — POSTs to Tavily's `/search` endpoint with the API key, query, `search_depth: "basic"`, and `max_results` set to `min(--limit, MAX_RESULTS_PER_REQUEST)`. Tavily's API has no offset/page parameter, so `--limit` values above `MAX_RESULTS_PER_REQUEST` (20) are silently capped rather than paginated.
+3. **Display top N** — Prints each result's rank, title, URL, and content excerpt (Tavily's own relevance-ranked snippet).
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
+| `MAX_RESULTS_PER_REQUEST` | 20 | Tavily's documented `max_results` ceiling per request; also the hard cap on `--limit`, since there is no pagination |
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
+
+### API reference
+
+- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `fetch_results(query, limit, api_key)` — POSTs a single request to the Tavily Search API with `max_results` capped at `MAX_RESULTS_PER_REQUEST`; returns up to `limit` raw result dicts.
+- `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes (Tavily's `content` field becomes `snippet`).
+- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If `TAVILY_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- If the request fails (network error, timeout, non-2xx response — e.g. `401` for an invalid key or `432`/`433`-style responses Tavily uses for plan/usage limits), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
+
+### Notes / limitations
+
+- Requires a Tavily key; the free tier is 1,000 API credits/month (a basic-depth search costs 1 credit; an advanced-depth search costs more — this script always uses `"basic"`).
+- No pagination: a single request is capped at 20 results by Tavily's API itself, so `--limit` values above that are silently truncated rather than fetched across multiple requests.
+- `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
+- Tavily crawls and ranks its own index rather than proxying Google, so coverage, freshness, and ranking can differ noticeably from a Google-backed engine (Brave, SerpApi, Serper) for a given query.
+
+---
+
+## web_search_exa.py
+
+Prints the top web search results for a query, using the [Exa Search API](https://exa.ai/). Requires an `EXA_API_KEY` (free tier: $10/month of usage credit).
+
+Exa runs a neural/semantic search index rather than keyword-matching or proxying Google — it's built for "find pages like this idea" queries as much as exact keyword matches, so ranking and results can differ meaningfully from a traditional keyword search engine.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- an Exa key — register at https://dashboard.exa.ai/
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 web_search_exa.py QUERY [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `QUERY` (positional) | — | Free-text search query, e.g. `"python programming language"` |
+| `--limit N` | 10 | Number of results to return, capped at 100 (Exa's per-request `numResults` ceiling — there is no pagination) |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Searching for: python programming language
+
+1. Welcome to Python.org
+   https://www.python.org/
+   The official home of the Python Programming Language...
+
+2. Python (programming language)
+   https://en.wikipedia.org/wiki/Python_(programming_language)
+   Python is a high-level, general-purpose programming language...
+
+...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 web_search_exa.py "claude ai" --limit 2 --json
+```
+
+```json
+[
+  {
+    "rank": 1,
+    "title": "Claude",
+    "url": "https://claude.ai/",
+    "snippet": "Claude is a next generation AI assistant built by Anthropic..."
+  },
+  {
+    "rank": 2,
+    "title": "Claude.ai",
+    "url": "https://claude.com/",
+    "snippet": "Claude is a next generation AI assistant built by Anthropic..."
+  }
+]
+```
+
+With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `EXA_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+2. **Fetch in a single request** — POSTs to Exa's `/search` endpoint (`x-api-key` header) with `numResults` set to `min(--limit, MAX_RESULTS_PER_REQUEST)` and `contents.text.maxCharacters` set to `SNIPPET_MAX_CHARACTERS`, so Exa truncates each result's full page text into a snippet-sized excerpt server-side. Exa's API has no offset/page parameter, so `--limit` values above `MAX_RESULTS_PER_REQUEST` (100) are silently capped rather than paginated.
+3. **Display top N** — Prints each result's rank, title, URL, and truncated text excerpt.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `RESULTS_TO_SHOW` | 10 | Number of results to display by default |
+| `MAX_RESULTS_PER_REQUEST` | 100 | Exa's documented `numResults` ceiling per request; also the hard cap on `--limit`, since there is no pagination |
+| `SNIPPET_MAX_CHARACTERS` | 300 | Requested via `contents.text.maxCharacters` so Exa truncates each result's page text server-side |
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+| `ENV_FILE` | `.env` next to this script | Path `load_dotenv()` reads credentials from |
+
+### API reference
+
+- `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
+- `fetch_results(query, limit, api_key)` — POSTs a single request to the Exa Search API with `numResults` capped at `MAX_RESULTS_PER_REQUEST` and text contents truncated to `SNIPPET_MAX_CHARACTERS`; returns up to `limit` raw result dicts.
+- `result_to_dict(rank, item)` — Flattens one raw API result into the `{rank, title, url, snippet}` record used for **both** output modes (Exa's `text` field becomes `snippet`; a `null` text field becomes an empty string).
+- `format_result(row)` — Renders a `result_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses the `query` positional and `--limit` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; loads credentials, fetches, handles top-level network/credential errors, and prints results (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If `EXA_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- If the request fails (network error, timeout, non-2xx response — e.g. `401`/`403` for an invalid key or `429` for exhausted credit), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
+
+### Notes / limitations
+
+- Requires an Exa key; the free tier is $10/month of usage credit rather than a fixed query count, so the effective number of free searches depends on Exa's current per-search pricing.
+- No pagination: a single request is capped at 100 results by Exa's API itself, so `--limit` values above that are silently truncated rather than fetched across multiple requests.
+- `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
+- Neural/semantic ranking means results for a literal keyword query can look different from a traditional search engine's — strong for "find me pages about this idea" queries, less predictable for "find this exact phrase" queries.
+
+---
+
 ## Claude Code agent: `web-search`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/web-search.md`. It calls no API itself — it shells out via the `Bash` tool to whichever of [`web_search_brave.py`](#web_search_bravepy), [`web_search_serper.py`](#web_search_serperpy), [`web_search_serpapi.py`](#web_search_serpapipy), or [`web_search_duckduckgo.py`](#web_search_duckduckgopy) it picks, and reports the results conversationally.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/web-search.md`. It calls no API itself — it shells out via the `Bash` tool to whichever of [`web_search_brave.py`](#web_search_bravepy), [`web_search_serper.py`](#web_search_serperpy), [`web_search_tavily.py`](#web_search_tavilypy), [`web_search_serpapi.py`](#web_search_serpapipy), [`web_search_exa.py`](#web_search_exapy), or [`web_search_duckduckgo.py`](#web_search_duckduckgopy) it picks, and reports the results conversationally.
 
 ### Purpose
 
-Lets Claude Code answer general "search the web for X" / "look up Y online" requests by running one of the four `web_search_*` scripts and summarizing its JSON output, instead of guessing or using stale training data — while automatically working around a missing API key or an exhausted quota on the preferred engine.
+Lets Claude Code answer general "search the web for X" / "look up Y online" requests by running one of the six `web_search_*` scripts and summarizing its JSON output, instead of guessing or using stale training data — while automatically working around a missing API key or an exhausted quota on the preferred engine.
 
 ### How it's invoked
 
@@ -2222,9 +2447,11 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Runs `python3 web_search_brave.py "QUERY" --json` from the repo root (`--limit N` only if the user asked for a specific count).
 2. If that fails (missing `BRAVE_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_serper.py "QUERY" --json`.
-3. If that also fails (missing `SERPER_API_KEY`, exhausted credits, request error), falls back to `python3 web_search_serpapi.py "QUERY" --json`.
-4. If that also fails (missing `SERPAPI_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_duckduckgo.py "QUERY" --json`, which needs no key but is unofficial and rate-limit-prone.
-5. Reports the first successful script's results as a numbered list (title, URL, snippet), noting when a fallback occurred so the user knows results came from a lower-quota or unofficial source. If all four fail, it says so plainly rather than answering from its own knowledge.
+3. If that also fails (missing `SERPER_API_KEY`, exhausted credits, request error), falls back to `python3 web_search_tavily.py "QUERY" --json`.
+4. If that also fails (missing `TAVILY_API_KEY`, exhausted credits, request error), falls back to `python3 web_search_serpapi.py "QUERY" --json`.
+5. If that also fails (missing `SERPAPI_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_exa.py "QUERY" --json`.
+6. If that also fails (missing `EXA_API_KEY`, exhausted credit, request error), falls back to `python3 web_search_duckduckgo.py "QUERY" --json`, which needs no key but is unofficial and rate-limit-prone.
+7. Reports the first successful script's results as a numbered list (title, URL, snippet), noting when a fallback occurred so the user knows results came from a lower-quota, unofficial, or differently-indexed source (called out explicitly for Exa, whose semantic ranking can look different from a keyword engine's). If all six fail, it says so plainly rather than answering from its own knowledge.
 
 It never runs more than one script once a prior one has already returned results, and retries a given script at most once, only for a transient-looking network error.
 
@@ -2235,11 +2462,11 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
-| Underlying scripts (in fallback order) | [`web_search_brave.py`](#web_search_bravepy), [`web_search_serper.py`](#web_search_serperpy), [`web_search_serpapi.py`](#web_search_serpapipy), [`web_search_duckduckgo.py`](#web_search_duckduckgopy) |
+| Underlying scripts (in fallback order) | [`web_search_brave.py`](#web_search_bravepy), [`web_search_serper.py`](#web_search_serperpy), [`web_search_tavily.py`](#web_search_tavilypy), [`web_search_serpapi.py`](#web_search_serpapipy), [`web_search_exa.py`](#web_search_exapy), [`web_search_duckduckgo.py`](#web_search_duckduckgopy) |
 
 ### Notes / limitations
 
-- Requires at least one of the four underlying scripts to be runnable from the repo root; full quality search additionally needs a `BRAVE_API_KEY`, `SERPER_API_KEY`, and/or `SERPAPI_API_KEY`.
+- Requires at least one of the six underlying scripts to be runnable from the repo root; full quality search additionally needs a `BRAVE_API_KEY`, `SERPER_API_KEY`, `TAVILY_API_KEY`, `SERPAPI_API_KEY`, and/or `EXA_API_KEY`.
 - Inherits all the limitations of whichever underlying script actually serves the request — see that script's own "Notes / limitations" section.
 - The fallback order favors quota and official-API-ness over result quality; it does not compare or merge results across engines, it just uses the first one that works.
 
