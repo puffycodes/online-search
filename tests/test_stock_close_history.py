@@ -102,3 +102,11 @@ class TestMain:
         with pytest.raises(SystemExit) as exc:
             sch.main(["AAA", "--last", "0"])
         assert exc.value.code == 2
+
+    def test_invalid_start_date_exits_1_json(self, capsys):
+        # No monkeypatching: build_params/parse_date rejects the date before
+        # any network call, so this exercises the real error path.
+        with pytest.raises(SystemExit) as exc:
+            sch.main(["AAA", "--start", "not-a-date", "--json"])
+        assert exc.value.code == 1
+        assert "invalid date" in json.loads(capsys.readouterr().err)["error"]

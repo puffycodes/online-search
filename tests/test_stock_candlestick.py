@@ -79,3 +79,13 @@ class TestExtractRows:
         _, rows = scdl.extract_rows(self._result())
         assert rows[1]["volume"] is None
         assert rows[0]["volume"] == 1000
+
+
+class TestMain:
+    def test_invalid_start_date_exits_1(self, capsys):
+        # No monkeypatching: build_params/parse_date rejects the date before
+        # any network call, so this exercises the real error path.
+        with pytest.raises(SystemExit) as exc:
+            scdl.main(["AAA", "--start", "not-a-date"])
+        assert exc.value.code == 1
+        assert "invalid date" in capsys.readouterr().err

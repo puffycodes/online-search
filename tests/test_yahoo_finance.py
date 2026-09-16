@@ -141,6 +141,23 @@ class TestFetchHistory:
         self._patch_get(monkeypatch, FakeResponse(json_data=payload))
         assert yf.fetch_history("AAA", {}) is chart_result
 
+    def test_calls_get_with_expected_url_headers_timeout_params(self, monkeypatch, chart_result):
+        payload = {"chart": {"result": [chart_result], "error": None}}
+        calls = {}
+
+        def fake_get(url, **kwargs):
+            calls["url"] = url
+            calls.update(kwargs)
+            return FakeResponse(json_data=payload)
+
+        monkeypatch.setattr(yf.requests, "get", fake_get)
+        params = {"range": "6mo"}
+        yf.fetch_history("AAA", params)
+        assert calls["url"] == yf.CHART_URL.format(symbol="AAA")
+        assert calls["headers"] == yf.HEADERS
+        assert calls["timeout"] == yf.REQUEST_TIMEOUT
+        assert calls["params"] is params
+
     def test_chart_error_raises(self, monkeypatch):
         payload = {"chart": {"result": None, "error": {"description": "Not Found"}}}
         self._patch_get(monkeypatch, FakeResponse(json_data=payload))
