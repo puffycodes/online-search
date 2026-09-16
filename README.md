@@ -47,6 +47,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`web_search_perplexity.py`](#web_search_perplexitypy) — a synthesized, cited answer to a query, via the Perplexity Sonar API (requires a paid `PERPLEXITY_API_KEY`; a different output shape from the other five — see its section below)
 - [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds (`web_search_perplexity.py` is a standalone tool, not part of this fallback chain)
 - [`url_availability.py`](#url_availabilitypy) — checks whether a web page at a given URL is reachable, via an HTTP GET request and status-code classification (no API key)
+- [`.claude/agents/url-availability.md`](#claude-code-agent-url-availability) — Claude Code subagent that calls `url_availability.py` and reports whether a named URL is up, down, or returning an error
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -2825,6 +2826,44 @@ These are set as constants near the top of the file — edit them directly to ch
 - Does not verify page *content* — a site that returns `200 OK` with an error message in the body (a "soft 404") is reported as available.
 - Some sites block automated requests regardless of `User-Agent` (bot-detection, Cloudflare challenges, etc.), which can surface as a `4xx`/`5xx` status even though the page is reachable in a real browser.
 - A single attempt, no retry — a transient network hiccup is reported as a connection-level error rather than retried internally.
+
+---
+
+## Claude Code agent: `url-availability`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/url-availability.md`. It calls no API itself — it shells out to [`url_availability.py`](#url_availabilitypy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "is this link still working?", "check if example.com is down", "can you verify this URL is available?", or "is https://foo.com/docs a 404?" by running the script and summarizing its JSON output, instead of guessing.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own when the user gives a URL and asks whether it's live, reachable, broken, or returning an error, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "url-availability"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Adds a `https://` scheme itself if the user gave a bare domain or path (the underlying script requires one).
+2. Runs `python3 url_availability.py "URL" --json` from the repo root.
+3. Parses the JSON object (`available`, `status_code`, `reason`, `final_url`, `elapsed_ms`) and leads with a direct yes/no plus the status code, mentioning `final_url` only when a redirect happened and `elapsed_ms` only if speed is relevant. It distinguishes a reachable-but-erroring page (a `4xx`/`5xx` status, still a successful check) from a connection-level failure (the `{"error": "..."}` exit path), and retries the latter at most once when it looks transient.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`url_availability.py`](#url_availabilitypy) |
+
+### Notes / limitations
+
+- Requires `url_availability.py` (and its `requests` dependency) to be present and runnable from the repo root.
+- Checks reachability via HTTP status only, not page content — a "soft 404" (`200 OK` with an error message in the body) is reported as available; the agent says so if the user seems to be asking about content correctness rather than server reachability.
+- Inherits all the limitations of [`url_availability.py`](#url_availabilitypy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false `4xx`/`5xx`, single-attempt GET).
 
 ---
 
