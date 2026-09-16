@@ -28,9 +28,10 @@ class TestGrowthPath:
         with pytest.raises(ValueError, match="years is required"):
             _growth_path(0.05, None)
 
-    def test_scalar_non_positive_years_raises(self):
+    @pytest.mark.parametrize("years", [0, -3])
+    def test_scalar_non_positive_years_raises(self, years):
         with pytest.raises(ValueError, match="positive integer"):
-            _growth_path(0.05, 0)
+            _growth_path(0.05, years)
 
 
 class TestGordonGrowthValue:
@@ -73,6 +74,11 @@ class TestDiscountedCashFlow:
     def test_terminal_growth_above_discount_raises(self):
         with pytest.raises(ValueError):
             discounted_cash_flow(100, 0.03, 0.02, 5, terminal_growth=0.05)
+
+    def test_net_debt_and_shares_bridge_to_equity_per_share(self):
+        enterprise_equity = discounted_cash_flow(100, 0.09, 0.05, 5)
+        got = discounted_cash_flow(100, 0.09, 0.05, 5, net_debt=200, shares=10)
+        assert got == pytest.approx((enterprise_equity - 200) / 10)
 
 
 class TestMultipleValue:

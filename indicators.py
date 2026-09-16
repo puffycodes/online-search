@@ -203,8 +203,9 @@ def trend(prices, window=None, flat_threshold=0.01):
     if mean == 0:
         return "flat"
 
-    # Fitted fractional move from the first fitted point to the last.
-    fitted_move = _ols_slope(prices) * (len(prices) - 1) / mean
+    # Fitted fractional move from the first fitted point to the last. Scale
+    # by abs(mean), not mean, so a negative-valued series doesn't flip sign.
+    fitted_move = _ols_slope(prices) * (len(prices) - 1) / abs(mean)
     if abs(fitted_move) < flat_threshold:
         return "flat"
     return "up" if fitted_move > 0 else "down"

@@ -55,6 +55,11 @@ class TestMovingAverageCross:
         assert out[:4] == [None, None, None, None]
         assert out[4] is not None
 
+    def test_equal_when_averages_tie(self):
+        assert moving_average_cross([2, 2, 2, 2], 1, 2) == [
+            None, "equal", "equal", "equal",
+        ]
+
 
 class TestMovingAverageCrossFlip:
     def test_up_flip(self):
@@ -77,6 +82,14 @@ class TestMovingAverageCrossFlip:
         out = moving_average_cross_flip([10, 1, 1, 20, 20, 1, 1], 1, 2)
         assert out.count(True) == 2
 
+    def test_equal_run_between_sides_is_stepped_over(self):
+        # above -> equal, equal -> below: the flip still reports where the
+        # new side (below) first shows, not on the equal sessions themselves.
+        prices = [1, 3, 2, 2, 2, 1, 3]
+        assert moving_average_cross_flip(prices, 1, 2) == [
+            None, False, True, False, False, False, True,
+        ]
+
 
 class TestRebase:
     def test_default_base_first(self):
@@ -93,6 +106,13 @@ class TestRebase:
     def test_zero_base_raises(self):
         with pytest.raises(ValueError, match="non-zero"):
             rebase([0, 1, 2])
+
+    def test_out_of_range_index_raises(self):
+        # Known inconsistency: unlike the zero-base case above, an
+        # out-of-range n falls straight through to list indexing and raises
+        # IndexError, not the module's usual ValueError.
+        with pytest.raises(IndexError):
+            rebase([50, 100, 150], n=5)
 
 
 class TestOlsSlope:
@@ -134,3 +154,10 @@ class TestTrend:
         prices = [100, 100.5, 101]
         assert trend(prices, flat_threshold=0.05) == "flat"
         assert trend(prices, flat_threshold=0.0001) == "up"
+
+    def test_negative_prices_sign_follows_slope_not_mean(self):
+        # A genuinely rising all-negative series (-5 up to -1) must read
+        # "up": the fractional-move scale uses abs(mean), so a negative mean
+        # doesn't flip the sign of the slope-derived direction.
+        assert trend([-5, -4, -3, -2, -1]) == "up"
+        assert trend([-1, -2, -3, -4, -5]) == "down"
