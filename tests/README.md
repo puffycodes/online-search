@@ -129,17 +129,17 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | Test module | Under test | Focus |
 |---|---|---|
 | `test_cli_utils.py` | `cli_utils` | `positive_int` accept/reject; `die` plain vs JSON, exit code, stream; `load_dotenv` (missing file, populate, quoting, real-env precedence); `format_result`; `print_results` (JSON array, empty-list message, multi-row text output) |
-| `test_yahoo_finance.py` | `yahoo_finance` | `parse_date`; `build_params` window branches, priority order, look-back math, errors; `meta_summary`; `extract_series`; `fetch_history` payload/error handling |
-| `test_indicators.py` | `indicators` | every transform + `trend` + `_ols_slope`; MA-cross-flip "double flip" and "equal run" behavior; error paths |
-| `test_valuation.py` | `valuation` | `_growth_path` branches; reference values; `implied_growth_rate` round-trips `discounted_cash_flow`, monotonicity, out-of-range raises |
+| `test_yahoo_finance.py` | `yahoo_finance` | `parse_date`; `build_params` window branches, priority order, look-back math, errors; `meta_summary`; `extract_series`; `fetch_history` payload/error handling and the actual `requests.get` call (URL, headers, timeout, params) |
+| `test_indicators.py` | `indicators` | every transform + `trend` + `_ols_slope`; `moving_average_cross` tie ("equal"); MA-cross-flip "double flip" and "equal run" behavior; `trend` sign on an all-negative series; `rebase` out-of-range index; error paths |
+| `test_valuation.py` | `valuation` | `_growth_path` branches (including negative years); reference values; `discounted_cash_flow` `net_debt`/`shares` equity bridge; `implied_growth_rate` round-trips `discounted_cash_flow`, monotonicity, out-of-range raises |
 | `test_doctests.py` | `indicators`, `valuation` | keeps the in-module doctests running under pytest |
 | `test_weather.py` | `weather` | `weather_description`, `format_place`, `geocode`, `get_weather`, `parse_args`, `main` |
 | `test_weather_forecast.py` | `weather_forecast` | `_valid_days`, `get_forecast` day-record assembly, `format_forecast`, `main` |
 | `test_air_quality.py` | `air_quality` | `us_aqi_category` band boundaries + `None`; `get_air_quality` record assembly + missing-`us_aqi` case; `format_air_quality`; `parse_args`; `main` (request error, not found, JSON/text output) |
 | `test_hottest_tech_discussions.py` | `hottest_tech_discussions` | `discussion_url`/`posted_at`/`story_to_dict`; `fetch_story` error-swallowing; `get_hottest_tech_discussions` type filter / score sort / limit / candidate-pool slice; `main` |
 | `test_market_top_volume.py` | `market_top_volume` | `METRICS`/`MARKETS` structural consistency; `quote_to_dict`; `format_quote` ordering; `get_movers` predefined vs region path, filters, sort; `fetch_region_quotes` crumb/error/success; `main` limit clamp |
-| `test_stock_close_history.py` | `stock_close_history` | `extract_rows` rounding / unsettled-bar skip / gmtoffset date shift / None-safety; `main` `--last` trim, JSON shape, adj-close column, error exit |
-| `test_stock_candlestick.py` | `stock_candlestick` | `_parse_ma_arg` / `_parse_flip_ma_arg` full matrices; `extract_rows` skips bars with missing OHLC, date is `datetime` |
+| `test_stock_close_history.py` | `stock_close_history` | `extract_rows` rounding / unsettled-bar skip / gmtoffset date shift / None-safety; `main` `--last` trim, JSON shape, adj-close column, fetch-error exit, invalid `--start` date exit |
+| `test_stock_candlestick.py` | `stock_candlestick` | `_parse_ma_arg` / `_parse_flip_ma_arg` full matrices; `extract_rows` skips bars with missing OHLC, date is `datetime`; `main` invalid `--start` date exit |
 | `test_stock_rebased_chart.py` | `stock_rebased_chart` | `fetch_closes` None-close skip; `main` base-date defaulting + fallback, per-symbol skip when the base date is missing, invalid `--base-date`, all-symbols-fail exit |
 | `test_stock_tech_buzz_agent.py` | `stock_tech_buzz_agent` | `normalize_company_name` (one outer suffix); `stock_mentions_in_title` case-sensitivity / ambiguous symbols / word boundaries / short-name skip; `get_top_volume_stocks` dedup; `find_stock_buzz` match/no-match; `main` |
 | `test_web_search_brave.py` | `web_search_brave` | `strip_markup`; `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` pagination / early-stop / truncation / `raise_for_status`; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |

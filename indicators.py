@@ -173,9 +173,10 @@ def trend(prices, window=None, flat_threshold=0.01):
 
     Fits a least-squares line through the closes and measures the move implied
     by that line from its first fitted point to its last, as a fraction of the
-    mean price. If that fitted move is smaller than ``flat_threshold`` in
-    magnitude the series is called ``"flat"`` (direction is just noise);
-    otherwise its sign decides up vs down.
+    magnitude of the mean price (so the sign always tracks the slope, even for
+    an all-negative series). If that fitted move is smaller than
+    ``flat_threshold`` in magnitude the series is called ``"flat"`` (direction
+    is just noise); otherwise its sign decides up vs down.
 
     prices         : iterable of numbers, oldest session first (>= 2 values).
     window         : if given, only the last ``window`` prices are considered.
