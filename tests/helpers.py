@@ -10,11 +10,22 @@ class FakeResponse:
     optional exception raised by that method.
     """
 
-    def __init__(self, *, json_data=None, text="", status_code=200, raise_for_status=None):
+    def __init__(
+        self,
+        *,
+        json_data=None,
+        text="",
+        status_code=200,
+        reason="OK",
+        url="",
+        raise_for_status=None,
+    ):
         self._json_data = json_data
         self.text = text
         self.status_code = status_code
         self.ok = 200 <= status_code < 400
+        self.reason = reason
+        self.url = url
         self._raise_for_status = raise_for_status
 
     def json(self):

@@ -46,6 +46,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`web_search_exa.py`](#web_search_exapy) — top web search results for a query, via the Exa neural/semantic Search API (requires a free `EXA_API_KEY`)
 - [`web_search_perplexity.py`](#web_search_perplexitypy) — a synthesized, cited answer to a query, via the Perplexity Sonar API (requires a paid `PERPLEXITY_API_KEY`; a different output shape from the other five — see its section below)
 - [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds (`web_search_perplexity.py` is a standalone tool, not part of this fallback chain)
+- [`url_availability.py`](#url_availabilitypy) — checks whether a web page at a given URL is reachable, via an HTTP GET request and status-code classification (no API key)
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -2736,6 +2737,94 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - [`web_search_perplexity.py`](#web_search_perplexitypy) is deliberately excluded from this agent's fallback chain — it returns a synthesized answer plus sources, not a ranked `[{rank, title, url, snippet}, ...]` array, so it doesn't fit this agent's uniform result-list parsing. Use it directly (or via a dedicated agent) for "give me a cited answer" requests rather than "give me a list of pages" requests.
 - Inherits all the limitations of whichever underlying script actually serves the request — see that script's own "Notes / limitations" section.
 - The fallback order favors quota and official-API-ness over result quality; it does not compare or merge results across engines, it just uses the first one that works.
+
+---
+
+## url_availability.py
+
+Checks whether a web page at a given URL is reachable, by making an HTTP GET request and inspecting the response. A `4xx`/`5xx` status is reported as unavailable, not just a connection failure — so a live server returning "404 Not Found" is correctly distinguished from an unreachable host. No API key required.
+
+### Requirements
+
+- `requests`
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+
+### Usage
+
+```bash
+python3 url_availability.py URL [--timeout SECONDS] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `URL` (positional) | — | URL to check, e.g. `https://example.com`; must start with `http://` or `https://` |
+| `--timeout SECONDS` | 10 | Request timeout in seconds |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Checking: https://example.com
+
+URL: https://example.com
+Status: AVAILABLE (200 OK)
+Response time: 143 ms
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 url_availability.py https://example.com/missing --json
+```
+
+```json
+{
+  "url": "https://example.com/missing",
+  "available": false,
+  "status_code": 404,
+  "reason": "Not Found",
+  "final_url": "https://example.com/missing",
+  "elapsed_ms": 118
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Validate the URL** — Rejects a URL that doesn't start with `http://` or `https://` before making any request.
+2. **Fetch** — Issues a `GET` (not `HEAD` — some servers block or mishandle `HEAD`, which would produce false negatives) with a browser-like `User-Agent`, following redirects, timing the round trip.
+3. **Classify** — A response status code under 400 is `available: true`; `4xx`/`5xx` is `available: false`. Connection-level failures (DNS, timeout, refused connection, ...) are caught separately and reported as an error, not as `available: false`.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `TIMEOUT_SECONDS` | 10 | Default request timeout, used unless `--timeout` overrides it |
+| `USER_AGENT` | `Mozilla/5.0 (compatible; online-search-url-availability/1.0)` | `User-Agent` header sent with the request — some sites 403 requests with no/default UA |
+
+### API reference
+
+- `check_url(url, timeout=TIMEOUT_SECONDS)` — Issues the `GET` request and returns `{url, available, status_code, reason, final_url, elapsed_ms}`. HTTP-level errors (4xx/5xx) are returned as `available: False`, not raised; connection-level failures propagate as `requests.RequestException` for the caller to handle.
+- `format_result(result)` — Renders a `check_url()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url`.
+- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; validates the URL scheme, calls `check_url()`, handles top-level errors, and prints the result (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If the URL doesn't start with `http://` or `https://`, the script prints an error and exits with status code 1 before making any request.
+- If the request fails at the connection level (DNS failure, timeout, connection refused, etc. — raised by `requests` as a `requests.RequestException`), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- A reachable server returning a `4xx`/`5xx` status is **not** an error exit — it prints/returns normally with `available: false` and exits 0, since the page was successfully checked, just found unavailable.
+- An out-of-range `--timeout` (e.g. `0` or negative) is rejected by argparse before any request, exiting with status code 2.
+
+### Notes / limitations
+
+- A GET request downloads the full response body (unlike `HEAD`), which is slower for large pages but avoids false negatives from servers that don't support `HEAD` properly.
+- Does not verify page *content* — a site that returns `200 OK` with an error message in the body (a "soft 404") is reported as available.
+- Some sites block automated requests regardless of `User-Agent` (bot-detection, Cloudflare challenges, etc.), which can surface as a `4xx`/`5xx` status even though the page is reachable in a real browser.
+- A single attempt, no retry — a transient network hiccup is reported as a connection-level error rather than retried internally.
 
 ---
 

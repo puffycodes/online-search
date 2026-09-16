@@ -67,6 +67,7 @@ tests/
   test_web_search_serper.py
   test_web_search_tavily.py
   test_generate_page.py
+  test_url_availability.py
 ```
 
 ## Test doubles
@@ -81,6 +82,7 @@ FakeResponse(json_data=None)                            # .json() raises ValueEr
 FakeResponse(text="crumb123")                           # for endpoints read via .text
 FakeResponse(json_data=payload,
              raise_for_status=requests.HTTPError("500"))  # .raise_for_status() raises
+FakeResponse(status_code=404, reason="Not Found", url="https://x/y")  # .status_code / .reason / .url
 ```
 
 ### `helpers.FakeSession`
@@ -150,6 +152,7 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_web_search_serper.py` | `web_search_serper` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` pagination / early-stop / truncation / `raise_for_status` / in-band `"message"` field; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
 | `test_web_search_tavily.py` | `web_search_tavily` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` single-request `max_results` capping / truncation / `raise_for_status` / missing `results` key; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
 | `test_generate_page.py` | `app/hottest_discussions/generate_page` | `render_limit_options` selected marker; `render_page` shell/timestamp/brace-resolution/invalid-limit; `parse_args`; `main` writes file + creates parent dir |
+| `test_url_availability.py` | `url_availability` | `check_url` 200/404/500 classification, timeout pass-through, connection-error propagation; `format_result` redirect line + available/not-available label; `parse_args`; `main` (missing scheme, request error, JSON/text output) |
 
 ## Adding a test
 
