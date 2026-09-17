@@ -36,6 +36,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`app/hottest_discussions/`](#apphottest_discussions) — small web-page generator pairing with `hottest_tech_discussions.py`: a static HTML page with a "Show" drop-down and Refresh button that fetch discussions client-side
+- [`.claude/agents/hottest-discussion-summary.md`](#claude-code-agent-hottest-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top 3 hottest discussions with cited sources
 
 **[Web Search](#web-search)**
 - [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
@@ -1901,6 +1902,48 @@ Opening the file loads instantly with no discussions shown; picking a count and 
 - Inherits the same "hottest" definition as [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): highest score among HN's current top stories, no tech-specific keyword filtering, live-snapshot results that will differ between clicks.
 - Nothing appears until Refresh is clicked — there's no polling/interval or auto-refresh, and the drop-down only offers 10/25/50.
 - Static output only — no backend, no API endpoint. The Refresh button calls the public Hacker News Firebase API directly from the visitor's browser, so it needs outbound network access but no server of its own.
+
+---
+
+## Claude Code agent: `hottest-discussion-summary`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hottest-discussion-summary.md`, built against the feature spec in `app/hottest_discussion_summary/docs/features.md`. Unlike the other agents in this repo, it isn't a thin wrapper around one script — it chains three tools ([`hottest_tech_discussions.py`](#hottest_tech_discussionspy), two of the six `web_search_*.py` engines, and [`url_content.py`](#url_contentpy)) with its own reasoning between each call, to turn a plain list of trending discussions into researched, sourced summaries.
+
+### Purpose
+
+Lets Claude Code answer requests like "summarize today's hottest tech discussions" or "research the top 3 trending tech topics and summarize each with sources" — going well beyond the headline list the plain [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions) agent reports, by researching each topic and citing what it found.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own when the user wants each top topic researched and summarized with sources, rather than just a list of what's trending, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "hottest-discussion-summary"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Runs `python3 hottest_tech_discussions.py --json --limit 3` to get the top 3 hottest discussions.
+2. For each of the 3, judges (itself — no script does this) a short, search-friendly phrase capturing the discussion's actual subject from its title.
+3. Searches that phrase with two of the six `web_search_*.py` scripts, tried in the same priority order the [`web-search`](#claude-code-agent-web-search) agent uses (Brave → Serper → Tavily → SerpApi → Exa → DuckDuckGo), combining results from the first two engines that succeed into 3 distinct-URL results (never `web_search_perplexity.py`, which doesn't fit this flow's flat result shape).
+4. Retrieves each result with `python3 url_content.py "URL" --text --max-chars 6000 --json`, using `--text` to get readable content rather than raw HTML.
+5. Writes a summary per topic from all of the content it successfully retrieved for that topic (not just search snippets), and reports each topic's subject phrase, summary, and source links — noting plainly wherever a step came up short (fewer than 3 hot discussions, fewer than 3 sources found or fetched for a topic) instead of filling the gap itself.
+6. Leads the report with a timestamp (current date) so a given run's output is clearly distinguishable from a summary produced on a different day.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running scripts and reading their stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying scripts | [`hottest_tech_discussions.py`](#hottest_tech_discussionspy), two of the six `web_search_*.py` engines, [`url_content.py`](#url_contentpy) |
+
+### Notes / limitations
+
+- Requires all of `hottest_tech_discussions.py`, the `web_search_*.py` scripts, and `url_content.py` (plus `beautifulsoup4`, for `url_content.py --text`) to be present and runnable from the repo root, and at least two working search-engine API keys to satisfy the "2 sources" requirement.
+- The subject-phrase distillation in step 2 is a judgment call made by the agent itself, not a deterministic script — the same discussion could be phrased as slightly different search queries across runs.
+- Inherits the limitations of each underlying tool: `hottest_tech_discussions.py`'s live-snapshot ranking (results differ between runs), the `web_search_*.py` fallback chain's per-engine quirks (documented in the [`web-search`](#claude-code-agent-web-search) agent section), and `url_content.py --text`'s blunt extraction (no paragraph breaks, boilerplate not removed) plus its usual single-attempt-GET/no-retry behavior.
+- A slow-running workflow by construction — up to 3 discussions × (1 discussion-list call + up to 2 search calls + up to 3 content fetches) — since it's several sequential network round-trips with reasoning in between, not a single script invocation.
 
 ---
 
