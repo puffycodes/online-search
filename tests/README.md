@@ -68,6 +68,7 @@ tests/
   test_web_search_tavily.py
   test_generate_page.py
   test_url_availability.py
+  test_url_content.py
 ```
 
 ## Test doubles
@@ -153,6 +154,7 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_web_search_tavily.py` | `web_search_tavily` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` single-request `max_results` capping / truncation / `raise_for_status` / missing `results` key; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
 | `test_generate_page.py` | `app/hottest_discussions/generate_page` | `render_limit_options` selected marker; `render_page` shell/timestamp/brace-resolution/invalid-limit; `parse_args`; `main` writes file + creates parent dir |
 | `test_url_availability.py` | `url_availability` | `check_url` 200/404/500 classification, timeout pass-through, connection-error propagation; `format_result` redirect line + available/not-available label; `parse_args`; `main` (missing scheme, request error, JSON/text output) |
+| `test_url_content.py` | `url_content` | `is_text_content_type` accept/reject matrix incl. missing header; `extract_text` tag-stripping, script/style removal, whitespace collapsing, missing-`bs4` `ImportError`; `fetch_content` basic fetch, truncation, missing content-type, binary content-type raises, HTTP error raises, connection-error propagation, timeout pass-through, `--text` extraction + `text_extracted` flag; `format_result` redirect + truncated markers; `parse_args` incl. `--text`; `main` (missing scheme, request error, value error, missing-`bs4` error, `--text` pass-through, JSON/text output) |
 
 ## Adding a test
 

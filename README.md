@@ -48,6 +48,8 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds (`web_search_perplexity.py` is a standalone tool, not part of this fallback chain)
 - [`url_availability.py`](#url_availabilitypy) — checks whether a web page at a given URL is reachable, via an HTTP GET request and status-code classification (no API key)
 - [`.claude/agents/url-availability.md`](#claude-code-agent-url-availability) — Claude Code subagent that calls `url_availability.py` and reports whether a named URL is up, down, or returning an error
+- [`url_content.py`](#url_contentpy) — retrieves the raw content (HTML/text/JSON/etc.) of a web page at a given URL, via an HTTP GET request, with an optional `--text` mode (BeautifulSoup) to extract just the human-readable text (no API key)
+- [`.claude/agents/url-content.md`](#claude-code-agent-url-content) — Claude Code subagent that calls `url_content.py` and reports or summarizes the content at a named URL
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -2864,6 +2866,173 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Requires `url_availability.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Checks reachability via HTTP status only, not page content — a "soft 404" (`200 OK` with an error message in the body) is reported as available; the agent says so if the user seems to be asking about content correctness rather than server reachability.
 - Inherits all the limitations of [`url_availability.py`](#url_availabilitypy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false `4xx`/`5xx`, single-attempt GET).
+
+---
+
+## url_content.py
+
+Retrieves the raw content of a web page at a given URL, by making an HTTP GET request and returning the decoded body. This is a straight content fetch, not a scraper — by default it does not strip HTML tags, follow links, or render JavaScript; `content` is exactly what the server sent back. Pass `--text` to instead extract just the human-readable text of an HTML page via BeautifulSoup. No API key required (BeautifulSoup is only needed for `--text`).
+
+### Requirements
+
+- `requests`
+- `beautifulsoup4` — only required for `--text`; the rest of the script works without it
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+
+### Usage
+
+```bash
+python3 url_content.py URL [--timeout SECONDS] [--max-chars N] [--text] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `URL` (positional) | — | URL to fetch, e.g. `https://example.com`; must start with `http://` or `https://` |
+| `--timeout SECONDS` | 10 | Request timeout in seconds |
+| `--max-chars N` | 20000 | Maximum characters of content to return; longer bodies are truncated |
+| `--text` | off | Extract just the human-readable text of an HTML page (via BeautifulSoup), with markup and script/style content stripped, instead of returning the raw body. Requires `beautifulsoup4`. |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Fetching: https://example.com
+
+URL: https://example.com
+Status: 200
+Content-Type: text/html; charset=UTF-8
+Length: 1256 characters
+
+<!doctype html>
+<html>
+...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 url_content.py https://example.com --json
+```
+
+```json
+{
+  "url": "https://example.com",
+  "final_url": "https://example.com/",
+  "status_code": 200,
+  "content_type": "text/html; charset=UTF-8",
+  "length": 1256,
+  "truncated": false,
+  "text_extracted": false,
+  "content": "<!doctype html>\n<html>\n..."
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+#### `--text` mode
+
+```bash
+python3 url_content.py https://example.com --text --json
+```
+
+```json
+{
+  "url": "https://example.com",
+  "final_url": "https://example.com/",
+  "status_code": 200,
+  "content_type": "text/html; charset=UTF-8",
+  "length": 142,
+  "truncated": false,
+  "text_extracted": true,
+  "content": "Example Domain Example Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more"
+}
+```
+
+`content` is now plain text — markup, `<script>`/`<style>`/`<noscript>` content, and extra whitespace are all stripped, and every remaining text node is flattened into one space-separated run (no paragraph breaks are preserved). `length`/`truncated` are computed on this extracted text, not the raw HTML.
+
+### How it works
+
+1. **Validate the URL** — Rejects a URL that doesn't start with `http://` or `https://` before making any request.
+2. **Fetch** — Issues a `GET` with a browser-like `User-Agent`, following redirects.
+3. **Check the response** — A `4xx`/`5xx` status raises `requests.HTTPError`; a `Content-Type` that doesn't look textual (no `text/`, `json`, `xml`, or `javascript` marker) raises `ValueError` rather than returning a garbled/binary body.
+4. **Extract (if `--text`)** — Parses the body with BeautifulSoup (`html.parser`), removes `<script>`/`<style>`/`<noscript>` tags entirely, then collapses the remaining text into a single space-separated run via `" ".join(soup.get_text(separator=" ").split())`.
+5. **Truncate** — Cuts the (possibly extracted) text to `--max-chars` characters, along with the full untruncated length and a `truncated` flag.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `TIMEOUT_SECONDS` | 10 | Default request timeout, used unless `--timeout` overrides it |
+| `MAX_CHARS` | 20000 | Default content cutoff, used unless `--max-chars` overrides it |
+| `USER_AGENT` | `Mozilla/5.0 (compatible; online-search-url-content/1.0)` | `User-Agent` header sent with the request — some sites 403 requests with no/default UA |
+
+### API reference
+
+- `is_text_content_type(content_type)` — Returns `True` if a `Content-Type` header value looks textual (`text/`, `json`, `xml`, or `javascript` substring, case-insensitive), or if the header is missing/empty.
+- `extract_text(html)` — Strips an HTML document down to its human-readable text via BeautifulSoup, dropping `<script>`/`<style>`/`<noscript>` content and collapsing all whitespace to single spaces. Raises `ImportError` if `beautifulsoup4` isn't installed (imported lazily, so the rest of the script works without it).
+- `fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=False)` — Issues the `GET` request and returns `{url, final_url, status_code, content_type, length, truncated, text_extracted, content}`. With `as_text=True`, runs the body through `extract_text()` before truncating. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-textual `Content-Type`, and `ImportError` if `as_text` is set but `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
+- `format_result(result)` — Renders a `fetch_content()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url` and a "(truncated)" marker when applicable.
+- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--max-chars` / `--text` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; validates the URL scheme, calls `fetch_content()`, handles top-level errors (including a missing `beautifulsoup4` for `--text`), and prints the result (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If the URL doesn't start with `http://` or `https://`, the script prints an error and exits with status code 1 before making any request.
+- If the server returns a `4xx`/`5xx` status, the script prints an error (`requests`' own `HTTPError` message) and exits with status code 1 — since there's no usable content to return.
+- If the response's `Content-Type` doesn't look textual, the script prints an error (`"URL did not return text content (Content-Type: ...)"`) and exits with status code 1.
+- If `--text` is passed but `beautifulsoup4` isn't installed, the script prints `"beautifulsoup4 is required for --text (pip install beautifulsoup4)"` and exits with status code 1 — before any content is returned.
+- If the request fails at the connection level (DNS failure, timeout, connection refused, etc.), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- An out-of-range `--timeout` or `--max-chars` (e.g. `0` or negative) is rejected by argparse before any request, exiting with status code 2.
+
+### Notes / limitations
+
+- Without `--text`: no HTML-tag stripping, no link-following, no JavaScript rendering — `content` for an HTML page includes markup, and a JavaScript-heavy page may show little more than a shell.
+- With `--text`: extraction is a blunt "drop script/style, flatten the rest to one line" pass, not a readability/boilerplate-removal algorithm — nav links, cookie banners, and footers come through mixed in with the article text, and no paragraph breaks are preserved.
+- Content-type sniffing is a simple substring check on the `Content-Type` header, not a body sniff — a mislabeled response (e.g. an image served as `text/plain`) would pass through and a genuinely textual response with an unusual `Content-Type` could be rejected.
+- Truncation is a hard character cutoff, not sentence/tag-aware — a truncated HTML response (without `--text`) can end mid-tag.
+- Some sites block automated requests regardless of `User-Agent` (bot-detection, Cloudflare challenges, etc.), which can surface as a `4xx`/`5xx` error even though the page is reachable in a real browser.
+- A single attempt, no retry — a transient network hiccup is reported as a connection-level error rather than retried internally.
+
+---
+
+## Claude Code agent: `url-content`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/url-content.md`. It calls no API itself — it shells out to [`url_content.py`](#url_contentpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "get the content of this URL", "fetch this page's text", "what's on this link?", or "pull the HTML from this page" by running the script and summarizing its JSON output, instead of guessing.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own when the user gives a URL and wants to see or extract what's on the page, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "url-content"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Adds a `https://` scheme itself if the user gave a bare domain or path (the underlying script requires one).
+2. Runs `python3 url_content.py "URL" --json` from the repo root, adding `--text` when the user wants readable text rather than raw markup (e.g. to summarize or extract information from a page, as opposed to inspecting its source).
+3. Parses the JSON object (`content`, `status_code`, `content_type`, `length`, `truncated`, `text_extracted`, `final_url`) and summarizes or quotes from `content` as the user's request calls for, rather than dumping the full raw body unasked. Mentions `truncated` when it's `true` and offers a higher `--max-chars` re-fetch. Distinguishes an HTTP error, a non-textual response, a missing `beautifulsoup4` dependency, and a connection-level failure (all surfaced as `{"error": "..."}`) when reporting a failure, and retries a connection-level failure at most once when it looks transient.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`url_content.py`](#url_contentpy) |
+
+### Notes / limitations
+
+- Requires `url_content.py` (and its `requests` dependency) to be present and runnable from the repo root; `--text` additionally requires `beautifulsoup4`.
+- Without `--text`, retrieves raw content only — no HTML-tag stripping, link-following, or JavaScript rendering; the agent says so if the user seems surprised by markup in the output or by sparse content from a JavaScript-heavy page.
+- `--text` extraction is blunt (drops script/style, flattens the rest to one line) — nav/footer/cookie-banner text comes through mixed in with the article text, with no paragraph breaks; the agent says so if the user expected clean article-only text.
+- Inherits all the limitations of [`url_content.py`](#url_contentpy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET, hard character-cutoff truncation).
 
 ---
 
