@@ -1928,6 +1928,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 4. Retrieves each result with `python3 url_content.py "URL" --text --max-chars 6000 --json`, using `--text` to get readable content rather than raw HTML.
 5. Writes a summary per topic from all of the content it successfully retrieved for that topic (not just search snippets), and reports each topic's subject phrase, summary, and source links — noting plainly wherever a step came up short (fewer than 3 hot discussions, fewer than 3 sources found or fetched for a topic) instead of filling the gap itself.
 6. Leads the report with a timestamp (current date) so a given run's output is clearly distinguishable from a summary produced on a different day.
+7. Ends by offering the user a choice — publish the summary as an artifact, save it as a local HTML file, or do nothing further — without acting on any of them itself; the calling Claude Code session (which has the tools this research-only agent doesn't) carries out whichever the user picks.
 
 ### Configuration
 
@@ -1944,6 +1945,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running scri
 - The subject-phrase distillation in step 2 is a judgment call made by the agent itself, not a deterministic script — the same discussion could be phrased as slightly different search queries across runs.
 - Inherits the limitations of each underlying tool: `hottest_tech_discussions.py`'s live-snapshot ranking (results differ between runs), the `web_search_*.py` fallback chain's per-engine quirks (documented in the [`web-search`](#claude-code-agent-web-search) agent section), and `url_content.py --text`'s blunt extraction (no paragraph breaks, boilerplate not removed) plus its usual single-attempt-GET/no-retry behavior.
 - A slow-running workflow by construction — up to 3 discussions × (1 discussion-list call + up to 2 search calls + up to 3 content fetches) — since it's several sequential network round-trips with reasoning in between, not a single script invocation.
+- The closing "publish as an artifact / save as a local file / do nothing" offer is only ever a prompt from this agent — since its frontmatter restricts it to `Bash`, it has no `Artifact` or `Write` tool access itself, so the calling Claude Code session must be the one to act once the user picks an option.
 
 ---
 

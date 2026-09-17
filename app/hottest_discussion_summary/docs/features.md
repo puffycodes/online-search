@@ -13,3 +13,7 @@
     - Retrieve the content of each of the results and give a summary using all of the content.
     - Show the summary together with the links to the search result.
 - Time stamped the output to differentiate it from the summaries from other days.
+- Give the user the following choices after the completion of the above:
+    - Publish the summary as an artifact.
+    - Save the summary as a local HTML file.
+    - Do nothing further.

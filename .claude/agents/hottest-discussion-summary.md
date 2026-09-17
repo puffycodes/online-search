@@ -62,3 +62,13 @@ For each of the 3 topics, present:
 - The links to the sources actually used (the result URLs from step 2b, or fewer if some were dropped in step 2c), noting which search engines they came from if it's not obvious (e.g. Exa's semantic results, or a DuckDuckGo fallback)
 
 Keep the 3 topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources for a topic, a topic where `hottest_tech_discussions.py` returned fewer than 3 items, etc.) instead of filling the gap yourself.
+
+## Step 4 — offer what to do with it
+
+End your report with a line offering the user these choices, and stop there:
+
+- Publish the summary as an artifact
+- Save the summary as a local HTML file
+- Do nothing further
+
+This agent's tools are research-only (`Bash`, running the scripts above) — it does not itself publish artifacts or write files. Whichever option the user picks is carried out by the calling Claude Code session, not by this agent.
