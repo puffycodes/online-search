@@ -27,9 +27,9 @@ python3 url_content.py "URL" --text --max-chars 6000 --json
 
 - If `url` and `discussion_url` are the same string, fetch it once.
 - If they differ, fetch both — the article page and the HN comments page — since both are part of "the discussion."
-- On failure (4xx/5xx status, non-textual content, missing `beautifulsoup4`, or a connection error), retry once only if it looks transient; otherwise drop that link and say so when reporting rather than fabricating its content.
+- On failure (4xx/5xx status, non-textual content, missing `beautifulsoup4`, or a connection error), retry once only if it looks transient; otherwise drop that link's *content* — never the link itself, which is always preserved and reported (see Step 3) — and say so when reporting rather than fabricating its content.
 
-From whatever you successfully retrieved, write a summary of the discussion itself (what the linked piece says, and/or what the HN thread is discussing). If only one link was fetchable, summarize from that one and note the other was dropped.
+From whatever you successfully retrieved, write a summary of the discussion itself (what the linked piece says, and/or what the HN thread is discussing). If only one link's content was fetchable, summarize from that one and note the other's content was dropped (while still reporting its link).
 
 ### 2b. Reduce the topic to a single search phrase
 
@@ -48,7 +48,7 @@ python3 web_search_<engine>.py "PHRASE" --limit 3 --json
 3. That's up to 6 distinct-URL results total, 3 from each of 2 separate sources — not one merged pool of 3. If either engine returns fewer than 3, or you can't find a second working engine at all, proceed with however many/few sources you got and say so plainly when reporting — don't pad with duplicates, a third engine, or invented results.
 4. Retry a given engine at most once, only for a transient-looking network error, not for a missing key or an unambiguous quota/rate-limit message.
 
-Keep track of which engine each result came from — you'll disclose this when reporting.
+Keep track of every result URL and which engine it came from, even ones you later drop in 2d — you'll disclose and preserve all of them when reporting.
 
 ### 2d. Retrieve the content of each search result
 
@@ -59,7 +59,7 @@ python3 url_content.py "URL" --text --max-chars 6000 --json
 ```
 
 - `--text` extracts readable text (via BeautifulSoup) instead of raw HTML — that's what you want to summarize from.
-- On failure (missing scheme — shouldn't happen with a search-engine URL, a 4xx/5xx status, non-textual content, missing `beautifulsoup4`, or a connection error), retry once only if it looks transient; otherwise drop that one source and say so when reporting rather than fabricating its content.
+- On failure (missing scheme — shouldn't happen with a search-engine URL, a 4xx/5xx status, non-textual content, missing `beautifulsoup4`, or a connection error), retry once only if it looks transient; otherwise drop that source's *content* from the summary — but keep its URL for the report (see Step 3) rather than fabricating what it said.
 
 ### 2e. Summarize the subject from the search results
 
@@ -71,11 +71,11 @@ Start the report with a timestamp (the current date, e.g. `Hottest tech discussi
 
 For each of the 3 topics, present:
 
-- The discussion topic (title), its link(s) (`url` and `discussion_url` from step 1, noting if a link had to be dropped in step 2a), and the discussion summary from step 2a
+- The discussion topic (title), its full link(s) (`url` and `discussion_url` from step 1 — always show both links even if one couldn't be fetched in step 2a, noting the fetch failure there), and the discussion summary from step 2a
 - The subject phrase identified in step 2b
-- The summary of the search from step 2e, together with the links to the search results actually used (or fewer if some were dropped in step 2d), noting which search engines they came from (e.g. Exa's semantic results, or a DuckDuckGo fallback)
+- The summary of the search from step 2e, together with the full links to *every* search result collected in step 2c — including any whose content fetch failed in step 2d — noting which search engine each came from (e.g. Exa's semantic results, or a DuckDuckGo fallback) and flagging which ones contributed to the summary versus were dropped for content
 
-Keep the 3 topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources per engine, only one working search engine, a dropped link, a topic where `hottest_tech_discussions.py` returned fewer than 3 items, etc.) instead of filling the gap yourself.
+Keep the 3 topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources per engine, only one working search engine, a link whose content couldn't be fetched, a topic where `hottest_tech_discussions.py` returned fewer than 3 items, etc.) instead of filling the gap yourself. Never omit a link just because its content wasn't retrievable — preserve every link collected so the requester can check it out later.
 
 ## Step 4 — offer what to do with it
 
