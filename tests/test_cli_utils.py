@@ -7,7 +7,14 @@ import os
 
 import pytest
 
-from cli_utils import die, format_result, load_dotenv, positive_int, print_results
+from cli_utils import (
+    die,
+    format_result,
+    load_dotenv,
+    positive_int,
+    print_results,
+    validate_url_scheme,
+)
 
 
 class TestLoadDotenv:
@@ -78,6 +85,32 @@ class TestPositiveInt:
     def test_rejects_non_integer(self, raw):
         with pytest.raises(argparse.ArgumentTypeError, match="expected an integer"):
             positive_int(raw)
+
+
+class TestValidateUrlScheme:
+    @pytest.mark.parametrize("url", ["http://example.com", "https://example.com/page"])
+    def test_accepts_http_and_https(self, url):
+        validate_url_scheme(url)
+
+    def test_rejects_missing_scheme_plain(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            validate_url_scheme("example.com")
+        assert exc.value.code == 1
+        assert capsys.readouterr().err.strip() == (
+            "Error: URL must start with http:// or https://, got: example.com"
+        )
+
+    def test_rejects_missing_scheme_json(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            validate_url_scheme("example.com", as_json=True)
+        assert exc.value.code == 1
+        assert json.loads(capsys.readouterr().err) == {
+            "error": "URL must start with http:// or https://, got: example.com"
+        }
+
+    def test_rejects_other_schemes(self):
+        with pytest.raises(SystemExit):
+            validate_url_scheme("ftp://example.com")
 
 
 class TestDie:

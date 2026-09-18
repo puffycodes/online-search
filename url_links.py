@@ -21,7 +21,7 @@ from urllib.parse import urljoin
 
 import requests
 
-from cli_utils import die, positive_int
+from cli_utils import die, positive_int, validate_url_scheme
 
 TIMEOUT_SECONDS = 10
 USER_AGENT = "Mozilla/5.0 (compatible; online-search-url-links/1.0)"
@@ -121,8 +121,7 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
 
-    if not args.url.startswith(("http://", "https://")):
-        die(f"URL must start with http:// or https://, got: {args.url}", args.json)
+    validate_url_scheme(args.url, args.json)
 
     if not args.json:
         print(f"Fetching: {args.url}\n")

@@ -132,7 +132,7 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 
 | Test module | Under test | Focus |
 |---|---|---|
-| `test_cli_utils.py` | `cli_utils` | `positive_int` accept/reject; `die` plain vs JSON, exit code, stream; `load_dotenv` (missing file, populate, quoting, real-env precedence); `format_result`; `print_results` (JSON array, empty-list message, multi-row text output) |
+| `test_cli_utils.py` | `cli_utils` | `positive_int` accept/reject; `validate_url_scheme` accept (http/https) / reject (missing or other scheme) plain vs JSON; `die` plain vs JSON, exit code, stream; `load_dotenv` (missing file, populate, quoting, real-env precedence); `format_result`; `print_results` (JSON array, empty-list message, multi-row text output) |
 | `test_yahoo_finance.py` | `yahoo_finance` | `parse_date`; `build_params` window branches, priority order, look-back math, errors; `meta_summary`; `extract_series`; `fetch_history` payload/error handling and the actual `requests.get` call (URL, headers, timeout, params) |
 | `test_indicators.py` | `indicators` | every transform + `trend` + `_ols_slope`; `moving_average_cross` tie ("equal"); MA-cross-flip "double flip" and "equal run" behavior; `trend` sign on an all-negative series; `rebase` out-of-range index; error paths |
 | `test_valuation.py` | `valuation` | `_growth_path` branches (including negative years); reference values; `discounted_cash_flow` `net_debt`/`shares` equity bridge; `implied_growth_rate` round-trips `discounted_cash_flow`, monotonicity, out-of-range raises |

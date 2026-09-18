@@ -3247,7 +3247,7 @@ Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.p
 
 ## cli_utils.py
 
-Small helpers shared by the command-line scripts: uniform error exits, integer-argument validation, `.env` loading, and the result-list formatting/printing shared by the six `web_search_*.py` scripts that return a flat `[{rank, title, url, snippet}, ...]` array (`web_search_perplexity.py`'s different answer-plus-sources shape doesn't use these last two). Not a CLI — it is imported, not run.
+Small helpers shared by the command-line scripts: uniform error exits, URL-scheme validation, integer-argument validation, `.env` loading, and the result-list formatting/printing shared by the six `web_search_*.py` scripts that return a flat `[{rank, title, url, snippet}, ...]` array (`web_search_perplexity.py`'s different answer-plus-sources shape doesn't use these last two). Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -3256,6 +3256,7 @@ Small helpers shared by the command-line scripts: uniform error exits, integer-a
 ### API reference
 
 - `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
+- `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the three `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`), which all take a URL positional and reject a bare domain/path before making any request.
 - `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts) and `--years` (`stock_intrinsic_value.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
 - `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).
 - `format_result(row)` — Renders a `{rank, title, url, snippet}` record (the shape every `web_search_*.py` script but `web_search_perplexity.py` produces) as a multi-line human-readable string.

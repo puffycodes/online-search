@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 Shared helpers for the command-line entry-point scripts in this repo:
-uniform error exits, a couple of argparse ``type`` callables, ``.env``
-loading, and the result-list formatting/printing shared by the
-``web_search_*.py`` scripts that return a flat list of results.
+uniform error exits, URL-scheme validation, a couple of argparse
+``type`` callables, ``.env`` loading, and the result-list
+formatting/printing shared by the ``web_search_*.py`` scripts that
+return a flat list of results.
 
 Not a CLI itself - this module is imported, not run.
 """
@@ -81,6 +82,16 @@ def die(message, as_json=False):
     else:
         print(f"Error: {message}", file=sys.stderr)
     sys.exit(1)
+
+
+def validate_url_scheme(url, as_json=False):
+    """Exit via ``die()`` unless ``url`` starts with ``http://`` or ``https://``.
+
+    Shared by the ``url_*.py`` scripts, which all take a URL positional and
+    reject a bare domain/path before making any request.
+    """
+    if not url.startswith(("http://", "https://")):
+        die(f"URL must start with http:// or https://, got: {url}", as_json)
 
 
 def positive_int(value):
