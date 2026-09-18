@@ -69,6 +69,7 @@ tests/
   test_generate_page.py
   test_url_availability.py
   test_url_content.py
+  test_url_links.py
 ```
 
 ## Test doubles
@@ -155,6 +156,7 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_generate_page.py` | `app/hottest_discussions/generate_page` | `render_limit_options` selected marker; `render_page` shell/timestamp/brace-resolution/invalid-limit; `parse_args`; `main` writes file + creates parent dir |
 | `test_url_availability.py` | `url_availability` | `check_url` 200/404/500 classification, timeout pass-through, connection-error propagation; `format_result` redirect line + available/not-available label; `parse_args`; `main` (missing scheme, request error, JSON/text output) |
 | `test_url_content.py` | `url_content` | `is_text_content_type` accept/reject matrix incl. missing header; `extract_text` tag-stripping, script/style removal, whitespace collapsing, missing-`bs4` `ImportError`; `fetch_content` basic fetch, truncation, missing content-type, binary content-type raises, HTTP error raises, connection-error propagation, timeout pass-through, `--text` extraction + `text_extracted` flag; `format_result` redirect + truncated markers; `parse_args` incl. `--text`; `main` (missing scheme, request error, value error, missing-`bs4` error, `--text` pass-through, JSON/text output) |
+| `test_url_links.py` | `url_links` | `extract_links` href/text pairing, relative-link resolution, absolute links kept as-is, skips anchors with no/empty `href`, whitespace collapsing, empty-text links, `mailto:`/`tel:`/`javascript:` links kept, document order, missing-`bs4` `ImportError`; `fetch_links` basic fetch, resolution against `final_url`, non-HTML/missing content-type raises, HTTP error raises, connection-error propagation, timeout pass-through, no-links case; `format_result` redirect line, link list, `(no text)` marker; `parse_args`; `main` (missing scheme, request error, value error, missing-`bs4` error, timeout pass-through, JSON/text output) |
 
 ## Adding a test
 

@@ -51,6 +51,8 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`.claude/agents/url-availability.md`](#claude-code-agent-url-availability) — Claude Code subagent that calls `url_availability.py` and reports whether a named URL is up, down, or returning an error
 - [`url_content.py`](#url_contentpy) — retrieves the raw content (HTML/text/JSON/etc.) of a web page at a given URL, via an HTTP GET request, with an optional `--text` mode (BeautifulSoup) to extract just the human-readable text (no API key)
 - [`.claude/agents/url-content.md`](#claude-code-agent-url-content) — Claude Code subagent that calls `url_content.py` and reports or summarizes the content at a named URL
+- [`url_links.py`](#url_linkspy) — retrieves a web page at a given URL and extracts every hyperlink (`<a href>`) in its HTML content, resolved to absolute URLs, via BeautifulSoup (no API key)
+- [`.claude/agents/url-links.md`](#claude-code-agent-url-links) — Claude Code subagent that calls `url_links.py` and reports the links found on a named URL
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -3079,6 +3081,148 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Without `--text`, retrieves raw content only — no HTML-tag stripping, link-following, or JavaScript rendering; the agent says so if the user seems surprised by markup in the output or by sparse content from a JavaScript-heavy page.
 - `--text` extraction is blunt (drops script/style, flattens the rest to one line) — nav/footer/cookie-banner text comes through mixed in with the article text, with no paragraph breaks; the agent says so if the user expected clean article-only text.
 - Inherits all the limitations of [`url_content.py`](#url_contentpy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET, hard character-cutoff truncation).
+
+---
+
+## url_links.py
+
+Retrieves a web page at a given URL and extracts every hyperlink in its HTML content, by making an HTTP GET request and parsing all `<a href="...">` tags with BeautifulSoup. Each link's `href` is resolved against the page's final URL (after redirects), so relative links (`/about`, `../docs`) come back as absolute URLs. No API key required.
+
+### Requirements
+
+- `requests`
+- `beautifulsoup4`
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+
+### Usage
+
+```bash
+python3 url_links.py URL [--timeout SECONDS] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `URL` (positional) | — | URL to fetch, e.g. `https://example.com`; must start with `http://` or `https://` |
+| `--timeout SECONDS` | 10 | Request timeout in seconds |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Fetching: https://example.com
+
+URL: https://example.com
+Status: 200
+Links found: 1
+
+1. Learn more
+   https://iana.org/domains/example
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 url_links.py https://example.com --json
+```
+
+```json
+{
+  "url": "https://example.com",
+  "final_url": "https://example.com/",
+  "status_code": 200,
+  "content_type": "text/html",
+  "link_count": 1,
+  "links": [
+    {
+      "text": "Learn more",
+      "url": "https://iana.org/domains/example"
+    }
+  ]
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Validate the URL** — Rejects a URL that doesn't start with `http://` or `https://` before making any request.
+2. **Fetch** — Issues a `GET` with a browser-like `User-Agent`, following redirects.
+3. **Check the response** — A `4xx`/`5xx` status raises `requests.HTTPError`; a `Content-Type` that doesn't contain `html` raises `ValueError` rather than trying to parse a non-HTML body for links.
+4. **Extract** — Parses the body with BeautifulSoup (`html.parser`), finds every `<a href>` tag, resolves its `href` against the response's final URL via `urllib.parse.urljoin`, and pairs it with the anchor's visible text (whitespace collapsed to single spaces). Anchors with no `href`, or an empty/whitespace-only one, are skipped; everything else (including `mailto:`, `tel:`, and `javascript:` links) is kept as-is.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `TIMEOUT_SECONDS` | 10 | Default request timeout, used unless `--timeout` overrides it |
+| `USER_AGENT` | `Mozilla/5.0 (compatible; online-search-url-links/1.0)` | `User-Agent` header sent with the request — some sites 403 requests with no/default UA |
+
+### API reference
+
+- `extract_links(html, base_url)` — Parses `html` and returns every `<a href>` as `{text, url}`, with `url` resolved against `base_url` and `text` whitespace-collapsed. Skips anchors with no/empty `href`. Raises `ImportError` if `beautifulsoup4` isn't installed (imported lazily, so the rest of the script works without it).
+- `fetch_links(url, timeout=TIMEOUT_SECONDS)` — Issues the `GET` request and returns `{url, final_url, status_code, content_type, link_count, links}`. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-HTML `Content-Type`, and `ImportError` if `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
+- `format_result(result)` — Renders a `fetch_links()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url` and a numbered list of links (text on one line, URL indented below it; `(no text)` for a link with no visible text).
+- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; validates the URL scheme, calls `fetch_links()`, handles top-level errors, and prints the result (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If the URL doesn't start with `http://` or `https://`, the script prints an error and exits with status code 1 before making any request.
+- If the server returns a `4xx`/`5xx` status, the script prints an error (`requests`' own `HTTPError` message) and exits with status code 1 — since there's no usable content to extract links from.
+- If the response's `Content-Type` doesn't contain `html`, the script prints an error (`"URL did not return HTML content (Content-Type: ...)"`) and exits with status code 1.
+- If `beautifulsoup4` isn't installed, the script prints `"beautifulsoup4 is required (pip install beautifulsoup4)"` and exits with status code 1.
+- If the request fails at the connection level (DNS failure, timeout, connection refused, etc.), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- An out-of-range `--timeout` (e.g. `0` or negative) is rejected by argparse before any request, exiting with status code 2.
+
+### Notes / limitations
+
+- No JavaScript rendering — links injected client-side by a JavaScript-heavy page won't appear, since only the initial HTML response is parsed.
+- `href` values are resolved and kept as-is, not filtered or classified — `mailto:`, `tel:`, `javascript:`, and same-page `#fragment` links all come back alongside ordinary page links; the caller decides what to do with each.
+- No deduplication — a link repeated in a page's nav and footer is returned twice, once per occurrence, in document order.
+- Content-type sniffing is a simple substring check (`"html" in content_type.lower()`) on the `Content-Type` header, not a body sniff — a mislabeled response could pass or fail incorrectly.
+- Some sites block automated requests regardless of `User-Agent` (bot-detection, Cloudflare challenges, etc.), which can surface as a `4xx`/`5xx` error even though the page is reachable in a real browser.
+- A single attempt, no retry — a transient network hiccup is reported as a connection-level error rather than retried internally.
+
+---
+
+## Claude Code agent: `url-links`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/url-links.md`. It calls no API itself — it shells out to [`url_links.py`](#url_linkspy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "list all the links on this page", "what links does this page have?", "extract every link from this URL", or "find the links pointing to PDFs on this page" by running the script and summarizing its JSON output, instead of guessing.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own when the user gives a URL and wants the links it contains, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "url-links"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Adds a `https://` scheme itself if the user gave a bare domain or path (the underlying script requires one).
+2. Runs `python3 url_links.py "URL" --json` from the repo root.
+3. Parses the JSON object (`links`, `link_count`, `status_code`, `content_type`, `final_url`) and reports the links the user asked for — the full list, or a subset it filters itself (by `text`/`url`) when the user asked for a specific kind (e.g. "links to PDFs", "external links"), since the script itself does no filtering. Distinguishes an HTTP error, a non-HTML response, a missing `beautifulsoup4` dependency, and a connection-level failure (all surfaced as `{"error": "..."}`) when reporting a failure, and retries a connection-level failure at most once when it looks transient.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`url_links.py`](#url_linkspy) |
+
+### Notes / limitations
+
+- Requires `url_links.py` (and its `requests`/`beautifulsoup4` dependencies) to be present and runnable from the repo root.
+- No JavaScript rendering — links injected client-side by a JavaScript-heavy page won't appear; the agent says so if the user expected more links than were found from a page known to be JS-heavy.
+- No deduplication or classification — `mailto:`/`tel:`/`javascript:` links and repeated links (e.g. the same nav link on every page) come through as-is; the agent filters or dedupes on the user's behalf when asked for something more specific than "all the links."
+- Inherits all the limitations of [`url_links.py`](#url_linkspy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET).
 
 ---
 

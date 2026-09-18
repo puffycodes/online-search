@@ -14,7 +14,7 @@ A collection of small, standalone Python scripts that each pull live data from a
 # Runtime deps (per-script; matplotlib only needed for the two chart scripts)
 pip install requests
 pip install matplotlib          # stock_candlestick.py, stock_rebased_chart.py
-pip install beautifulsoup4      # url_content.py --text mode only
+pip install beautifulsoup4      # url_content.py --text mode, url_links.py (always)
 
 # Test deps
 pip install -r requirements-dev.txt   # pytest + requests
