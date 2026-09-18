@@ -38,3 +38,6 @@ Thumbs.db
 
 # Logs / local data
 *.log
+
+# Local scratch files
+tmp/

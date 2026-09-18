@@ -17,28 +17,42 @@ python3 hottest_tech_discussions.py --json --limit 3
 
 ## Step 2 — for each of the 3 discussions, do the following
 
-### 2a. Reduce the topic to a single search phrase
+### 2a. Retrieve the discussion's own content and summarize the discussion
 
-Read the discussion's `title` (and its linked `url` if the title alone is ambiguous) and distill the actual subject into one short, search-engine-friendly phrase — not the full headline. For example, a title like "Nvidia announces native GPU programming in Rust" becomes a phrase like `Nvidia CUDA Rust GPU programming`. This is a judgment call you make yourself; no script does this step.
+Each row from step 1 has a `url` (the external article, or — for a self-post like "Ask HN"/"Show HN" — the same value as `discussion_url`) and a `discussion_url` (the Hacker News comments page). Fetch each *distinct* link:
 
-### 2b. Web search that phrase for 3 results from 2 different sources
+```bash
+python3 url_content.py "URL" --text --max-chars 6000 --json
+```
+
+- If `url` and `discussion_url` are the same string, fetch it once.
+- If they differ, fetch both — the article page and the HN comments page — since both are part of "the discussion."
+- On failure (4xx/5xx status, non-textual content, missing `beautifulsoup4`, or a connection error), retry once only if it looks transient; otherwise drop that link and say so when reporting rather than fabricating its content.
+
+From whatever you successfully retrieved, write a summary of the discussion itself (what the linked piece says, and/or what the HN thread is discussing). If only one link was fetchable, summarize from that one and note the other was dropped.
+
+### 2b. Reduce the topic to a single search phrase
+
+Read the discussion's `title` (and the content already fetched in 2a if the title alone is ambiguous) and distill the actual subject into one short, search-engine-friendly phrase — not the full headline. For example, a title like "Nvidia announces native GPU programming in Rust" becomes a phrase like `Nvidia CUDA Rust GPU programming`. This is a judgment call you make yourself; no script does this step.
+
+### 2c. Web search that phrase for 3 results each from 2 different sources
 
 Use the search phrase as the query. Try the six `web_search_*.py` scripts in the same priority order the `web-search` agent uses — Brave → Serper → Tavily → SerpApi → Exa → DuckDuckGo (never `web_search_perplexity.py`; its `{answer, sources}` shape doesn't fit this flow) — all accepting:
 
 ```bash
-python3 web_search_<engine>.py "PHRASE" --limit 2 --json
+python3 web_search_<engine>.py "PHRASE" --limit 3 --json
 ```
 
-1. Run the first engine that doesn't fail outright (missing key, hard error) and take up to 2 results from it.
-2. Run the next engine down the priority list and take results from it — skipping any URL you already collected — until you have 3 distinct-URL results total, or you've run out of engines.
-3. If you can't reach 3 distinct results after trying every engine, proceed with however many you got and say so plainly when reporting — don't pad with duplicates or invented results.
+1. Run engines down the priority list until one doesn't fail outright (missing key, hard error). Call this Engine A and take up to 3 results from it.
+2. Continue down the priority list from where Engine A left off until a *different* engine succeeds — Engine B — and take up to 3 results from it, skipping any URL already collected from Engine A.
+3. That's up to 6 distinct-URL results total, 3 from each of 2 separate sources — not one merged pool of 3. If either engine returns fewer than 3, or you can't find a second working engine at all, proceed with however many/few sources you got and say so plainly when reporting — don't pad with duplicates, a third engine, or invented results.
 4. Retry a given engine at most once, only for a transient-looking network error, not for a missing key or an unambiguous quota/rate-limit message.
 
-Keep track of which two (or more) engines actually contributed results — you'll disclose this when reporting.
+Keep track of which engine each result came from — you'll disclose this when reporting.
 
-### 2c. Retrieve the content of each of the 3 results
+### 2d. Retrieve the content of each search result
 
-For each result URL:
+For each result URL from 2c:
 
 ```bash
 python3 url_content.py "URL" --text --max-chars 6000 --json
@@ -47,9 +61,9 @@ python3 url_content.py "URL" --text --max-chars 6000 --json
 - `--text` extracts readable text (via BeautifulSoup) instead of raw HTML — that's what you want to summarize from.
 - On failure (missing scheme — shouldn't happen with a search-engine URL, a 4xx/5xx status, non-textual content, missing `beautifulsoup4`, or a connection error), retry once only if it looks transient; otherwise drop that one source and say so when reporting rather than fabricating its content.
 
-### 2d. Summarize the topic
+### 2e. Summarize the subject from the search results
 
-Write a summary of the topic that draws on the full retrieved `content` of every source you successfully fetched for it — not just the search snippets, and not just one of the three. If sources disagree or add different details, reflect that. Do not state anything as fact that isn't supported by what you actually fetched.
+Write a summary of the subject that draws on the full retrieved `content` of every search result you successfully fetched — not just the search snippets, and not just one of them. If sources disagree or add different details, reflect that. Do not state anything as fact that isn't supported by what you actually fetched.
 
 ## Step 3 — report results
 
@@ -57,18 +71,18 @@ Start the report with a timestamp (the current date, e.g. `Hottest tech discussi
 
 For each of the 3 topics, present:
 
-- The distilled subject phrase
-- The summary from step 2d
-- The links to the sources actually used (the result URLs from step 2b, or fewer if some were dropped in step 2c), noting which search engines they came from if it's not obvious (e.g. Exa's semantic results, or a DuckDuckGo fallback)
+- The discussion topic (title), its link(s) (`url` and `discussion_url` from step 1, noting if a link had to be dropped in step 2a), and the discussion summary from step 2a
+- The subject phrase identified in step 2b
+- The summary of the search from step 2e, together with the links to the search results actually used (or fewer if some were dropped in step 2d), noting which search engines they came from (e.g. Exa's semantic results, or a DuckDuckGo fallback)
 
-Keep the 3 topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources for a topic, a topic where `hottest_tech_discussions.py` returned fewer than 3 items, etc.) instead of filling the gap yourself.
+Keep the 3 topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources per engine, only one working search engine, a dropped link, a topic where `hottest_tech_discussions.py` returned fewer than 3 items, etc.) instead of filling the gap yourself.
 
 ## Step 4 — offer what to do with it
 
 End your report with a line offering the user these choices, and stop there:
 
 - Publish the summary as an artifact
-- Save the summary as a local HTML file
+- Save the summary as a local HTML file or a markdown file
 - Do nothing further
 
 This agent's tools are research-only (`Bash`, running the scripts above) — it does not itself publish artifacts or write files. Whichever option the user picks is carried out by the calling Claude Code session, not by this agent.

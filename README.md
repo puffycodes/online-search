@@ -1923,12 +1923,13 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### What it does
 
 1. Runs `python3 hottest_tech_discussions.py --json --limit 3` to get the top 3 hottest discussions.
-2. For each of the 3, judges (itself — no script does this) a short, search-friendly phrase capturing the discussion's actual subject from its title.
-3. Searches that phrase with two of the six `web_search_*.py` scripts, tried in the same priority order the [`web-search`](#claude-code-agent-web-search) agent uses (Brave → Serper → Tavily → SerpApi → Exa → DuckDuckGo), combining results from the first two engines that succeed into 3 distinct-URL results (never `web_search_perplexity.py`, which doesn't fit this flow's flat result shape).
-4. Retrieves each result with `python3 url_content.py "URL" --text --max-chars 6000 --json`, using `--text` to get readable content rather than raw HTML.
-5. Writes a summary per topic from all of the content it successfully retrieved for that topic (not just search snippets), and reports each topic's subject phrase, summary, and source links — noting plainly wherever a step came up short (fewer than 3 hot discussions, fewer than 3 sources found or fetched for a topic) instead of filling the gap itself.
-6. Leads the report with a timestamp (current date) so a given run's output is clearly distinguishable from a summary produced on a different day.
-7. Ends by offering the user a choice — publish the summary as an artifact, save it as a local HTML file, or do nothing further — without acting on any of them itself; the calling Claude Code session (which has the tools this research-only agent doesn't) carries out whichever the user picks.
+2. For each of the 3, retrieves the discussion's own link(s) with `python3 url_content.py "URL" --text --max-chars 6000 --json` — the external article at `url` and, if different, the Hacker News comments page at `discussion_url` — and writes a summary of the discussion itself from whatever it successfully fetched.
+3. Judges (itself — no script does this) a short, search-friendly phrase capturing the discussion's actual subject from its title.
+4. Searches that phrase with two of the six `web_search_*.py` scripts, tried in the same priority order the [`web-search`](#claude-code-agent-web-search) agent uses (Brave → Serper → Tavily → SerpApi → Exa → DuckDuckGo), taking up to 3 distinct-URL results from the first engine that succeeds and up to 3 more from the next engine that succeeds — up to 6 results total from 2 separate sources, not one merged pool of 3 (never `web_search_perplexity.py`, which doesn't fit this flow's flat result shape).
+5. Retrieves each search result with `python3 url_content.py "URL" --text --max-chars 6000 --json`, using `--text` to get readable content rather than raw HTML.
+6. Writes a second summary per topic — of the subject, from all of the search-result content it successfully retrieved (not just search snippets) — and reports each topic's title and link(s) with the discussion summary, the distilled subject phrase, and the subject summary with its source links, noting plainly wherever a step came up short (fewer than 3 hot discussions, a dropped discussion link, fewer than 3 results from either search engine or only one working engine) instead of filling the gap itself.
+7. Leads the report with a timestamp (current date) so a given run's output is clearly distinguishable from a summary produced on a different day.
+8. Ends by offering the user a choice — publish the summary as an artifact, save it as a local HTML file or a markdown file, or do nothing further — without acting on any of them itself; the calling Claude Code session (which has the tools this research-only agent doesn't) carries out whichever the user picks.
 
 ### Configuration
 
@@ -1941,10 +1942,10 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running scri
 
 ### Notes / limitations
 
-- Requires all of `hottest_tech_discussions.py`, the `web_search_*.py` scripts, and `url_content.py` (plus `beautifulsoup4`, for `url_content.py --text`) to be present and runnable from the repo root, and at least two working search-engine API keys to satisfy the "2 sources" requirement.
-- The subject-phrase distillation in step 2 is a judgment call made by the agent itself, not a deterministic script — the same discussion could be phrased as slightly different search queries across runs.
+- Requires all of `hottest_tech_discussions.py`, the `web_search_*.py` scripts, and `url_content.py` (plus `beautifulsoup4`, for `url_content.py --text`) to be present and runnable from the repo root, and at least two working search-engine API keys to satisfy the "3 results each from 2 sources" requirement.
+- The subject-phrase distillation is a judgment call made by the agent itself, not a deterministic script — the same discussion could be phrased as slightly different search queries across runs.
 - Inherits the limitations of each underlying tool: `hottest_tech_discussions.py`'s live-snapshot ranking (results differ between runs), the `web_search_*.py` fallback chain's per-engine quirks (documented in the [`web-search`](#claude-code-agent-web-search) agent section), and `url_content.py --text`'s blunt extraction (no paragraph breaks, boilerplate not removed) plus its usual single-attempt-GET/no-retry behavior.
-- A slow-running workflow by construction — up to 3 discussions × (1 discussion-list call + up to 2 search calls + up to 3 content fetches) — since it's several sequential network round-trips with reasoning in between, not a single script invocation.
+- A slow-running workflow by construction — up to 3 discussions × (1 discussion-list call + up to 2 discussion-link content fetches + up to 2 search calls + up to 6 search-result content fetches) — since it's several sequential network round-trips with reasoning in between, not a single script invocation.
 - The closing "publish as an artifact / save as a local file / do nothing" offer is only ever a prompt from this agent — since its frontmatter restricts it to `Bash`, it has no `Artifact` or `Write` tool access itself, so the calling Claude Code session must be the one to act once the user picks an option.
 
 ---
