@@ -53,6 +53,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`.claude/agents/url-content.md`](#claude-code-agent-url-content) — Claude Code subagent that calls `url_content.py` and reports or summarizes the content at a named URL
 - [`url_links.py`](#url_linkspy) — retrieves a web page at a given URL and extracts every hyperlink (`<a href>`) in its HTML content, resolved to absolute URLs, via BeautifulSoup (no API key)
 - [`.claude/agents/url-links.md`](#claude-code-agent-url-links) — Claude Code subagent that calls `url_links.py` and reports the links found on a named URL
+- [`.claude/agents/url-summary.md`](#claude-code-agent-url-summary) — Claude Code subagent that calls `url_content.py` once per given URL and reports a summary of each page's content
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script and helper module (see [`tests/README.md`](tests/README.md))
@@ -3223,6 +3224,49 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - No JavaScript rendering — links injected client-side by a JavaScript-heavy page won't appear; the agent says so if the user expected more links than were found from a page known to be JS-heavy.
 - No deduplication or classification — `mailto:`/`tel:`/`javascript:` links and repeated links (e.g. the same nav link on every page) come through as-is; the agent filters or dedupes on the user's behalf when asked for something more specific than "all the links."
 - Inherits all the limitations of [`url_links.py`](#url_linkspy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET).
+
+---
+
+## Claude Code agent: `url-summary`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/url-summary.md`. It calls no API itself — it shells out to [`url_content.py`](#url_contentpy) via the `Bash` tool, once per URL it's given, and reports a summary conversationally. Unlike [`url-content`](#claude-code-agent-url-content), it always summarizes rather than quoting/reporting raw content, and it accepts one *or more* URLs in a single request rather than just one.
+
+### Purpose
+
+Lets Claude Code answer requests like "summarize this article: https://example.com/post", "summarize these URLs for me", or "what do these three pages say, in short" — fetching each page and reporting what it actually says, instead of guessing from the URL or title alone.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own when the user gives one or more URLs and wants a summary of their content, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "url-summary"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Adds a `https://` scheme itself to any URL the user gave as a bare domain or path (the underlying script requires one).
+2. Runs `python3 url_content.py "URL" --text --max-chars 6000 --json` for *every* URL given, one call per URL — `--text` for readable content rather than raw markup, and a smaller `--max-chars` than `url-content`'s default since this agent summarizes rather than reproduces the page.
+3. For each URL that fetched successfully, writes a concise summary of its actual content (not a full recap), noting if `truncated` is `true`.
+4. For a single URL, reports that one summary. For multiple URLs, reports each summary individually and labeled by its URL, adding a short combined take only when the pages are genuinely related — never forcing a synthesis across unrelated pages.
+5. Reports every URL given, even ones that failed to fetch — a failed URL is shown with its error reason alongside the successful summaries, never silently dropped. Retries a connection-level failure at most once when it looks transient; a missing-scheme, non-textual-content, or missing-dependency failure is not retried, since none of those change on retry.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`url_content.py`](#url_contentpy) (called once per URL) |
+
+### Notes / limitations
+
+- Requires `url_content.py` (and its `requests`/`beautifulsoup4` dependencies) to be present and runnable from the repo root.
+- Fetches each URL's initial HTML response only — no JavaScript rendering, so a JavaScript-heavy page may summarize as little more than its shell.
+- `--text` extraction is blunt (drops script/style, flattens the rest to one line, no paragraph breaks) — the agent summarizes from that flattened text, so nav/footer/cookie-banner text mixed into the extracted content can occasionally bleed into a summary.
+- The combined "how these pages relate" take, when given multiple URLs, is a judgment call made by the agent itself, not a deterministic script — it's included only when a real relationship exists, and omitted rather than invented for unrelated pages.
+- Sequential, one URL at a time — summarizing many URLs in one request means that many separate network round trips, not a single batched call.
+- Inherits all the limitations of [`url_content.py`](#url_contentpy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET, hard character-cutoff truncation).
 
 ---
 
