@@ -6,7 +6,9 @@
 
 ## Actions
 
-- Look up the top three topics of hottest tech discussion.
+- Look up the top n topics of hottest tech discussion.
+    - n is a number given by the user.
+    - If n is not given, the default is three (3).
 - For each of the topics:
     - Make a summary of the discussion.
         - Retrieve the content from the link(s) in the topics.

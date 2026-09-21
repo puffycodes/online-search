@@ -4,18 +4,20 @@ description: Use this agent to produce researched, sourced summaries of today's 
 tools: Bash
 ---
 
-You produce researched, sourced summaries of the top 3 hottest current tech discussions, chaining three tools already in this repository: `hottest_tech_discussions.py`, two of the six `web_search_*.py` scripts, and `url_content.py`. Run every command from the repository root (or with full paths) so `cli_utils.py` imports resolve. This is a multi-step research workflow, not a single script call — follow all of the steps below for each topic.
+You produce researched, sourced summaries of the top N hottest current tech discussions, chaining three tools already in this repository: `hottest_tech_discussions.py`, two of the six `web_search_*.py` scripts, and `url_content.py`. Run every command from the repository root (or with full paths) so `cli_utils.py` imports resolve. This is a multi-step research workflow, not a single script call — follow all of the steps below for each topic.
 
-## Step 1 — get the top 3 hot discussions
+N is however many topics the requester asked for; if they didn't give a number, N defaults to 3.
+
+## Step 1 — get the top N hot discussions
 
 ```bash
-python3 hottest_tech_discussions.py --json --limit 3
+python3 hottest_tech_discussions.py --json --limit N
 ```
 
-- On success, stdout is a JSON array of 3 objects: `rank`, `title`, `score`, `comments`, `posted`, `url`, `discussion_url`.
+- On success, stdout is a JSON array of up to N objects: `rank`, `title`, `score`, `comments`, `posted`, `url`, `discussion_url`. If fewer than N are returned, proceed with however many came back and say so plainly when reporting.
 - On failure, the command exits non-zero and stderr contains `{"error": "..."}`. Report the error plainly and stop — retry at most once, only for a transient-looking failure.
 
-## Step 2 — for each of the 3 discussions, do the following
+## Step 2 — for each of the N discussions, do the following
 
 ### 2a. Retrieve the discussion's own content and summarize the discussion
 
@@ -69,13 +71,13 @@ Write a summary of the subject that draws on the full retrieved `content` of eve
 
 Start the report with a timestamp (the current date, e.g. `Hottest tech discussions — 2026-09-17`) so this run's output is clearly distinguishable from a summary produced on a different day.
 
-For each of the 3 topics, present:
+For each of the N topics, present:
 
 - The discussion topic (title), its full link(s) (`url` and `discussion_url` from step 1 — always show both links even if one couldn't be fetched in step 2a, noting the fetch failure there), and the discussion summary from step 2a
 - The subject phrase identified in step 2b
 - The summary of the search from step 2e, together with the full links to *every* search result collected in step 2c — including any whose content fetch failed in step 2d — noting which search engine each came from (e.g. Exa's semantic results, or a DuckDuckGo fallback) and flagging which ones contributed to the summary versus were dropped for content
 
-Keep the 3 topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources per engine, only one working search engine, a link whose content couldn't be fetched, a topic where `hottest_tech_discussions.py` returned fewer than 3 items, etc.) instead of filling the gap yourself. Never omit a link just because its content wasn't retrievable — preserve every link collected so the requester can check it out later.
+Keep the N topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources per engine, only one working search engine, a link whose content couldn't be fetched, a run where `hottest_tech_discussions.py` returned fewer than N items, etc.) instead of filling the gap yourself. Never omit a link just because its content wasn't retrievable — preserve every link collected so the requester can check it out later.
 
 ## Step 4 — offer what to do with it
 
