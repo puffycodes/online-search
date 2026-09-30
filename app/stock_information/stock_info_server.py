@@ -7,7 +7,15 @@ D05.SI, ...) and a submit button. On submit, the browser calls this
 server's /api/quote endpoint, which fetches the quote through the same
 Yahoo Finance chart helpers as stock_close_history.py (yahoo_finance.py
 at the repository root) and returns the company name, symbol, current
-price, and the high/low of the latest session with its date.
+price, its movement since the previous close, and the high/low of the
+latest session with its date.
+
+The page then calls /api/valuation, which runs the same pipeline as
+stock_intrinsic_value.py (Yahoo fundamentals -> every valuation.py
+method, with that script's default assumptions) and shows each estimate
+next to the price. The company's sector and industry come from the same
+fundamentals payload. It's a separate call because the fundamentals fetch
+is slower and more fragile than the quote.
 
 A server is needed (rather than a static page) because Yahoo's endpoints
 don't send CORS headers, so a browser can't call them directly.
@@ -26,13 +34,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# yahoo_finance.py and stock_close_history.py live at the repository root,
-# two levels up from this file (app/stock_information/stock_info_server.py).
+# yahoo_finance.py, stock_close_history.py and stock_intrinsic_value.py live
+# at the repository root, two levels up from this file (app/stock_information/stock_info_server.py).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 import requests  # noqa: E402
 
+import stock_intrinsic_value as siv  # noqa: E402
 import yahoo_finance as yf  # noqa: E402
 from stock_close_history import extract_rows  # noqa: E402
 
@@ -60,6 +69,8 @@ PAGE_HTML = """<!DOCTYPE html>
     --accent: #1f6feb;
     --border: #e1e4e8;
     --error: #c62828;
+    --up: #1a7f37;
+    --down: #c62828;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -69,6 +80,8 @@ PAGE_HTML = """<!DOCTYPE html>
       --muted: #9a9a9a;
       --border: #2c2c2c;
       --error: #ef9a9a;
+      --up: #56d364;
+      --down: #f47067;
     }
   }
   * { box-sizing: border-box; }
@@ -121,20 +134,34 @@ PAGE_HTML = """<!DOCTYPE html>
     border-radius: 8px;
     padding: 1.1rem 1.25rem;
   }
-  .card h2 { margin: 0; font-size: 1.3rem; }
-  .card .symbol { color: var(--muted); font-size: 0.9rem; margin-top: 0.2rem; }
-  .price { font-size: 2rem; font-weight: 600; margin: 0.9rem 0 0.2rem; }
+  .price { font-size: 2rem; font-weight: 600; margin: 0 0 0.2rem; }
+  .change { font-weight: 600; font-variant-numeric: tabular-nums; margin-bottom: 0.2rem; }
+  .change.up { color: var(--up); }
+  .change.down { color: var(--down); }
   .price-label { color: var(--muted); font-size: 0.8rem; }
   dl {
     display: grid;
     grid-template-columns: auto 1fr;
     gap: 0.35rem 1rem;
-    margin: 1rem 0 0;
-    padding-top: 0.9rem;
-    border-top: 1px solid var(--border);
+    margin: 0.75rem 0 0;
   }
   dt { color: var(--muted); }
   dd { margin: 0; font-variant-numeric: tabular-nums; }
+  h3 {
+    margin: 1.25rem 0 0.6rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+    font-size: 1.05rem;
+  }
+  h3:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  #valuation-status { color: var(--muted); font-size: 0.9rem; margin: 0; }
+  #valuation-status.error { color: var(--error); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--border); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  td { font-variant-numeric: tabular-nums; }
+  .assumptions, .disclaimer { color: var(--muted); font-size: 0.8rem; margin: 0.6rem 0 0; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -151,15 +178,34 @@ PAGE_HTML = """<!DOCTYPE html>
   </form>
   <p id="status"></p>
   <section id="result" class="card" hidden>
-    <h2 id="company-name"></h2>
-    <div class="symbol" id="symbol-line"></div>
+    <h3>Company</h3>
+    <dl>
+      <dt>Name</dt><dd id="company-name"></dd>
+      <dt>Symbol</dt><dd id="company-symbol"></dd>
+      <dt>Sector</dt><dd id="company-sector"></dd>
+      <dt>Industry</dt><dd id="company-industry"></dd>
+    </dl>
+    <h3>Price</h3>
     <div class="price" id="current-price"></div>
+    <div class="change" id="price-change"></div>
     <div class="price-label" id="price-label"></div>
     <dl>
-      <dt>Session date</dt><dd id="session-date"></dd>
       <dt>High</dt><dd id="session-high"></dd>
       <dt>Low</dt><dd id="session-low"></dd>
+      <dt>Previous close</dt><dd id="previous-close"></dd>
+      <dt>Session date</dt><dd id="session-date"></dd>
     </dl>
+    <h3>Valuations</h3>
+    <p id="valuation-status"></p>
+    <div id="valuation" hidden>
+      <table>
+        <thead><tr><th>Method</th><th>Value / share</th><th>Price vs estimate</th></tr></thead>
+        <tbody id="valuation-rows"></tbody>
+      </table>
+      <p class="assumptions" id="valuation-assumptions"></p>
+      <p class="disclaimer">Mechanical estimates from Yahoo fundamentals and default
+        assumptions (see stock_intrinsic_value.py) &mdash; not a forecast or investment advice.</p>
+    </div>
   </section>
 </main>
 <script>
@@ -182,15 +228,128 @@ PAGE_HTML = """<!DOCTYPE html>
     return currency ? text + " " + currency : text;
   }
 
+  var valuationStatus = document.getElementById("valuation-status");
+  var valuationBox = document.getElementById("valuation");
+  var valuationRows = document.getElementById("valuation-rows");
+  // Display order and labels for stock_intrinsic_value.build_json()'s estimates.
+  var METHODS = [
+    ["dcf_two_stage", "Two-stage DCF"],
+    ["dividend_discount", "Dividend discount (Gordon)"],
+    ["pe_multiple", "P/E multiple"],
+    ["graham", "Graham formula"],
+    ["ev_ebitda_multiple", "EV/EBITDA multiple"],
+    ["ps_multiple", "P/S multiple"],
+    ["ev_reported_to_equity", "Reported EV → equity (check)"]
+  ];
+  // Bumped per submit so a slow response for an older symbol is ignored.
+  var requestId = 0;
+
+  function pct(value) {
+    if (value === null || value === undefined) return "–";
+    return (value * 100).toFixed(2) + "%";
+  }
+
+  function gap(value) {
+    if (value === null || value === undefined) return "–";
+    return (Math.abs(value) * 100).toFixed(1) + "% " + (value >= 0 ? "above" : "below");
+  }
+
+  function addRow(cells) {
+    var tr = document.createElement("tr");
+    cells.forEach(function (text) {
+      var td = document.createElement("td");
+      td.textContent = text;
+      tr.appendChild(td);
+    });
+    valuationRows.appendChild(tr);
+  }
+
+  function renderValuation(v) {
+    valuationRows.innerHTML = "";
+    // With default assumptions the multiple methods use the stock's own
+    // current multiple, so they land at ~the price; say so in the label.
+    var used = v.multiples_used || {};
+    var MULTIPLE_KEYS = { pe_multiple: "pe", ev_ebitda_multiple: "ev_ebitda", ps_multiple: "ps" };
+    METHODS.forEach(function (m) {
+      var e = v.estimates[m[0]] || {};
+      var label = m[1];
+      var key = MULTIPLE_KEYS[m[0]];
+      if (key && used[key]) {
+        label += " (" + Number(used[key]).toFixed(1) + "×, " + used[key + "_source"] + ")";
+      }
+      addRow([label, money(e.value_per_share, v.currency), gap(e.price_vs_estimate)]);
+    });
+    var r = v.estimates.reverse_dcf_implied_growth || {};
+    addRow([
+      "Reverse DCF: implied growth",
+      pct(r.implied_growth),
+      r.analyst_growth_5y === null || r.analyst_growth_5y === undefined
+        ? "–" : "analyst 5y: " + pct(r.analyst_growth_5y)
+    ]);
+    var a = v.assumptions;
+    setText("valuation-assumptions",
+      "Assumptions: discount rate " + pct(a.discount_rate) + " (" + a.notes.discount_rate + "); " +
+      "growth " + pct(a.growth) + " (" + a.notes.growth + "); " +
+      "terminal growth " + pct(a.terminal_growth) + "; " + a.years + "-year horizon.");
+    valuationBox.hidden = false;
+  }
+
+  function fetchJson(url) {
+    return fetch(url).then(function (response) {
+      return response.json().then(function (body) {
+        if (!response.ok) throw new Error(body.error || ("HTTP " + response.status));
+        return body;
+      });
+    });
+  }
+
+  function loadValuation(symbol, id) {
+    valuationBox.hidden = true;
+    valuationStatus.className = "";
+    valuationStatus.textContent = "Computing valuations…";
+    fetchJson("/api/valuation?symbol=" + encodeURIComponent(symbol))
+      .then(function (v) {
+        if (id !== requestId) return;
+        renderProfile(v);
+        renderValuation(v);
+        valuationStatus.textContent = "";
+      })
+      .catch(function (err) {
+        if (id !== requestId) return;
+        renderProfile(null);
+        valuationStatus.className = "error";
+        valuationStatus.textContent = "Valuation failed: " + err.message;
+      });
+  }
+
   function render(q) {
     setText("company-name", q.name || q.symbol);
-    setText("symbol-line", q.symbol + (q.exchange ? " · " + q.exchange : ""));
     setText("current-price", money(q.price, q.currency));
     setText("price-label", q.price_time ? "Current price as of " + q.price_time : "Current price");
     setText("session-date", q.session_date || "–");
     setText("session-high", money(q.session_high, q.currency));
     setText("session-low", money(q.session_low, q.currency));
+    setText("previous-close", money(q.previous_close, q.currency));
+    var change = document.getElementById("price-change");
+    if (q.change === null || q.change === undefined) {
+      change.textContent = "Change: –";
+      change.className = "change";
+    } else {
+      var sign = q.change > 0 ? "+" : q.change < 0 ? "−" : "";
+      change.textContent = sign + money(Math.abs(q.change), "") + " (" + sign +
+        (Math.abs(q.change_pct) * 100).toFixed(2) + "%) this session";
+      change.className = "change" + (q.change > 0 ? " up" : q.change < 0 ? " down" : "");
+    }
+    // Sector/industry come from the (slower) fundamentals fetch in /api/valuation.
+    setText("company-symbol", q.symbol + (q.exchange ? " (" + q.exchange + ")" : ""));
+    setText("company-sector", "Loading…");
+    setText("company-industry", "Loading…");
     result.hidden = false;
+  }
+
+  function renderProfile(v) {
+    setText("company-sector", v ? (v.sector || "Not reported") : "Unavailable");
+    setText("company-industry", v ? (v.industry || "Not reported") : "Unavailable");
   }
 
   form.addEventListener("submit", function (event) {
@@ -202,18 +361,16 @@ PAGE_HTML = """<!DOCTYPE html>
     status.className = "";
     status.textContent = "Looking up " + symbol + "…";
 
-    fetch("/api/quote?symbol=" + encodeURIComponent(symbol))
-      .then(function (response) {
-        return response.json().then(function (body) {
-          if (!response.ok) throw new Error(body.error || ("HTTP " + response.status));
-          return body;
-        });
-      })
+    var id = ++requestId;
+    fetchJson("/api/quote?symbol=" + encodeURIComponent(symbol))
       .then(function (q) {
+        if (id !== requestId) return;
         render(q);
         status.textContent = "";
+        loadValuation(q.symbol, id);
       })
       .catch(function (err) {
+        if (id !== requestId) return;
         result.hidden = true;
         status.className = "error";
         status.textContent = "Lookup failed: " + err.message;
@@ -245,11 +402,12 @@ def get_stock_info(symbol):
     """Fetch the quote summary for ``symbol`` from Yahoo's chart endpoint.
 
     Returns a dict with name, symbol, exchange, currency, price,
-    price_time, session_date, session_high, session_low. The price and
-    session figures come from the chart ``meta`` block (which reflects
+    price_time, session_date, session_high, session_low, previous_close,
+    change, change_pct (a fraction). The price and session figures come from the chart ``meta`` block (which reflects
     an in-progress session); if Yahoo omits them, they fall back to the
     most recent settled daily bar. Raises requests.RequestException if
-    Yahoo returns no usable price.
+    Yahoo returns no usable price. previous_close / change / change_pct
+    are None when the window has no bar before the latest session.
     """
     result = yf.fetch_history(symbol, yf.build_params(range_=QUOTE_RANGE))
     meta, rows = extract_rows(result)
@@ -273,6 +431,16 @@ def get_stock_info(symbol):
         high = latest.get("high")
         low = latest.get("low")
 
+    # Movement for the latest session is measured against the close of the
+    # last bar dated before it. The in-progress session's bar can already
+    # carry a close, so "the second-to-last row" isn't reliable.
+    earlier = [r for r in rows if session_date and r["date"] < session_date]
+    previous_close = earlier[-1]["close"] if earlier else None
+    change = change_pct = None
+    if previous_close:
+        change = round(price - previous_close, 4)
+        change_pct = change / previous_close
+
     price_time = None
     if market_time:
         price_time = _local_time(market_time, gmtoffset).strftime("%Y-%m-%d %H:%M")
@@ -289,11 +457,32 @@ def get_stock_info(symbol):
         "session_date": session_date,
         "session_high": high,
         "session_low": low,
+        "previous_close": previous_close,
+        "change": change,
+        "change_pct": change_pct,
     }
 
 
+def get_valuation(symbol):
+    """Run stock_intrinsic_value.py's pipeline for ``symbol`` with its default assumptions.
+
+    Returns that script's ``--json`` payload (``build_json()``): inputs,
+    assumptions, and every estimate with its gap to the price. Raises
+    requests.RequestException / ValueError / KeyError on a failed fetch,
+    and ValueError when Yahoo returns no usable fundamentals.
+    """
+    modules = siv.fetch_fundamentals(symbol)
+    inputs = siv.collect_inputs(modules)
+    if inputs["price"] is None:
+        raise ValueError("no usable fundamentals returned")
+    args = siv.parse_args([symbol])
+    assumptions = siv.resolve_assumptions(inputs, args)
+    estimates, used = siv.compute_estimates(inputs, assumptions, args)
+    return siv.build_json(symbol, inputs, assumptions, estimates, used)
+
+
 class StockInfoHandler(BaseHTTPRequestHandler):
-    """Serves the page at ``/`` and quote JSON at ``/api/quote?symbol=...``."""
+    """Serves the page at ``/`` and JSON at ``/api/quote`` and ``/api/valuation``."""
 
     def _send(self, status, body, content_type):
         data = body.encode("utf-8")
@@ -312,7 +501,11 @@ class StockInfoHandler(BaseHTTPRequestHandler):
         if url.path in ("/", "/index.html"):
             self._send(HTTPStatus.OK, PAGE_HTML, "text/html; charset=utf-8")
             return
-        if url.path != "/api/quote":
+        if url.path == "/api/quote":
+            lookup, what = get_stock_info, "quote"
+        elif url.path == "/api/valuation":
+            lookup, what = get_valuation, "valuation"
+        else:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
 
@@ -324,11 +517,11 @@ class StockInfoHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            info = get_stock_info(symbol)
+            info = lookup(symbol)
         except (requests.RequestException, ValueError, KeyError) as exc:
             self._send_json(
                 HTTPStatus.BAD_GATEWAY,
-                {"error": f"failed to fetch quote for {symbol!r}: {exc}"},
+                {"error": f"failed to fetch {what} for {symbol!r}: {exc}"},
             )
             return
         self._send_json(HTTPStatus.OK, info)

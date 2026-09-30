@@ -64,6 +64,9 @@ class TestGetStockInfo:
             "session_date": "2024-01-03",
             "session_high": 13.0,
             "session_low": 12.0,
+            "previous_close": 11.2,
+            "change": 1.14,
+            "change_pct": pytest.approx(1.14 / 11.2),
         }
 
     def test_session_date_honours_gmtoffset(self, monkeypatch, chart_result):
@@ -90,6 +93,35 @@ class TestGetStockInfo:
         assert info["price_time"] is None
         assert info["session_date"] == "2024-01-03"
         assert (info["session_high"], info["session_low"]) == (12.5, 11.5)
+        assert info["previous_close"] == 11.2
+        assert info["change"] == 1.0
+        assert info["change_pct"] == pytest.approx(1.0 / 11.2)
+
+    def test_change_ignores_in_progress_bar_that_has_a_close(self, monkeypatch, chart_result):
+        # The latest session's own bar (2024-01-03) already carries a close;
+        # movement must be measured against 2024-01-02, not that bar.
+        chart_result["meta"].update(
+            {
+                "regularMarketPrice": 12.2,
+                "regularMarketTime": 1704283200,
+                "regularMarketDayHigh": 12.5,
+                "regularMarketDayLow": 11.5,
+            }
+        )
+        self._patch(monkeypatch, chart_result)
+        info = sis.get_stock_info("AAA")
+        assert info["previous_close"] == 11.2
+        assert info["change"] == 1.0
+
+    def test_no_earlier_bar_leaves_change_empty(self, monkeypatch, chart_result):
+        chart_result["timestamp"] = chart_result["timestamp"][-1:]
+        quote = chart_result["indicators"]["quote"][0]
+        for key in quote:
+            quote[key] = quote[key][-1:]
+        chart_result["indicators"]["adjclose"][0]["adjclose"] = [12.1]
+        self._patch(monkeypatch, chart_result)
+        info = sis.get_stock_info("AAA")
+        assert (info["previous_close"], info["change"], info["change_pct"]) == (None, None, None)
 
     def test_name_falls_back_to_symbol(self, monkeypatch, chart_result):
         self._patch(monkeypatch, chart_result)
@@ -100,6 +132,52 @@ class TestGetStockInfo:
         self._patch(monkeypatch, chart_result)
         with pytest.raises(requests.RequestException, match="no price data"):
             sis.get_stock_info("AAA")
+
+
+def _fundamentals(price=100.0):
+    """Minimal quoteSummary ``modules`` enough for every valuation method to run."""
+    return {
+        "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST",
+                  "regularMarketPrice": {"raw": price}},
+        "financialData": {"currentPrice": {"raw": price}, "freeCashflow": {"raw": 5e9},
+                          "ebitda": {"raw": 8e9}, "totalDebt": {"raw": 2e9},
+                          "totalCash": {"raw": 1e9}, "totalRevenue": {"raw": 40e9}},
+        "defaultKeyStatistics": {"sharesOutstanding": {"raw": 1e9}, "trailingEps": {"raw": 5.0},
+                                 "beta": {"raw": 1.0}, "enterpriseValue": {"raw": 101e9},
+                                 "enterpriseToEbitda": {"raw": 12.0}},
+        "summaryDetail": {"trailingPE": {"raw": 20.0}, "priceToSalesTrailing12Months": {"raw": 2.5},
+                          "dividendRate": {"raw": 2.0}},
+        "summaryProfile": {"sector": "Technology", "industry": "Consumer Electronics"},
+    }
+
+
+class TestGetValuation:
+    def test_runs_intrinsic_value_pipeline_with_defaults(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(sis.siv, "fetch_fundamentals", lambda s: seen.append(s) or _fundamentals())
+        out = sis.get_valuation("AAA")
+        assert seen == ["AAA"]
+        assert out["symbol"] == "AAA" and out["price"] == 100.0
+        assert (out["sector"], out["industry"]) == ("Technology", "Consumer Electronics")
+        assert "industry" not in out["inputs"]
+        # CAPM default: 4% + 1.0 x 5%
+        assert out["assumptions"]["discount_rate"] == pytest.approx(0.09)
+        est = out["estimates"]
+        assert set(est) == {
+            "dcf_two_stage", "reverse_dcf_implied_growth", "dividend_discount", "pe_multiple",
+            "graham", "ev_ebitda_multiple", "ps_multiple", "ev_reported_to_equity",
+        }
+        assert est["pe_multiple"]["value_per_share"] == pytest.approx(100.0)  # 5 EPS x 20 P/E
+        assert est["dcf_two_stage"]["value_per_share"] > 0
+        json.dumps(out)  # must be serializable for the HTTP response
+
+    def test_no_price_raises(self, monkeypatch):
+        modules = _fundamentals()
+        del modules["financialData"]["currentPrice"]
+        del modules["price"]["regularMarketPrice"]
+        monkeypatch.setattr(sis.siv, "fetch_fundamentals", lambda s: modules)
+        with pytest.raises(ValueError, match="no usable fundamentals"):
+            sis.get_valuation("AAA")
 
 
 class _Handler(sis.StockInfoHandler):
@@ -160,6 +238,35 @@ class TestHandler:
         h = _get("/api/quote?symbol=ZZZ")
         assert h.status == 502
         assert json.loads(h.wfile.getvalue())["error"] == "failed to fetch quote for 'ZZZ': No data found"
+
+    def test_valuation_success(self, monkeypatch):
+        monkeypatch.setattr(sis, "get_valuation", lambda s: {"symbol": s, "estimates": {}})
+        h = _get("/api/valuation?symbol=aapl")
+        assert h.status == 200
+        assert json.loads(h.wfile.getvalue()) == {"symbol": "AAPL", "estimates": {}}
+
+    def test_valuation_invalid_symbol_is_400(self, monkeypatch):
+        monkeypatch.setattr(sis, "get_valuation", lambda s: pytest.fail("should not fetch"))
+        assert _get("/api/valuation?symbol=a/b").status == 400
+
+    def test_valuation_fetch_error_is_502(self, monkeypatch):
+        def boom(symbol):
+            raise ValueError("no usable fundamentals returned")
+
+        monkeypatch.setattr(sis, "get_valuation", boom)
+        h = _get("/api/valuation?symbol=ZZZ")
+        assert h.status == 502
+        assert json.loads(h.wfile.getvalue())["error"] == (
+            "failed to fetch valuation for 'ZZZ': no usable fundamentals returned"
+        )
+
+    def test_page_has_valuation_section(self):
+        body = _get("/").wfile.getvalue().decode()
+        assert 'id="valuation-rows"' in body and "/api/valuation" in body
+        for section_id in ("company-name", "company-symbol", "company-sector", "company-industry",
+                           "current-price", "price-change", "session-high", "session-low",
+                           "previous-close"):
+            assert f'id="{section_id}"' in body
 
     def test_unknown_path_is_404(self):
         assert _get("/nope").status == 404

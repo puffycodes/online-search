@@ -182,6 +182,7 @@ def collect_inputs(modules):
         "exchange": _text(modules, "price", "exchangeName"),
         "currency": _text(modules, "price", "currency") or "",
         "sector": _text(modules, "summaryProfile", "sector"),
+        "industry": _text(modules, "summaryProfile", "industry"),
         "price": price,
         "market_cap": market_cap,
         "shares": shares,
@@ -400,6 +401,8 @@ def build_report(symbol, inputs, assumptions, estimates, used):
     summary += f"    Market cap {_fmt_big(inputs['market_cap'])}"
     if inputs["sector"]:
         summary += f"    Sector: {inputs['sector']}"
+    if inputs["industry"]:
+        summary += f"    Industry: {inputs['industry']}"
     lines.append(summary)
 
     lines.append("\nFundamentals (Yahoo Finance, trailing 12 months)")
@@ -506,9 +509,10 @@ def build_json(symbol, inputs, assumptions, estimates, used):
         "exchange": inputs["exchange"],
         "currency": inputs["currency"],
         "sector": inputs["sector"],
+        "industry": inputs["industry"],
         "price": price,
         "inputs": {k: v for k, v in inputs.items()
-                   if k not in ("name", "exchange", "currency", "sector", "price")},
+                   if k not in ("name", "exchange", "currency", "sector", "industry", "price")},
         "assumptions": assumptions,
         "multiples_used": used,
         "estimates": {
