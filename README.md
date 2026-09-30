@@ -23,6 +23,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for three of the `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
+- [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company name, current price, and latest session's high/low, via `yahoo_finance.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
 - [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `rebase`, `trend`
@@ -1258,6 +1259,55 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`s
 ### Notes / limitations
 
 - Changing a constant or the `build_params` window logic here affects **all three** `stock_*` scripts that use it. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_close_history.py` gets the same params it did before.
+
+---
+
+## app/stock_information/
+
+A small local web app at `app/stock_information/stock_info_server.py`, separate from the CLI scripts above. It serves a page with a stock-symbol text box and a **Submit** button; on submit it shows the company name, symbol, current price, and the high/low of the latest session with its date. The data comes from [`yahoo_finance.py`](#yahoo_financepy) (plus `extract_rows()` from [`stock_close_history.py`](#stock_close_historypy) as a fallback). See [`app/stock_information/README.md`](app/stock_information/README.md) for the full walkthrough and [`app/stock_information/docs/features.md`](app/stock_information/docs/features.md) for the feature spec.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+
+### Usage
+
+```bash
+python3 app/stock_information/stock_info_server.py [--host HOST] [--port PORT]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--host HOST` | `127.0.0.1` | Interface to bind |
+| `--port PORT` | `8000` | Port to listen on |
+
+#### Example
+
+```bash
+python3 app/stock_information/stock_info_server.py
+# Serving Stock Information at http://127.0.0.1:8000/ (Ctrl+C to stop)
+```
+
+Open <http://127.0.0.1:8000/>, enter e.g. `AAPL`, and click **Submit**. The page calls the server's `GET /api/quote?symbol=AAPL`, which returns JSON: `{name, symbol, exchange, currency, price, price_time, session_date, session_high, session_low}`.
+
+### How it works
+
+1. `GET /` serves the inline HTML page.
+2. On submit, the page calls `GET /api/quote?symbol=...`.
+3. The handler validates the symbol, calls `yahoo_finance.fetch_history()` over a `5d` range, and reads `longName`, `regularMarketPrice`, `regularMarketDayHigh`/`Low` and `regularMarketTime` from the result's `meta`, falling back to the latest settled daily bar if those are missing.
+
+A server is used instead of a static page because Yahoo's endpoints don't send CORS headers, so a browser can't call them directly.
+
+### Error handling
+
+- Invalid symbol → HTTP 400; Yahoo error / unknown ticker / network failure → HTTP 502. Either way the page shows `Lookup failed: <message>`.
+- Bad `--port` is rejected by argparse (exit code 2).
+
+### Notes / limitations
+
+- Unofficial Yahoo endpoint; Yahoo-notation tickers only (no company-name lookup); price is the last regular-market price (often delayed, no pre/post-market).
+- Binds to localhost by default; `--host 0.0.0.0` exposes it with no authentication.
 
 ---
 
