@@ -23,7 +23,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for three of the `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
-- [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry), price (current, session move, high/low) and intrinsic-value estimates, via `yahoo_finance.py` and `stock_intrinsic_value.py`
+- [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars) and intrinsic-value estimates (below/same/above-price counts plus a table), via `yahoo_finance.py` and `stock_intrinsic_value.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
 - [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `rebase`, `trend`
@@ -1264,7 +1264,7 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`s
 
 ## app/stock_information/
 
-A small local web app at `app/stock_information/stock_info_server.py`, separate from the CLI scripts above. It serves a page with a stock-symbol text box and a **Submit** button; on submit it shows three sections: **Company** (name, symbol, sector, industry), **Price** (current price and its movement; high, low and previous close; session date), and **Valuations** (a table of valuation estimates). The quote comes from [`yahoo_finance.py`](#yahoo_financepy) (plus `extract_rows()` from [`stock_close_history.py`](#stock_close_historypy) as a fallback). The valuations come from [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy)'s pipeline, run with its default assumptions. See [`app/stock_information/README.md`](app/stock_information/README.md) for the full walkthrough and [`app/stock_information/docs/features.md`](app/stock_information/docs/features.md) for the feature spec.
+A small local web app at `app/stock_information/stock_info_server.py`, separate from the CLI scripts above. It serves a page with a stock-symbol text box and a **Submit** button; on submit it shows three sections: **Company** (name; symbol; sector · industry; market cap · trailing P/E · dividend yield), **Price** (current price, its movement and the previous close; then a day-range bar and a 52-week-range bar, each with a marker at the current price), and **Valuations** (how many estimates are below / about the same as (within 1%) / above the price, then a table of the estimates). The quote comes from [`yahoo_finance.py`](#yahoo_financepy) (plus `extract_rows()` from [`stock_close_history.py`](#stock_close_historypy) as a fallback). The valuations come from [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy)'s pipeline, run with its default assumptions. See [`app/stock_information/README.md`](app/stock_information/README.md) for the full walkthrough and [`app/stock_information/docs/features.md`](app/stock_information/docs/features.md) for the feature spec.
 
 ### Requirements
 
@@ -1289,27 +1289,27 @@ python3 app/stock_information/stock_info_server.py
 # Serving Stock Information at http://127.0.0.1:8000/ (Ctrl+C to stop)
 ```
 
-Open <http://127.0.0.1:8000/>, enter e.g. `AAPL`, and click **Submit**. The page calls the server's `GET /api/quote?symbol=AAPL`, which returns JSON: `{name, symbol, exchange, currency, price, price_time, session_date, session_high, session_low, previous_close, change, change_pct}`.
+Open <http://127.0.0.1:8000/>, enter e.g. `AAPL`, and click **Submit**. The page calls the server's `GET /api/quote?symbol=AAPL`, which returns JSON: `{name, symbol, exchange, currency, price, price_time, session_date, session_high, session_low, previous_close, change, change_pct, week52_low, week52_high}`.
 
 ### How it works
 
 1. `GET /` serves the inline HTML page.
 2. On submit, the page calls `GET /api/quote?symbol=...`.
-3. The handler validates the symbol, calls `yahoo_finance.fetch_history()` over a `5d` range, and reads `longName`, `regularMarketPrice`, `regularMarketDayHigh`/`Low` and `regularMarketTime` from the result's `meta`, falling back to the latest settled daily bar if those are missing. The previous close is the close of the last daily bar dated before the latest session, and `change`/`change_pct` are measured against it.
-4. The page then calls `GET /api/valuation?symbol=...`, which runs `stock_intrinsic_value.py`'s `fetch_fundamentals()` → `collect_inputs()` → `resolve_assumptions()` → `compute_estimates()` → `build_json()` with its default arguments. It returns the same payload as `stock_intrinsic_value.py SYMBOL --json`, and the page fills in sector/industry from its top-level `sector`/`industry` fields and renders the rest as a table (value per share and price-vs-estimate for each method, reverse-DCF implied growth, and the assumptions used).
+3. The handler validates the symbol, calls `yahoo_finance.fetch_history()` over a `5d` range, and reads `longName`, `regularMarketPrice`, `regularMarketDayHigh`/`Low`, `regularMarketTime` and `fiftyTwoWeekLow`/`High` from the result's `meta`, falling back to the latest settled daily bar if the price/day fields are missing (the 52-week fields are `null` if absent). The previous close is the close of the last daily bar dated before the latest session, and `change`/`change_pct` are measured against it.
+4. The page then calls `GET /api/valuation?symbol=...`, which runs `stock_intrinsic_value.py`'s `fetch_fundamentals()` → `collect_inputs()` → `resolve_assumptions()` → `compute_estimates()` → `build_json()` with its default arguments. It returns the same payload as `stock_intrinsic_value.py SYMBOL --json` plus a `summary` (`{below, same, above, not_available, threshold}`) from the server's `summarize_estimates()`, which counts the seven per-share estimates against the price, treating anything less than 1% away as "same". The page fills in sector/industry from the payload's top-level fields and market cap, trailing P/E and dividend yield (`dividend_rate / price`) from its `inputs`, shows the counts as three tiles, and renders the estimates as a table (value per share and price-vs-estimate for each method, reverse-DCF implied growth, and the assumptions used).
 
 A server is used instead of a static page because Yahoo's endpoints don't send CORS headers, so a browser can't call them directly.
 
 ### Error handling
 
 - Invalid symbol → HTTP 400; Yahoo error / unknown ticker / network failure → HTTP 502. Either way the page shows `Lookup failed: <message>`.
-- A failed `/api/valuation` call (HTTP 502) leaves the quote on screen and shows `Valuation failed: <message>` in the valuations section.
+- A failed `/api/valuation` call (HTTP 502) leaves the quote on screen, shows `Valuation failed: <message>` in the valuations section, and marks sector, industry, market cap, P/E and dividend yield as "unavailable".
 - Bad `--port` is rejected by argparse (exit code 2).
 
 ### Notes / limitations
 
 - Unofficial Yahoo endpoint; Yahoo-notation tickers only (no company-name lookup); price is the last regular-market price (often delayed, no pre/post-market).
-- Valuations are mechanical, not forecasts. With the default assumptions, the P/E, EV/EBITDA and P/S rows use the stock's own current multiple and so land at about the price; the page labels them with the multiple used. The assumptions can't be overridden from the page. Use `stock_intrinsic_value.py`'s flags for that.
+- Valuations are mechanical, not forecasts. With the default assumptions, the P/E, EV/EBITDA and P/S rows use the stock's own current multiple and so land at about the price; the page labels them with the multiple used, and they usually count as "about the same" in the below/same/above tiles. Those counts are a tally, not a buy/sell signal. The assumptions can't be overridden from the page. Use `stock_intrinsic_value.py`'s flags for that.
 - Binds to localhost by default; `--host 0.0.0.0` exposes it with no authentication.
 
 ---
