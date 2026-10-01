@@ -1,6 +1,6 @@
 # Stock Information
 
-A small local web app for looking up a single stock: type a ticker, click **Submit**, and see three sections: **Company** (name, symbol, then market cap · sector · industry), **Price** (current price with its movement; then previous close · day high · day low), and **Valuations** (a table of intrinsic-value estimates). It reuses the repo's scripts rather than re-implementing anything: [`yahoo_finance.py`](../../yahoo_finance.py) and `extract_rows()` from [`stock_close_history.py`](../../stock_close_history.py) for the quote, and the fetch → assumptions → estimates pipeline from [`stock_intrinsic_value.py`](../../stock_intrinsic_value.py) (which runs every [`valuation.py`](../../valuation.py) method) for the valuations.
+A small local web app for looking up a single stock: type a ticker, click **Submit**, and see three sections: **Company** (name; symbol; sector · industry; market cap · P/E · dividend yield), **Price** (current price with its movement; previous close · day low · day high; 52-week low · 52-week high), and **Valuations** (a table of intrinsic-value estimates). It reuses the repo's scripts rather than re-implementing anything: [`yahoo_finance.py`](../../yahoo_finance.py) and `extract_rows()` from [`stock_close_history.py`](../../stock_close_history.py) for the quote, and the fetch → assumptions → estimates pipeline from [`stock_intrinsic_value.py`](../../stock_intrinsic_value.py) (which runs every [`valuation.py`](../../valuation.py) method) for the valuations.
 
 See [`docs/features.md`](docs/features.md) for the feature spec this app was built against.
 
@@ -8,10 +8,11 @@ See [`docs/features.md`](docs/features.md) for the feature spec this app was bui
 
 - **Symbol text box + Submit button** — enter a ticker in Yahoo notation (`AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, …); input is trimmed and upper-cased.
 - **Company: name and symbol** — the name as the card's title with the symbol below it. The name comes from Yahoo's `longName` (falling back to `shortName`, then the symbol); the symbol is shown with its exchange.
-- **Company: market cap, sector and industry** — one line, `Market cap 3.45T USD · Technology · Consumer Electronics`. Market cap is Yahoo's `price.marketCap` (`inputs.market_cap` in the valuation payload, abbreviated K/M/B/T, in the quote currency); sector and industry are `summaryProfile.sector` and `.industry`. All three come from the fundamentals payload that `/api/valuation` already fetches, so they show "… loading" until that call returns, "… unavailable" if it fails, and "… not reported" if Yahoo leaves a field out. Yahoo has exactly one sub-sector level, the industry.
+- **Company: sector and industry, then market cap, P/E and dividend yield** — two lines, `Technology · Consumer Electronics` and `Market cap 3.45T USD · P/E 34.12 (trailing) · Dividend yield 0.45%`. Sector and industry are Yahoo's `summaryProfile.sector` and `.industry`; market cap is `price.marketCap` (`inputs.market_cap` in the valuation payload, abbreviated K/M/B/T, in the quote currency); P/E is the trailing P/E, `summaryDetail.trailingPE` (`inputs.trailing_pe`, the same figure the P/E-multiple valuation uses); dividend yield is `summaryDetail.dividendRate` (`inputs.dividend_rate`, annual dividend per share) divided by the price, the same ratio `stock_intrinsic_value.py` uses to flag a token dividend. Non-payers usually have no `dividendRate`, so they show "Dividend yield not reported". All five come from the fundamentals payload that `/api/valuation` already fetches, so they show "… loading" until that call returns, "… unavailable" if it fails, and "… not reported" if Yahoo leaves a field out. Yahoo has exactly one sub-sector level, the industry.
 - **Price: current price** — Yahoo's `regularMarketPrice`, with currency and the "as of" time in the exchange's local timezone.
 - **Price: movement for the latest session** — the change and % change versus the previous close, colored green/red. The previous close is the close of the last daily bar dated *before* the latest session. It's computed from the same chart response, not a second fetch, and is shown on the same line as the price.
-- **Price: previous close, day high and day low** — one line, `Previous close 78.38 SGD · Day high 78.49 SGD · Day low 77.82 SGD`. High/low are Yahoo's `regularMarketDayHigh` / `regularMarketDayLow` for the latest session; the previous close is described above. The session they belong to is shown by the "Current price as of …" label under the price (from `regularMarketTime`, in exchange-local time), which falls back to the session date when Yahoo gives no market time.
+- **Price: previous close, day low and day high** — one line, `Previous close 78.38 SGD · Day low 77.82 SGD · Day high 78.49 SGD`. High/low are Yahoo's `regularMarketDayHigh` / `regularMarketDayLow` for the latest session; the previous close is described above. The session they belong to is shown by the "Current price as of …" label under the price (from `regularMarketTime`, in exchange-local time), which falls back to the session date when Yahoo gives no market time.
+- **Price: 52-week low and high** — one line, `52-week low 58.10 SGD · 52-week high 80.70 SGD`, from the chart `meta` block's `fiftyTwoWeekLow` / `fiftyTwoWeekHigh` (same `/api/quote` call, no extra fetch). Shows `–` if Yahoo omits them.
 - **Valuations** — a table with each method's value per share and how far the price sits above/below it: two-stage DCF, dividend discount (Gordon), P/E multiple, Graham formula, EV/EBITDA multiple, P/S multiple, reported-EV → equity (a consistency check), plus the reverse-DCF implied growth rate. The assumptions used (discount rate, growth, terminal growth, horizon, and where each came from) are listed under the table. These are `stock_intrinsic_value.py`'s defaults; the page doesn't let you override them.
 
 ## Requirements
@@ -54,7 +55,7 @@ curl "http://127.0.0.1:8000/api/quote?symbol=D05.SI"
 # {"name": "DBS Group Holdings Ltd", "symbol": "D05.SI", "exchange": "SES", "currency": "SGD",
 #  "price": 77.84, "price_time": "2026-09-30 16:12 SGT", "session_date": "2026-09-30",
 #  "session_high": 78.49, "session_low": 77.82, "previous_close": 78.38, "change": -0.57,
-#  "change_pct": -0.00727}
+#  "change_pct": -0.00727, "week52_low": ..., "week52_high": ...}
 
 curl "http://127.0.0.1:8000/api/valuation?symbol=D05.SI"
 # Same JSON as `python3 stock_intrinsic_value.py D05.SI --json`:
@@ -83,7 +84,7 @@ A server is needed (instead of a static page like `app/hottest_discussions/`) be
 ## API reference
 
 - `normalize_symbol(value)` — Strips and upper-cases a ticker; raises `ValueError` unless it matches `SYMBOL_PATTERN` (1–20 of letters, digits, `.`, `-`, `^`, `=`).
-- `get_stock_info(symbol)` — Returns `{name, symbol, exchange, currency, price, price_time, session_date, session_high, session_low, previous_close, change, change_pct}` (`change_pct` is a fraction; the three movement fields are `None` if the 5-day window has no bar before the latest session). Raises `requests.RequestException` on a Yahoo error or when no price is available.
+- `get_stock_info(symbol)` — Returns `{name, symbol, exchange, currency, price, price_time, session_date, session_high, session_low, previous_close, change, change_pct, week52_low, week52_high}` (`change_pct` is a fraction; the 52-week fields are `None` when Yahoo's chart `meta` omits them; the three movement fields are `None` if the 5-day window has no bar before the latest session). Raises `requests.RequestException` on a Yahoo error or when no price is available.
 - `get_valuation(symbol)` — Runs `stock_intrinsic_value.py`'s pipeline with its default assumptions and returns its `build_json()` payload. Raises `requests.RequestException` / `ValueError` / `KeyError` on a failed fetch, or `ValueError` when Yahoo returns no usable fundamentals.
 - `StockInfoHandler` — `BaseHTTPRequestHandler` serving `/` (page), `/api/quote` and `/api/valuation` (JSON).
 - `parse_args(argv=None)` — Parses `--host` and `--port`.
@@ -91,7 +92,7 @@ A server is needed (instead of a static page like `app/hottest_discussions/`) be
 
 ## Tests
 
-Covered offline by [`tests/test_stock_info_server.py`](../../tests/test_stock_info_server.py): `normalize_symbol`, `get_stock_info` (meta fields, gmtoffset dating, fallback to the latest bar, previous-close/change including an in-progress bar that already has a close, no earlier bar, no-price error), `get_valuation` (pipeline run over canned fundamentals incl. sector/industry, no-price error), the HTTP handler's status codes for both endpoints, and `parse_args`. Run from the repo root with `python3 -m pytest`.
+Covered offline by [`tests/test_stock_info_server.py`](../../tests/test_stock_info_server.py): `normalize_symbol`, `get_stock_info` (meta fields, gmtoffset dating, fallback to the latest bar, previous-close/change including an in-progress bar that already has a close, no earlier bar, 52-week range present/absent, no-price error), `get_valuation` (pipeline run over canned fundamentals incl. sector/industry, trailing P/E and dividend rate, no-price error), the HTTP handler's status codes for both endpoints, and `parse_args`. Run from the repo root with `python3 -m pytest`.
 
 ## Error handling
 

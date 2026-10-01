@@ -7,14 +7,14 @@ D05.SI, ...) and a submit button. On submit, the browser calls this
 server's /api/quote endpoint, which fetches the quote through the same
 Yahoo Finance chart helpers as stock_close_history.py (yahoo_finance.py
 at the repository root) and returns the company name, symbol, current
-price, its movement since the previous close, and the high/low of the
-latest session with its date.
+price, its movement since the previous close, the high/low of the
+latest session with its date, and the 52-week low/high.
 
 The page then calls /api/valuation, which runs the same pipeline as
 stock_intrinsic_value.py (Yahoo fundamentals -> every valuation.py
 method, with that script's default assumptions) and shows each estimate
-next to the price. The company's market cap, sector and industry come
-from the same fundamentals payload. It's a separate call because the fundamentals fetch
+next to the price. The company's market cap, trailing P/E, dividend yield,
+sector and industry come from the same fundamentals payload. It's a separate call because the fundamentals fetch
 is slower and more fragile than the quote.
 
 A server is needed (rather than a static page) because Yahoo's endpoints
@@ -181,8 +181,11 @@ PAGE_HTML = """<!DOCTYPE html>
     <p class="company-name" id="company-name"></p>
     <p class="company-symbol" id="company-symbol"></p>
     <p class="inline-list">
-      <span id="company-market-cap" title="Market cap"></span><span id="company-sector"
-        title="Sector"></span><span id="company-industry" title="Industry"></span>
+      <span id="company-sector" title="Sector"></span><span id="company-industry" title="Industry"></span>
+    </p>
+    <p class="inline-list">
+      <span id="company-market-cap" title="Market cap"></span><span id="company-pe" title="Trailing P/E"></span><span
+        id="company-dividend-yield" title="Dividend yield"></span>
     </p>
     <h3>Price</h3>
     <div class="price-line">
@@ -191,8 +194,12 @@ PAGE_HTML = """<!DOCTYPE html>
     <div class="price-label" id="price-label"></div>
     <p class="inline-list">
       <span><span class="label">Previous close</span> <span class="value" id="previous-close"></span></span><span><span
-        class="label">Day high</span> <span class="value" id="session-high"></span></span><span><span
-        class="label">Day low</span> <span class="value" id="session-low"></span></span>
+        class="label">Day low</span> <span class="value" id="session-low"></span></span><span><span
+        class="label">Day high</span> <span class="value" id="session-high"></span></span>
+    </p>
+    <p class="inline-list">
+      <span><span class="label">52-week low</span> <span class="value" id="week52-low"></span></span><span><span
+        class="label">52-week high</span> <span class="value" id="week52-high"></span></span>
     </p>
     <h3>Valuations</h3>
     <p id="valuation-status"></p>
@@ -343,6 +350,8 @@ PAGE_HTML = """<!DOCTYPE html>
     setText("session-high", money(q.session_high, q.currency));
     setText("session-low", money(q.session_low, q.currency));
     setText("previous-close", money(q.previous_close, q.currency));
+    setText("week52-low", money(q.week52_low, q.currency));
+    setText("week52-high", money(q.week52_high, q.currency));
     var change = document.getElementById("price-change");
     if (q.change === null || q.change === undefined) {
       change.textContent = "Change: –";
@@ -356,6 +365,8 @@ PAGE_HTML = """<!DOCTYPE html>
     // Market cap/sector/industry come from the (slower) fundamentals fetch in /api/valuation.
     setText("company-symbol", q.symbol + (q.exchange ? " (" + q.exchange + ")" : ""));
     setText("company-market-cap", "Market cap loading…");
+    setText("company-pe", "P/E loading…");
+    setText("company-dividend-yield", "Dividend yield loading…");
     setText("company-sector", "Sector loading…");
     setText("company-industry", "Industry loading…");
     result.hidden = false;
@@ -366,6 +377,15 @@ PAGE_HTML = """<!DOCTYPE html>
     setText("company-market-cap", !v ? "Market cap unavailable"
       : cap === null || cap === undefined ? "Market cap not reported"
       : "Market cap " + bigMoney(cap, v.currency));
+    var pe = v && v.inputs ? v.inputs.trailing_pe : null;
+    setText("company-pe", !v ? "P/E unavailable"
+      : pe === null || pe === undefined ? "P/E not reported"
+      : "P/E " + Number(pe).toFixed(2) + " (trailing)");
+    // Annual dividend per share over price, as stock_intrinsic_value.py computes it.
+    var div = v && v.inputs ? v.inputs.dividend_rate : null;
+    setText("company-dividend-yield", !v ? "Dividend yield unavailable"
+      : div === null || div === undefined || !v.price ? "Dividend yield not reported"
+      : "Dividend yield " + pct(div / v.price));
     setText("company-sector", !v ? "Sector unavailable" : (v.sector || "Sector not reported"));
     setText("company-industry", !v ? "Industry unavailable" : (v.industry || "Industry not reported"));
   }
@@ -421,7 +441,9 @@ def get_stock_info(symbol):
 
     Returns a dict with name, symbol, exchange, currency, price,
     price_time, session_date, session_high, session_low, previous_close,
-    change, change_pct (a fraction). The price and session figures come from the chart ``meta`` block (which reflects
+    change, change_pct (a fraction), week52_low, week52_high. The 52-week
+    range is Yahoo's ``fiftyTwoWeekLow``/``fiftyTwoWeekHigh`` from the chart
+    ``meta`` block, None when Yahoo omits it. The price and session figures come from the chart ``meta`` block (which reflects
     an in-progress session); if Yahoo omits them, they fall back to the
     most recent settled daily bar. Raises requests.RequestException if
     Yahoo returns no usable price. previous_close / change / change_pct
@@ -478,6 +500,8 @@ def get_stock_info(symbol):
         "previous_close": previous_close,
         "change": change,
         "change_pct": change_pct,
+        "week52_low": meta.get("fiftyTwoWeekLow"),
+        "week52_high": meta.get("fiftyTwoWeekHigh"),
     }
 
 

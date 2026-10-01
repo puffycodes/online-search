@@ -47,6 +47,8 @@ class TestGetStockInfo:
                 "regularMarketTime": 1704283200,  # 2024-01-03 12:00 UTC
                 "regularMarketDayHigh": 13.0,
                 "regularMarketDayLow": 12.0,
+                "fiftyTwoWeekLow": 9.5,
+                "fiftyTwoWeekHigh": 15.25,
                 "timezone": "UTC",
             }
         )
@@ -67,6 +69,8 @@ class TestGetStockInfo:
             "previous_close": 11.2,
             "change": 1.14,
             "change_pct": pytest.approx(1.14 / 11.2),
+            "week52_low": 9.5,
+            "week52_high": 15.25,
         }
 
     def test_session_date_honours_gmtoffset(self, monkeypatch, chart_result):
@@ -96,6 +100,7 @@ class TestGetStockInfo:
         assert info["previous_close"] == 11.2
         assert info["change"] == 1.0
         assert info["change_pct"] == pytest.approx(1.0 / 11.2)
+        assert (info["week52_low"], info["week52_high"]) == (None, None)
 
     def test_change_ignores_in_progress_bar_that_has_a_close(self, monkeypatch, chart_result):
         # The latest session's own bar (2024-01-03) already carries a close;
@@ -160,6 +165,8 @@ class TestGetValuation:
         assert out["symbol"] == "AAA" and out["price"] == 100.0
         assert (out["sector"], out["industry"]) == ("Technology", "Consumer Electronics")
         assert "industry" not in out["inputs"]
+        assert out["inputs"]["trailing_pe"] == 20.0  # read by the page's P/E line
+        assert out["inputs"]["dividend_rate"] == 2.0  # page shows 2.0 / 100.0 = 2.00% yield
         # CAPM default: 4% + 1.0 x 5%
         assert out["assumptions"]["discount_rate"] == pytest.approx(0.09)
         est = out["estimates"]
@@ -263,8 +270,8 @@ class TestHandler:
     def test_page_has_valuation_section(self):
         body = _get("/").wfile.getvalue().decode()
         assert 'id="valuation-rows"' in body and "/api/valuation" in body
-        for section_id in ("company-name", "company-symbol", "company-market-cap", "company-sector",
-                           "company-industry",
+        for section_id in ("company-name", "company-symbol", "company-sector", "company-industry",
+                           "company-market-cap", "company-pe", "company-dividend-yield", "week52-low", "week52-high",
                            "current-price", "price-change", "session-high", "session-low",
                            "previous-close"):
             assert f'id="{section_id}"' in body
