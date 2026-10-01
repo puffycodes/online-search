@@ -26,3 +26,14 @@ for `.claude/agents/weather.md`). Each spec states which script(s) the agent mus
 use and what it does, in the same Requirement / Actions format as the web apps'
 specs in `app/*/docs/features.md`. They live here rather than in `.claude/agents/`
 because Claude Code loads every `.md` file in that folder as an agent.
+
+## Script feature specs
+
+[`features/script/`](features/script/) holds one `features.md` per runnable script at
+the repo root, in a folder named after the script without `.py` (e.g.
+[`features/script/weather/features.md`](features/script/weather/features.md) for
+`weather.py`). Each spec states which data source and shared modules the script uses,
+its inputs and defaults, what it outputs (including the `--json` shape), and how it
+fails. The four helper modules with no command line (`cli_utils.py`, `indicators.py`,
+`valuation.py`, `yahoo_finance.py`) have no spec here; `indicators.py` and
+`valuation.py` are explained in the pages above.

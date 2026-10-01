@@ -30,7 +30,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`valuation.py`](#valuationpy) — dependency-free intrinsic-value estimators: `gordon_growth_value`, `discounted_cash_flow`, `multiple_value` / `ev_multiple_value`, `equity_from_enterprise`, `implied_growth_rate` (reverse DCF)
 - [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) — pulls fundamentals from Yahoo Finance and runs every `valuation.py` method (DCF, reverse DCF, dividend discount, P/E, Graham, EV/EBITDA, P/S) against the current price
 - [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
-- [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail
+- [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail; plus a feature spec (`features.md`) for every [script](docs/features/script/) and [agent](docs/features/agent/)
 
 **[Tech News & Discussions](#tech-news--discussions)**
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
