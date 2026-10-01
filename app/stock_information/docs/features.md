@@ -8,12 +8,12 @@
 
 - Display a text box where the user can enter a stock symbol and submit.
 - After submission:
-    - Display the company information
-        - {{Company name}}
-        - {{Stock symbol}}
-        - {{Market Cap}} {{Company sector}} {{Company Industry}}
+    - Display the following company information
+        - {{Company Name}}
+        - {{Stock Symbol}}
+        - {{Market Cap}} {{Company Sector}} {{Company Industry}}
     - Display the price information
-        - Current stock price and price movement
-        - High and low stock prices and previous close
+        - {{Current Stock Price}} {{Price Movement}}
+        - {{Previous Close}} {{Day High}} {{Day Low}}
     - Display the valuation information
         - Compute the different valuations of the stock and display them

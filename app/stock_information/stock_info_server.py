@@ -136,21 +136,16 @@ PAGE_HTML = """<!DOCTYPE html>
   }
   .company-name { font-size: 1.35rem; font-weight: 600; margin: 0; }
   .company-symbol { color: var(--muted); margin: 0.15rem 0 0; }
-  .company-profile { margin: 0.5rem 0 0; font-size: 0.9rem; }
-  .company-profile span + span::before { content: "·"; margin: 0 0.45rem; color: var(--muted); }
-  .price { font-size: 2rem; font-weight: 600; margin: 0 0 0.2rem; }
-  .change { font-weight: 600; font-variant-numeric: tabular-nums; margin-bottom: 0.2rem; }
+  .inline-list { margin: 0.5rem 0 0; font-size: 0.9rem; }
+  .inline-list > span + span::before { content: "·"; margin: 0 0.45rem; color: var(--muted); }
+  .price-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.75rem; }
+  .price { font-size: 2rem; font-weight: 600; }
+  .change { font-weight: 600; font-variant-numeric: tabular-nums; }
   .change.up { color: var(--up); }
   .change.down { color: var(--down); }
-  .price-label { color: var(--muted); font-size: 0.8rem; }
-  dl {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 0.35rem 1rem;
-    margin: 0.75rem 0 0;
-  }
-  dt { color: var(--muted); }
-  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .price-label { color: var(--muted); font-size: 0.8rem; margin-top: 0.2rem; }
+  .inline-list .label { color: var(--muted); }
+  .inline-list .value { font-variant-numeric: tabular-nums; }
   h3 {
     margin: 1.25rem 0 0.6rem;
     padding-top: 0.9rem;
@@ -185,20 +180,20 @@ PAGE_HTML = """<!DOCTYPE html>
     <h3>Company</h3>
     <p class="company-name" id="company-name"></p>
     <p class="company-symbol" id="company-symbol"></p>
-    <p class="company-profile">
+    <p class="inline-list">
       <span id="company-market-cap" title="Market cap"></span><span id="company-sector"
         title="Sector"></span><span id="company-industry" title="Industry"></span>
     </p>
     <h3>Price</h3>
-    <div class="price" id="current-price"></div>
-    <div class="change" id="price-change"></div>
+    <div class="price-line">
+      <span class="price" id="current-price"></span><span class="change" id="price-change"></span>
+    </div>
     <div class="price-label" id="price-label"></div>
-    <dl>
-      <dt>High</dt><dd id="session-high"></dd>
-      <dt>Low</dt><dd id="session-low"></dd>
-      <dt>Previous close</dt><dd id="previous-close"></dd>
-      <dt>Session date</dt><dd id="session-date"></dd>
-    </dl>
+    <p class="inline-list">
+      <span><span class="label">Previous close</span> <span class="value" id="previous-close"></span></span><span><span
+        class="label">Day high</span> <span class="value" id="session-high"></span></span><span><span
+        class="label">Day low</span> <span class="value" id="session-low"></span></span>
+    </p>
     <h3>Valuations</h3>
     <p id="valuation-status"></p>
     <div id="valuation" hidden>
@@ -342,8 +337,9 @@ PAGE_HTML = """<!DOCTYPE html>
   function render(q) {
     setText("company-name", q.name || q.symbol);
     setText("current-price", money(q.price, q.currency));
-    setText("price-label", q.price_time ? "Current price as of " + q.price_time : "Current price");
-    setText("session-date", q.session_date || "–");
+    // The session date lives here now that day high/low sit on one line.
+    setText("price-label", q.price_time ? "Current price as of " + q.price_time
+      : q.session_date ? "Current price for the " + q.session_date + " session" : "Current price");
     setText("session-high", money(q.session_high, q.currency));
     setText("session-low", money(q.session_low, q.currency));
     setText("previous-close", money(q.previous_close, q.currency));
