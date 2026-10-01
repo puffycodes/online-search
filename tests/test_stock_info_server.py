@@ -178,7 +178,8 @@ class TestGetValuation:
         assert est["dcf_two_stage"]["value_per_share"] > 0
         summary = out["summary"]
         assert summary == sis.summarize_estimates(out)
-        assert summary["below"] + summary["same"] + summary["above"] + summary["not_available"] == len(
+        counted = summary["undervalued"] + summary["fair_value"] + summary["overvalued"]
+        assert counted + summary["not_available"] == len(
             sis.VALUATION_METHODS
         )
         json.dumps(out)  # must be serializable for the HTTP response
@@ -202,14 +203,17 @@ def _payload(price, values):
 
 
 class TestSummarizeEstimates:
-    def test_counts_below_same_above(self):
+    def test_counts_undervalued_fair_overvalued(self):
         out = sis.summarize_estimates(_payload(100.0, [80.0, 99.5, 100.0, 100.9, 150.0, 101.0, None]))
-        # 99.5 / 100.0 / 100.9 are within 1%; 101.0 is exactly 1% away, so "above".
-        assert out == {"below": 1, "same": 3, "above": 2, "not_available": 1, "threshold": 0.01}
+        # Estimates above the price -> undervalued, below -> overvalued.
+        # 99.5 / 100.0 / 100.9 are within 1%; 101.0 is exactly 1% away, so undervalued.
+        assert out == {
+            "undervalued": 2, "fair_value": 3, "overvalued": 1, "not_available": 1, "threshold": 0.01,
+        }
 
-    def test_negative_value_counts_as_below(self):
+    def test_negative_value_counts_as_overvalued(self):
         out = sis.summarize_estimates(_payload(100.0, [-20.0]))
-        assert (out["below"], out["not_available"]) == (1, len(sis.VALUATION_METHODS) - 1)
+        assert (out["overvalued"], out["not_available"]) == (1, len(sis.VALUATION_METHODS) - 1)
 
     def test_reverse_dcf_is_not_counted(self):
         out = sis.summarize_estimates(_payload(100.0, []))
@@ -218,7 +222,7 @@ class TestSummarizeEstimates:
 
     def test_custom_threshold(self):
         out = sis.summarize_estimates(_payload(100.0, [96.0, 104.0]), threshold=0.05)
-        assert out["same"] == 2 and out["threshold"] == 0.05
+        assert out["fair_value"] == 2 and out["threshold"] == 0.05
 
 
 class _Handler(sis.StockInfoHandler):
@@ -306,7 +310,7 @@ class TestHandler:
         assert 'id="valuation-rows"' in body and "/api/valuation" in body
         for section_id in ("company-name", "company-symbol", "company-sector", "company-industry",
                            "company-market-cap", "company-pe", "company-dividend-yield", "week52-low", "week52-high", "week52-marker",
-                           "day-marker", "count-below", "count-same", "count-above",
+                           "day-marker", "count-undervalued", "count-fair-value", "count-overvalued",
                            "current-price", "price-change", "session-high", "session-low",
                            "previous-close"):
             assert f'id="{section_id}"' in body

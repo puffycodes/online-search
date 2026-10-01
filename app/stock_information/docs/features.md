@@ -21,7 +21,7 @@
             - Show a bar with the {{52 Weeks Low}} and {{52 Weeks High}} at both ends, and a marker to show the {{Current Price}}
     - Display the valuation information
         - Compute the different valuations of the stock.
-        - Compute the number of valuations that are above / same / below the current price. A valuation of less than 1% away from the current price is consider "same".
+        - Compute the number of valuations that indicate that the current price is undervalue / fair value / overvalue. A valuation of less than 1% away from the current price is consider "fair value".
         - Display the statistics of the valuations.
-            {{Number Below}} {{Number Same}} {{Number Above}}
+            {{Number Undervalue}} {{Number Fair Value}} {{Number Overvalue}}
         - Display the difference valuations in a table.

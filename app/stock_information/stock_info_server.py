@@ -14,7 +14,7 @@ drawn as range bars with a marker at the current price).
 The page then calls /api/valuation, which runs the same pipeline as
 stock_intrinsic_value.py (Yahoo fundamentals -> every valuation.py
 method, with that script's default assumptions) and shows how many
-estimates sit below / about the same as / above the price, then each
+estimates say the price is undervalued / fair value / overvalued, then each
 estimate next to the price. The company's market cap, trailing P/E, dividend yield,
 sector and industry come from the same fundamentals payload. It's a separate call because the fundamentals fetch
 is slower and more fragile than the quote.
@@ -54,8 +54,8 @@ DEFAULT_PORT = 8000
 QUOTE_RANGE = "5d"
 # Yahoo tickers: letters, digits and . - ^ = (e.g. VOD.L, BRK-B, ^GSPC, EURUSD=X).
 SYMBOL_PATTERN = re.compile(r"^[A-Za-z0-9.^=\-]{1,20}$")
-# A valuation within this fraction of the price counts as "about the same".
-SAME_THRESHOLD = 0.01
+# A valuation within this fraction of the price counts as "fair value".
+FAIR_VALUE_THRESHOLD = 0.01
 # The per-share estimates in stock_intrinsic_value.build_json() (everything
 # but the reverse DCF, which is an implied growth rate, not a value).
 VALUATION_METHODS = (
@@ -271,12 +271,12 @@ PAGE_HTML = """<!DOCTYPE html>
     <p id="valuation-status"></p>
     <div id="valuation" hidden>
       <div class="stats">
-        <div class="stat"><span class="stat-count" id="count-below"></span><span
-          class="stat-label">Below price</span></div>
-        <div class="stat"><span class="stat-count" id="count-same"></span><span
-          class="stat-label">About the same</span></div>
-        <div class="stat"><span class="stat-count" id="count-above"></span><span
-          class="stat-label">Above price</span></div>
+        <div class="stat" title="Estimate is more than 1% above the price"><span
+          class="stat-count" id="count-undervalued"></span><span class="stat-label">Undervalued</span></div>
+        <div class="stat" title="Estimate is within 1% of the price"><span
+          class="stat-count" id="count-fair-value"></span><span class="stat-label">Fair value</span></div>
+        <div class="stat" title="Estimate is more than 1% below the price"><span
+          class="stat-count" id="count-overvalued"></span><span class="stat-label">Overvalued</span></div>
       </div>
       <p class="stats-note" id="stats-note"></p>
       <table>
@@ -359,12 +359,13 @@ PAGE_HTML = """<!DOCTYPE html>
   }
 
   function renderStats(s) {
-    setText("count-below", s.below);
-    setText("count-same", s.same);
-    setText("count-above", s.above);
-    var counted = s.below + s.same + s.above;
-    var note = "Of " + counted + " valuation" + (counted === 1 ? "" : "s") +
-      "; within " + (s.threshold * 100) + "% of the price counts as about the same.";
+    setText("count-undervalued", s.undervalued);
+    setText("count-fair-value", s.fair_value);
+    setText("count-overvalued", s.overvalued);
+    var counted = s.undervalued + s.fair_value + s.overvalued;
+    var note = "How many of " + counted + " estimate" + (counted === 1 ? "" : "s") +
+      " put the price below (undervalued), within " + (s.threshold * 100) +
+      "% of (fair value), or above (overvalued) the estimate.";
     if (s.not_available) {
       note += " " + s.not_available + " couldn't be computed (shown as – below).";
     }
@@ -641,26 +642,27 @@ def get_valuation(symbol):
     return payload
 
 
-def summarize_estimates(payload, threshold=SAME_THRESHOLD):
-    """Count the per-share valuations below / about the same as / above the price.
+def summarize_estimates(payload, threshold=FAIR_VALUE_THRESHOLD):
+    """Count how many per-share valuations say the price is under / fairly / over valued.
 
-    A valuation counts as "same" when it is less than ``threshold`` (a
-    fraction of the price) away from it. Methods with no value (missing
+    An estimate above the price counts as "undervalued", one below it as
+    "overvalued", and one less than ``threshold`` (a fraction of the
+    price) away from it as "fair value". Methods with no value (missing
     inputs) are counted in ``not_available`` instead. Returns
-    ``{below, same, above, not_available, threshold}``.
+    ``{undervalued, fair_value, overvalued, not_available, threshold}``.
     """
     price = payload["price"]
-    counts = {"below": 0, "same": 0, "above": 0, "not_available": 0}
+    counts = {"undervalued": 0, "fair_value": 0, "overvalued": 0, "not_available": 0}
     for method in VALUATION_METHODS:
         value = payload["estimates"][method]["value_per_share"]
         if value is None or not price:
             counts["not_available"] += 1
         elif abs(value - price) / price < threshold:
-            counts["same"] += 1
-        elif value < price:
-            counts["below"] += 1
+            counts["fair_value"] += 1
+        elif value > price:
+            counts["undervalued"] += 1
         else:
-            counts["above"] += 1
+            counts["overvalued"] += 1
     counts["threshold"] = threshold
     return counts
 
