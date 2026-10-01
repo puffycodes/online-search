@@ -176,6 +176,11 @@ class TestGetValuation:
         }
         assert est["pe_multiple"]["value_per_share"] == pytest.approx(100.0)  # 5 EPS x 20 P/E
         assert est["dcf_two_stage"]["value_per_share"] > 0
+        summary = out["summary"]
+        assert summary == sis.summarize_estimates(out)
+        assert summary["below"] + summary["same"] + summary["above"] + summary["not_available"] == len(
+            sis.VALUATION_METHODS
+        )
         json.dumps(out)  # must be serializable for the HTTP response
 
     def test_no_price_raises(self, monkeypatch):
@@ -185,6 +190,35 @@ class TestGetValuation:
         monkeypatch.setattr(sis.siv, "fetch_fundamentals", lambda s: modules)
         with pytest.raises(ValueError, match="no usable fundamentals"):
             sis.get_valuation("AAA")
+
+
+def _payload(price, values):
+    """A build_json()-shaped payload with ``values`` mapped onto VALUATION_METHODS in order."""
+    estimates = {m: {"value_per_share": None} for m in sis.VALUATION_METHODS}
+    for method, value in zip(sis.VALUATION_METHODS, values):
+        estimates[method]["value_per_share"] = value
+    estimates["reverse_dcf_implied_growth"] = {"implied_growth": 0.05}
+    return {"price": price, "estimates": estimates}
+
+
+class TestSummarizeEstimates:
+    def test_counts_below_same_above(self):
+        out = sis.summarize_estimates(_payload(100.0, [80.0, 99.5, 100.0, 100.9, 150.0, 101.0, None]))
+        # 99.5 / 100.0 / 100.9 are within 1%; 101.0 is exactly 1% away, so "above".
+        assert out == {"below": 1, "same": 3, "above": 2, "not_available": 1, "threshold": 0.01}
+
+    def test_negative_value_counts_as_below(self):
+        out = sis.summarize_estimates(_payload(100.0, [-20.0]))
+        assert (out["below"], out["not_available"]) == (1, len(sis.VALUATION_METHODS) - 1)
+
+    def test_reverse_dcf_is_not_counted(self):
+        out = sis.summarize_estimates(_payload(100.0, []))
+        assert out["not_available"] == len(sis.VALUATION_METHODS)
+        assert "reverse_dcf_implied_growth" not in sis.VALUATION_METHODS
+
+    def test_custom_threshold(self):
+        out = sis.summarize_estimates(_payload(100.0, [96.0, 104.0]), threshold=0.05)
+        assert out["same"] == 2 and out["threshold"] == 0.05
 
 
 class _Handler(sis.StockInfoHandler):
@@ -271,7 +305,8 @@ class TestHandler:
         body = _get("/").wfile.getvalue().decode()
         assert 'id="valuation-rows"' in body and "/api/valuation" in body
         for section_id in ("company-name", "company-symbol", "company-sector", "company-industry",
-                           "company-market-cap", "company-pe", "company-dividend-yield", "week52-low", "week52-high",
+                           "company-market-cap", "company-pe", "company-dividend-yield", "week52-low", "week52-high", "week52-marker",
+                           "day-marker", "count-below", "count-same", "count-above",
                            "current-price", "price-change", "session-high", "session-low",
                            "previous-close"):
             assert f'id="{section_id}"' in body

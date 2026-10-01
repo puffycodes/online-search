@@ -7,13 +7,15 @@ D05.SI, ...) and a submit button. On submit, the browser calls this
 server's /api/quote endpoint, which fetches the quote through the same
 Yahoo Finance chart helpers as stock_close_history.py (yahoo_finance.py
 at the repository root) and returns the company name, symbol, current
-price, its movement since the previous close, the high/low of the
-latest session with its date, and the 52-week low/high.
+price, its movement since the previous close, the day low/high
+of the latest session with its date, and the 52-week low/high (both
+drawn as range bars with a marker at the current price).
 
 The page then calls /api/valuation, which runs the same pipeline as
 stock_intrinsic_value.py (Yahoo fundamentals -> every valuation.py
-method, with that script's default assumptions) and shows each estimate
-next to the price. The company's market cap, trailing P/E, dividend yield,
+method, with that script's default assumptions) and shows how many
+estimates sit below / about the same as / above the price, then each
+estimate next to the price. The company's market cap, trailing P/E, dividend yield,
 sector and industry come from the same fundamentals payload. It's a separate call because the fundamentals fetch
 is slower and more fragile than the quote.
 
@@ -52,6 +54,19 @@ DEFAULT_PORT = 8000
 QUOTE_RANGE = "5d"
 # Yahoo tickers: letters, digits and . - ^ = (e.g. VOD.L, BRK-B, ^GSPC, EURUSD=X).
 SYMBOL_PATTERN = re.compile(r"^[A-Za-z0-9.^=\-]{1,20}$")
+# A valuation within this fraction of the price counts as "about the same".
+SAME_THRESHOLD = 0.01
+# The per-share estimates in stock_intrinsic_value.build_json() (everything
+# but the reverse DCF, which is an implied growth rate, not a value).
+VALUATION_METHODS = (
+    "dcf_two_stage",
+    "dividend_discount",
+    "pe_multiple",
+    "graham",
+    "ev_ebitda_multiple",
+    "ps_multiple",
+    "ev_reported_to_equity",
+)
 
 PAGE_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -161,6 +176,43 @@ PAGE_HTML = """<!DOCTYPE html>
   th { color: var(--muted); font-weight: 500; }
   td { font-variant-numeric: tabular-nums; }
   .assumptions, .disclaimer { color: var(--muted); font-size: 0.8rem; margin: 0.6rem 0 0; }
+  .range { margin: 0.75rem 0 0; font-size: 0.9rem; }
+  .range-title { color: var(--muted); margin-bottom: 0.35rem; }
+  .range-row { display: flex; align-items: center; gap: 0.6rem; }
+  .range-row .value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .range-track {
+    position: relative;
+    flex: 1;
+    min-width: 4rem;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+  }
+  .range-marker {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin-left: -7px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--card-bg);
+    transform: translateY(-50%);
+  }
+  .range-caption { color: var(--muted); font-size: 0.8rem; margin-top: 0.35rem; }
+  .prev-close { color: var(--muted); font-size: 0.9rem; }
+  .prev-close .value { color: var(--text); font-variant-numeric: tabular-nums; }
+  .stats { display: flex; gap: 0.5rem; margin: 0 0 0.75rem; }
+  .stat {
+    flex: 1;
+    padding: 0.5rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    text-align: center;
+  }
+  .stat-count { display: block; font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-label { color: var(--muted); font-size: 0.8rem; }
+  .stats-note { color: var(--muted); font-size: 0.8rem; margin: -0.35rem 0 0.75rem; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -189,21 +241,44 @@ PAGE_HTML = """<!DOCTYPE html>
     </p>
     <h3>Price</h3>
     <div class="price-line">
-      <span class="price" id="current-price"></span><span class="change" id="price-change"></span>
+      <span class="price" id="current-price"></span><span class="change" id="price-change"></span><span
+        class="prev-close">Previous close <span class="value" id="previous-close"></span></span>
     </div>
     <div class="price-label" id="price-label"></div>
-    <p class="inline-list">
-      <span><span class="label">Previous close</span> <span class="value" id="previous-close"></span></span><span><span
-        class="label">Day low</span> <span class="value" id="session-low"></span></span><span><span
-        class="label">Day high</span> <span class="value" id="session-high"></span></span>
-    </p>
-    <p class="inline-list">
-      <span><span class="label">52-week low</span> <span class="value" id="week52-low"></span></span><span><span
-        class="label">52-week high</span> <span class="value" id="week52-high"></span></span>
-    </p>
+    <div class="range">
+      <div class="range-title">Day range</div>
+      <div class="range-row">
+        <span class="value" id="session-low" title="Day low"></span>
+        <div class="range-track" id="day-track">
+          <div class="range-marker" id="day-marker" hidden></div>
+        </div>
+        <span class="value" id="session-high" title="Day high"></span>
+      </div>
+      <div class="range-caption" id="day-caption"></div>
+    </div>
+    <div class="range">
+      <div class="range-title">52-week range</div>
+      <div class="range-row">
+        <span class="value" id="week52-low" title="52-week low"></span>
+        <div class="range-track" id="week52-track">
+          <div class="range-marker" id="week52-marker" hidden></div>
+        </div>
+        <span class="value" id="week52-high" title="52-week high"></span>
+      </div>
+      <div class="range-caption" id="week52-caption"></div>
+    </div>
     <h3>Valuations</h3>
     <p id="valuation-status"></p>
     <div id="valuation" hidden>
+      <div class="stats">
+        <div class="stat"><span class="stat-count" id="count-below"></span><span
+          class="stat-label">Below price</span></div>
+        <div class="stat"><span class="stat-count" id="count-same"></span><span
+          class="stat-label">About the same</span></div>
+        <div class="stat"><span class="stat-count" id="count-above"></span><span
+          class="stat-label">Above price</span></div>
+      </div>
+      <p class="stats-note" id="stats-note"></p>
       <table>
         <thead><tr><th>Method</th><th>Value / share</th><th>Price vs estimate</th></tr></thead>
         <tbody id="valuation-rows"></tbody>
@@ -283,7 +358,21 @@ PAGE_HTML = """<!DOCTYPE html>
     valuationRows.appendChild(tr);
   }
 
+  function renderStats(s) {
+    setText("count-below", s.below);
+    setText("count-same", s.same);
+    setText("count-above", s.above);
+    var counted = s.below + s.same + s.above;
+    var note = "Of " + counted + " valuation" + (counted === 1 ? "" : "s") +
+      "; within " + (s.threshold * 100) + "% of the price counts as about the same.";
+    if (s.not_available) {
+      note += " " + s.not_available + " couldn't be computed (shown as – below).";
+    }
+    setText("stats-note", note);
+  }
+
   function renderValuation(v) {
+    renderStats(v.summary);
     valuationRows.innerHTML = "";
     // With default assumptions the multiple methods use the stock's own
     // current multiple, so they land at ~the price; say so in the label.
@@ -347,11 +436,11 @@ PAGE_HTML = """<!DOCTYPE html>
     // The session date lives here now that day high/low sit on one line.
     setText("price-label", q.price_time ? "Current price as of " + q.price_time
       : q.session_date ? "Current price for the " + q.session_date + " session" : "Current price");
-    setText("session-high", money(q.session_high, q.currency));
-    setText("session-low", money(q.session_low, q.currency));
     setText("previous-close", money(q.previous_close, q.currency));
-    setText("week52-low", money(q.week52_low, q.currency));
-    setText("week52-high", money(q.week52_high, q.currency));
+    renderRange("session-low", "session-high", "day-marker", "day-caption", "day",
+      q.session_low, q.session_high, q);
+    renderRange("week52-low", "week52-high", "week52-marker", "week52-caption", "52-week",
+      q.week52_low, q.week52_high, q);
     var change = document.getElementById("price-change");
     if (q.change === null || q.change === undefined) {
       change.textContent = "Change: –";
@@ -370,6 +459,32 @@ PAGE_HTML = """<!DOCTYPE html>
     setText("company-sector", "Sector loading…");
     setText("company-industry", "Industry loading…");
     result.hidden = false;
+  }
+
+  // Range bar (day or 52-week): low and high at the ends, a marker at the current price.
+  function renderRange(lowId, highId, markerId, captionId, name, low, high, q) {
+    var marker = document.getElementById(markerId);
+    setText(lowId, money(low, q.currency));
+    setText(highId, money(high, q.currency));
+    var missing = low === null || low === undefined || high === null || high === undefined;
+    if (missing || high < low) {
+      marker.hidden = true;
+      setText(captionId, name.charAt(0).toUpperCase() + name.slice(1) + " range not reported");
+      return;
+    }
+    // A flat range (high == low, e.g. a single trade) puts the marker mid-bar.
+    var position = high > low ? (q.price - low) / (high - low) : 0.5;
+    // The range figures can lag the live price, so it may sit just
+    // outside them; pin the marker to the nearer end.
+    var clamped = Math.min(1, Math.max(0, position));
+    marker.style.left = (clamped * 100) + "%";
+    marker.hidden = false;
+    var where = high === low ? "at the " + name + " low and high"
+      : position > 1 ? "above the " + name + " high"
+      : position < 0 ? "below the " + name + " low"
+      : Math.round(position * 100) + "% of the way from low to high";
+    marker.title = "Current price " + money(q.price, q.currency) + ", " + where;
+    setText(captionId, "Current price " + money(q.price, q.currency) + " is " + where);
   }
 
   function renderProfile(v) {
@@ -509,7 +624,8 @@ def get_valuation(symbol):
     """Run stock_intrinsic_value.py's pipeline for ``symbol`` with its default assumptions.
 
     Returns that script's ``--json`` payload (``build_json()``): inputs,
-    assumptions, and every estimate with its gap to the price. Raises
+    assumptions, and every estimate with its gap to the price, plus a
+    ``summary`` from summarize_estimates(). Raises
     requests.RequestException / ValueError / KeyError on a failed fetch,
     and ValueError when Yahoo returns no usable fundamentals.
     """
@@ -520,7 +636,33 @@ def get_valuation(symbol):
     args = siv.parse_args([symbol])
     assumptions = siv.resolve_assumptions(inputs, args)
     estimates, used = siv.compute_estimates(inputs, assumptions, args)
-    return siv.build_json(symbol, inputs, assumptions, estimates, used)
+    payload = siv.build_json(symbol, inputs, assumptions, estimates, used)
+    payload["summary"] = summarize_estimates(payload)
+    return payload
+
+
+def summarize_estimates(payload, threshold=SAME_THRESHOLD):
+    """Count the per-share valuations below / about the same as / above the price.
+
+    A valuation counts as "same" when it is less than ``threshold`` (a
+    fraction of the price) away from it. Methods with no value (missing
+    inputs) are counted in ``not_available`` instead. Returns
+    ``{below, same, above, not_available, threshold}``.
+    """
+    price = payload["price"]
+    counts = {"below": 0, "same": 0, "above": 0, "not_available": 0}
+    for method in VALUATION_METHODS:
+        value = payload["estimates"][method]["value_per_share"]
+        if value is None or not price:
+            counts["not_available"] += 1
+        elif abs(value - price) / price < threshold:
+            counts["same"] += 1
+        elif value < price:
+            counts["below"] += 1
+        else:
+            counts["above"] += 1
+    counts["threshold"] = threshold
+    return counts
 
 
 class StockInfoHandler(BaseHTTPRequestHandler):
