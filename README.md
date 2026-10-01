@@ -1773,7 +1773,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ## stock_tech_buzz_agent.py
 
-An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the ~40 hottest tech discussions from Hacker News (the `--discussion-limit` default is 50 but the underlying script ranks only its first 40 candidates), and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
+An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the 50 hottest tech discussions from Hacker News (`--discussion-limit`, default 50; the underlying script ranks 4× that many top stories), and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
 
 Requires `market_top_volume.py` and `hottest_tech_discussions.py` to be present in the same directory — it imports them directly rather than shelling out.
 
