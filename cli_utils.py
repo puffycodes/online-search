@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Shared helpers for the command-line entry-point scripts in this repo:
-uniform error exits, URL-scheme validation, a couple of argparse
-``type`` callables, ``.env`` loading, and the result-list
+uniform error exits, URL-scheme validation, the ``positive_int`` argparse
+``type``, ``.env`` loading and API-key lookup, and the result-list
 formatting/printing shared by the ``web_search_*.py`` scripts that
 return a flat list of results.
 

@@ -1238,6 +1238,7 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`s
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` (for `positive_int`, used by `add_window_args()`) — run from the repo root so it imports
 
 ### Constants
 

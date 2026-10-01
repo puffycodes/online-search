@@ -1,4 +1,4 @@
-"""Tests for weather: weather-code lookup, place formatting, geocode/get_weather, and main()."""
+"""Tests for weather: weather-code lookup, place formatting and fields, geocode/get_weather, and main()."""
 
 import json
 
