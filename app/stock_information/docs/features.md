@@ -16,7 +16,7 @@
     - Display the price information
         - {{Current Price}} {{Price Movement}} {{Previous Close}}
         - {{Day Low}} {{Day High}}
-            - SHow a bar with the {{Day Low}} and {{Day High}} at both ends, and a market to show the {{Current Price}}
+            - Show a bar with the {{Day Low}} and {{Day High}} at both ends, and a market to show the {{Current Price}}
         - {{52 Weeks Low}} {{52 Weeks High}}
             - Show a bar with the {{52 Weeks Low}} and {{52 Weeks High}} at both ends, and a marker to show the {{Current Price}}
     - Display the valuation information
