@@ -1959,7 +1959,7 @@ Open <http://127.0.0.1:8001/>, pick a count from **Show**, and click **Refresh**
 
 ## Claude Code agent: `hottest-discussion-summary`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hottest-discussion-summary.md`, built against the feature spec in `app/hottest_discussion_summary/docs/features.md`. Unlike the other agents in this repo, it isn't a thin wrapper around one script — it chains three tools ([`hottest_tech_discussions.py`](#hottest_tech_discussionspy), two of the six `web_search_*.py` engines, and [`url_content.py`](#url_contentpy)) with its own reasoning between each call, to turn a plain list of trending discussions into researched, sourced summaries.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hottest-discussion-summary.md`, built against the feature spec in `docs/features/agent/hottest-discussion-summary/features.md`. Unlike the other agents in this repo, it isn't a thin wrapper around one script — it chains three tools ([`hottest_tech_discussions.py`](#hottest_tech_discussionspy), two of the six `web_search_*.py` engines, and [`url_content.py`](#url_contentpy)) with its own reasoning between each call, to turn a plain list of trending discussions into researched, sourced summaries.
 
 ### Purpose
 

@@ -16,3 +16,13 @@ read the result, and what to watch out for.
 done — they do not predict. The valuation tools *estimate* what a business might
 be worth, but every estimate depends on assumptions you choose, and the answer
 moves a lot when the assumptions move. Nothing here is investment advice.
+
+## Agent feature specs
+
+[`features/agent/`](features/agent/) holds one `features.md` per Claude Code subagent
+in [`../.claude/agents/`](../.claude/agents/), in a folder named after the agent
+(e.g. [`features/agent/weather/features.md`](features/agent/weather/features.md)
+for `.claude/agents/weather.md`). Each spec states which script(s) the agent must
+use and what it does, in the same Requirement / Actions format as the web apps'
+specs in `app/*/docs/features.md`. They live here rather than in `.claude/agents/`
+because Claude Code loads every `.md` file in that folder as an agent.
