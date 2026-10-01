@@ -36,7 +36,7 @@ Small standalone scripts that pull live data from public web APIs, plus one smal
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — top 10 hottest Hacker News discussions
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
-- [`app/hottest_discussions/`](#apphottest_discussions) — small web-page generator pairing with `hottest_tech_discussions.py`: a static HTML page with a "Show" drop-down and Refresh button that fetch discussions client-side
+- [`app/hottest_discussions/`](#apphottest_discussions) — small local web app for `hottest_tech_discussions.py`: a page with a "Show" drop-down and Refresh button that runs the script through a local server
 - [`.claude/agents/hottest-discussion-summary.md`](#claude-code-agent-hottest-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions with cited sources
 
 **[Web Search](#web-search)**
@@ -1693,7 +1693,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 
 ### How it works
 
-1. **Fetch candidate pool** — Calls `topstories.json` on the HN API to get the current top story IDs (already ranked by HN's own hotness algorithm) and takes the first `CANDIDATE_POOL_SIZE` (40) of them.
+1. **Fetch candidate pool** — Calls `topstories.json` on the HN API to get the current top story IDs (already ranked by HN's own hotness algorithm) and takes the first `limit × CANDIDATE_POOL_FACTOR` of them (4× the requested count: 40 for the default 10, 200 for `--limit 50`).
 2. **Fetch story details concurrently** — Uses a `ThreadPoolExecutor` (10 workers) to fetch the full item data (`item/{id}.json`) for each candidate in parallel, since each is a separate HTTP request.
 3. **Filter and rank** — Discards anything that failed to fetch or isn't a `story` (e.g. jobs, polls get excluded implicitly since only `type == "story"` is kept), then sorts the remaining stories by `score` descending.
 4. **Display top N** — Prints the top 10 (`RESULTS_TO_SHOW`), each with rank, title, score, comment count, posting time (UTC), the external article link, and a link to the HN discussion thread.
@@ -1704,13 +1704,13 @@ These are set as constants near the top of the file — edit them directly to ch
 
 | Constant | Default | Description |
 |---|---|---|
-| `CANDIDATE_POOL_SIZE` | 40 | Number of top stories to fetch details for before ranking |
+| `CANDIDATE_POOL_FACTOR` | 4 | Top stories to fetch details for, per requested result, before ranking (pool = `limit × 4`) |
 | `RESULTS_TO_SHOW` | 10 | Number of stories to display |
 | `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
 
 ### API reference
 
-- Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices (e.g. why `CANDIDATE_POOL_SIZE` is 40).
+- Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices (e.g. why the candidate pool is 4× the limit).
 - `fetch_json(url)` — GETs a URL and returns parsed JSON, raising on HTTP errors.
 - `fetch_story(item_id)` — Fetches a single HN item by ID; returns `None` on any request or parsing failure instead of raising (so one bad story doesn't kill the whole batch).
 - `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of raw HN story dicts.
@@ -1796,7 +1796,7 @@ python3 stock_tech_buzz_agent.py [--stock-limit N] [--discussion-limit N] [--jso
 | Flag | Default | Description |
 |---|---|---|
 | `--stock-limit N` | 10 | Number of top-volume stocks to pull *per exchange* (so total candidates = 2×N) |
-| `--discussion-limit N` | 50 | Number of hottest tech discussions to search. Capped by `hottest_tech_discussions.py`'s candidate pool (`CANDIDATE_POOL_SIZE`, 40) — values above ~40 return at most ~40 |
+| `--discussion-limit N` | 50 | Number of hottest tech discussions to search. `hottest_tech_discussions.py` inspects 4× this many top stories (200 for the default 50), so larger values take longer |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
@@ -1817,7 +1817,7 @@ If no top-volume stock is mentioned in any of the fetched discussions (the commo
 No overlap found between the top 20 volume stocks and the top 39 tech discussions.
 ```
 
-(The discussion count in that message is usually lower than `--discussion-limit`: the underlying [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) only ranks its first `CANDIDATE_POOL_SIZE` (40) top stories, so a default `--discussion-limit 50` yields ~40 at most, and a few more can drop out if their detail fetch fails.)
+(The discussion count in that message can be slightly lower than `--discussion-limit`: the underlying [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) ranks 4× that many top stories, but stories whose detail fetch fails, and non-story items such as jobs, drop out.)
 
 #### Tool usage (`--json`)
 
@@ -1851,7 +1851,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 ### How it works
 
 1. **Fetch top-volume stocks** — Calls `market_top_volume.get_movers()` with metric `"volume"` once for `"nyse"` and once for `"nasdaq"` (each with `--stock-limit`), tagging each quote with its source exchange and de-duplicating by symbol.
-2. **Fetch tech discussions** — Calls `hottest_tech_discussions.get_hottest_tech_discussions()` with `--discussion-limit`. That function only inspects the first `CANDIDATE_POOL_SIZE` (40) of HN's current top stories, so a `--discussion-limit` above ~40 effectively tops out there.
+2. **Fetch tech discussions** — Calls `hottest_tech_discussions.get_hottest_tech_discussions()` with `--discussion-limit`. That function inspects the first `4 × --discussion-limit` of HN's current top stories (200 for the default 50) before ranking by score.
 3. **Match stocks to discussions** — For every stock, checks every discussion's title for either: (a) the ticker symbol as a case-sensitive whole word (e.g. `NVDA`), or (b) the company name — with legal-entity suffixes like "Corporation"/"Inc."/"Ltd." stripped — as a case-insensitive whole-word/phrase match (e.g. "NVIDIA Corporation" → "NVIDIA").
 4. **Filter and report** — Keeps only stocks with at least one matching discussion, and prints each stock paired with the discussion(s) that mentioned it.
 
@@ -1894,70 +1894,66 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ## app/hottest_discussions/
 
-A small static-site generator, separate from the CLI scripts above, at `app/hottest_discussions/generate_page.py`. It pairs with [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) to produce a self-contained HTML page for the top Hacker News discussions — no server, no build step. The generated page starts **empty**; a "Show" drop-down (10 / 25 / 50, default 10) and a **Refresh** button let the visitor fetch and render discussions client-side, on demand, using the same Hacker News endpoints and ranking logic as the CLI script. See [`app/hottest_discussions/README.md`](app/hottest_discussions/README.md) for the full walkthrough and [`app/hottest_discussions/docs/features.md`](app/hottest_discussions/docs/features.md) for the feature spec it was built against.
+A small local web app at `app/hottest_discussions/hottest_discussions_server.py`, separate from the CLI scripts above. It serves a page that starts **empty**, with a "Show" drop-down (10 / 25 / 50, default 10) and a **Refresh** button. Refresh calls the server's `/api/discussions` endpoint, which runs [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) directly (`get_hottest_tech_discussions()` + `story_to_dict()`) and returns the same rows as that script's `--json`, so the page and the CLI always rank the same way. See [`app/hottest_discussions/README.md`](app/hottest_discussions/README.md) for the full walkthrough and [`app/hottest_discussions/docs/features.md`](app/hottest_discussions/docs/features.md) for the feature spec.
 
 ### Requirements
 
 - Python 3.7+
-- [`requests`](https://pypi.org/project/requests/) — not called directly by this script, but pulled in transitively because it imports a constant from `hottest_tech_discussions.py`
-
-```bash
-pip install requests
-```
+- [`requests`](https://pypi.org/project/requests/) (used by `hottest_tech_discussions.py`)
 
 ### Usage
 
-Run from anywhere; paths are resolved relative to `generate_page.py`, not your working directory.
-
 ```bash
-python3 app/hottest_discussions/generate_page.py [--limit {10,25,50}] [--output PATH]
+python3 app/hottest_discussions/hottest_discussions_server.py [--host HOST] [--port PORT]
 ```
 
 | Flag | Default | Description |
 |---|---|---|
-| `--limit {10,25,50}` | 10 | Which option the page's "Show" drop-down starts pre-selected to — the visitor can still change it in the browser before clicking Refresh |
-| `--output PATH` | `app/hottest_discussions/index.html` | Where to write the generated HTML file |
+| `--host HOST` | `127.0.0.1` | Interface to bind |
+| `--port PORT` | `8001` | Port to listen on (8001 so it can run alongside `app/stock_information/` on 8000) |
 
 #### Example
 
 ```bash
-python3 app/hottest_discussions/generate_page.py --limit 25
-# Wrote empty page shell to .../app/hottest_discussions/index.html
-# Open it in a browser and click Refresh to load discussions.
+python3 app/hottest_discussions/hottest_discussions_server.py
+# Serving Hottest Tech Discussions at http://127.0.0.1:8001/ (Ctrl+C to stop)
 ```
 
-Opening the file loads instantly with no discussions shown; picking a count and clicking **Refresh** fetches and renders that many stories in place.
+Open <http://127.0.0.1:8001/>, pick a count from **Show**, and click **Refresh**. The page calls `GET /api/discussions?limit=N`, which returns JSON: `{limit, fetched_at, discussions: [{rank, title, score, comments, posted, url, discussion_url}, ...]}`.
 
 ### How it works
 
-1. **Generate the shell** — Renders a page template (header, "Show" drop-down, Refresh button, an empty discussions container, and a "Generated `<UTC timestamp>`" footer) with no network call and no discussions embedded.
-2. **Write file** — The finished HTML string is written to `--output` (creating parent directories if needed).
-3. **Refresh in the browser** — Clicking Refresh runs an inline `<script>` that mirrors `hottest_tech_discussions.py`'s `get_hottest_tech_discussions` logic in JavaScript: it calls the same Hacker News Firebase endpoints (`topstories.json`, then `item/{id}.json` for a candidate pool 4x the selected count), filters to `type === "story"`, sorts by score, and renders the top N as cards directly into the page — no server or Python process involved.
+1. `GET /` serves the inline HTML page with no discussions.
+2. On Refresh, the page calls `GET /api/discussions?limit=N`.
+3. The handler checks `limit` is 10, 25 or 50 (missing means 10), then calls `hottest_tech_discussions.get_hottest_tech_discussions(limit)` and flattens each story with `story_to_dict()`.
+4. The page renders the rows as cards (rank, linked title, points, comments, posted time, HN discussion link) and shows the fetch time in the footer.
 
 ### Configuration
 
 | Constant | Default | Description |
 |---|---|---|
-| `LIMIT_OPTIONS` | `(10, 25, 50)` | The drop-down's choices; the first entry is `RESULTS_TO_SHOW`, imported from `hottest_tech_discussions.py` |
-| `DEFAULT_OUTPUT` | `app/hottest_discussions/index.html` | Where the page is written when `--output` isn't passed |
+| `LIMIT_OPTIONS` | `(10, 25, 50)` | The drop-down's and the API's allowed counts; the first entry is `RESULTS_TO_SHOW`, imported from `hottest_tech_discussions.py` |
+| `DEFAULT_PORT` | `8001` | Port when `--port` isn't passed |
 
 ### API reference
 
-- `render_limit_options(selected)` — Returns the `<option>` tags for the drop-down, marking `selected` as pre-selected.
-- `render_page(limit=RESULTS_TO_SHOW)` — Returns the full HTML document as a string: the empty page shell with the drop-down pre-selected to `limit`. Raises `ValueError` if `limit` isn't one of `LIMIT_OPTIONS`.
-- `parse_args(argv=None)` — Parses `--limit` (restricted to `LIMIT_OPTIONS`) and `--output`.
-- `main(argv=None)` — Entry point: renders the page shell, writes it to disk, and prints a one-line summary.
+- `render_limit_options(selected=10)` / `render_page()` — Build the drop-down options and the page.
+- `parse_limit(value)` — Returns `value` as an int from `LIMIT_OPTIONS`, else raises `ValueError`.
+- `get_discussions(limit)` — Runs the script and returns `{limit, fetched_at, discussions}`.
+- `HottestDiscussionsHandler` — Serves `/` and `/api/discussions`.
+- `parse_args(argv=None)` / `main(argv=None)` — `--host`/`--port` parsing and the serve loop.
 
 ### Error handling
 
-- Generation makes no network calls, so it can't fail on a network error; an invalid `--limit` is rejected by argument parsing (exit code 2).
-- In the browser, a failed Refresh (network error, HN API down) leaves the current state untouched and shows "Refresh failed: `<message>`" under the button instead.
+- `limit` other than 10/25/50 → HTTP 400; Hacker News unreachable or a malformed response → HTTP 502. Either way the page shows `Refresh failed: <message>` and keeps the current list.
+- Bad `--port` is rejected by argparse (exit code 2).
 
 ### Notes / limitations
 
-- Inherits the same "hottest" definition as [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): highest score among HN's current top stories, no tech-specific keyword filtering, live-snapshot results that will differ between clicks.
-- Nothing appears until Refresh is clicked — there's no polling/interval or auto-refresh, and the drop-down only offers 10/25/50.
-- Static output only — no backend, no API endpoint. The Refresh button calls the public Hacker News Firebase API directly from the visitor's browser, so it needs outbound network access but no server of its own.
+- Inherits the same "hottest" definition as [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): highest score among the first 4× N of HN's current top stories, no tech-specific keyword filtering, live-snapshot results that differ between clicks.
+- Nothing appears until Refresh is clicked — no polling or auto-refresh.
+- Needs the server running (it replaced the earlier static `generate_page.py` / `index.html`, whose JavaScript copy of the ranking had drifted from the script). Choosing 50 fetches 200 stories' details, so it's slower than 10.
+- Binds to localhost by default; `--host 0.0.0.0` exposes it with no authentication.
 
 ---
 

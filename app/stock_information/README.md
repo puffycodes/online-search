@@ -73,7 +73,7 @@ curl "http://127.0.0.1:8000/api/valuation?symbol=D05.SI"
 4. **Render** — the browser fills in the result card from the JSON and positions the day-range and 52-week-range markers. Market cap, P/E, dividend yield, sector and industry show "… loading" until step 5 returns.
 5. **Valuations** — once the quote is shown, the page calls `GET /api/valuation?symbol=<SYMBOL>`. `get_valuation` runs `stock_intrinsic_value.py`'s own functions in the same order as its `main()`: `fetch_fundamentals()` (Yahoo quoteSummary, with the crumb/cookie handshake), `collect_inputs()`, `resolve_assumptions()` and `compute_estimates()` with the script's default arguments, then returns `build_json()`, the same payload as `stock_intrinsic_value.py --json`, with a `summary` of undervalued/fair-value/overvalued counts added by `summarize_estimates()`. The page renders the counts as tiles and the estimates as a table. It's a separate request so the price appears right away, even when the slower and more fragile fundamentals fetch fails.
 
-A server is needed (instead of a static page like `app/hottest_discussions/`) because Yahoo's endpoints don't send CORS headers, so a browser can't call them directly.
+A server is needed (rather than a static page) because Yahoo's endpoints don't send CORS headers, so a browser can't call them directly. It also lets the page run the repo's scripts instead of a JavaScript copy of them, the same reason `app/hottest_discussions/` is a server.
 
 ## File structure
 

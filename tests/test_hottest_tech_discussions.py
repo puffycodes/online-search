@@ -88,6 +88,16 @@ class TestGetHottest:
         out = hn.get_hottest_tech_discussions(limit=5)
         assert 99 not in [s["id"] for s in out]
 
+    def test_candidate_pool_scales_with_limit(self, monkeypatch):
+        fetched = []
+        stories = {i: {"id": i, "type": "story", "score": i} for i in range(1, 301)}
+        monkeypatch.setattr(hn, "fetch_json", lambda url: list(range(1, 301)))
+        monkeypatch.setattr(hn, "fetch_story", lambda i: fetched.append(i) or stories[i])
+        out = hn.get_hottest_tech_discussions(limit=50)
+        assert len(fetched) == 50 * hn.CANDIDATE_POOL_FACTOR
+        # 50 results, not capped at a fixed pool: the top scores in the first 200.
+        assert [s["id"] for s in out] == list(range(200, 150, -1))
+
 
 class TestMain:
     def test_json_output(self, monkeypatch, capsys):

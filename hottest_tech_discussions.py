@@ -23,11 +23,12 @@ HN_BASE = "https://hacker-news.firebaseio.com/v0"
 TOP_STORIES_URL = f"{HN_BASE}/topstories.json"
 ITEM_URL = f"{HN_BASE}/item/{{item_id}}.json"
 
-# How many of the current top stories to inspect before ranking them.
-# HN's topstories list is already ranked by its own "hotness" algorithm
-# (score + age decay), so pulling details for the first N is enough to
-# reliably surface the top 10 by score.
-CANDIDATE_POOL_SIZE = 40
+# How many of the current top stories to inspect per requested result,
+# before ranking them by score. HN's topstories list is already ranked by
+# its own "hotness" algorithm (score + age decay), so pulling details for
+# the first 4x is enough to reliably surface the top N by score (40 for
+# the default 10), and it scales so --limit 50 isn't capped at a fixed pool.
+CANDIDATE_POOL_FACTOR = 4
 RESULTS_TO_SHOW = 10
 REQUEST_TIMEOUT = 10
 
@@ -46,7 +47,7 @@ def fetch_story(item_id):
 
 
 def get_hottest_tech_discussions(limit=RESULTS_TO_SHOW):
-    story_ids = fetch_json(TOP_STORIES_URL)[:CANDIDATE_POOL_SIZE]
+    story_ids = fetch_json(TOP_STORIES_URL)[:max(limit, 0) * CANDIDATE_POOL_FACTOR]
 
     with ThreadPoolExecutor(max_workers=10) as pool:
         stories = list(pool.map(fetch_story, story_ids))
