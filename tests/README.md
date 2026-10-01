@@ -3,7 +3,8 @@
 Unit tests for the scripts and helper modules at the repository root. Everything
 runs **offline** — every network call is monkeypatched, so running the suite
 never touches Yahoo Finance, Open-Meteo (weather or air quality), Hacker News,
-or any of the web search APIs (Brave, Serper, Tavily, SerpApi, Exa, Perplexity).
+any of the web search APIs (Brave, Serper, Tavily, SerpApi, Exa, Perplexity,
+DuckDuckGo), or the arbitrary URLs fetched by the `url_*.py` scripts.
 
 ## Running
 
@@ -141,12 +142,12 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_weather.py` | `weather` | `weather_description`, `format_place`, `geocode`, `get_weather`, `parse_args`, `main` |
 | `test_weather_forecast.py` | `weather_forecast` | `_valid_days`, `get_forecast` day-record assembly, `format_forecast`, `main` |
 | `test_air_quality.py` | `air_quality` | `us_aqi_category` band boundaries + `None`; `get_air_quality` record assembly + missing-`us_aqi` case; `format_air_quality`; `parse_args`; `main` (request error, not found, JSON/text output) |
-| `test_hottest_tech_discussions.py` | `hottest_tech_discussions` | `discussion_url`/`posted_at`/`story_to_dict`; `fetch_story` error-swallowing; `get_hottest_tech_discussions` type filter / score sort / limit / candidate-pool slice / pool scales with limit (4×); `main` |
+| `test_hottest_tech_discussions.py` | `hottest_tech_discussions` | `discussion_url`/`posted_at`/`story_to_dict`; `fetch_story` error-swallowing; `get_hottest_tech_discussions` type filter / score sort / limit / candidate-pool slice / pool scales with limit (4×); `main` (incl. invalid `--limit` exits 2 before any fetch) |
 | `test_market_top_volume.py` | `market_top_volume` | `METRICS`/`MARKETS` structural consistency; `quote_to_dict`; `format_quote` ordering; `get_movers` predefined vs region path, filters, sort; `fetch_region_quotes` crumb/error/success; `main` limit clamp |
 | `test_stock_close_history.py` | `stock_close_history` | `extract_rows` rounding / unsettled-bar skip / gmtoffset date shift / None-safety; `main` `--last` trim, JSON shape, adj-close column, fetch-error exit, invalid `--start` date exit |
 | `test_stock_candlestick.py` | `stock_candlestick` | `_parse_ma_arg` / `_parse_flip_ma_arg` full matrices; `extract_rows` skips bars with missing OHLC, date is `datetime`; `main` invalid `--start` date exit |
 | `test_stock_rebased_chart.py` | `stock_rebased_chart` | `fetch_closes` None-close skip; `main` base-date defaulting + fallback, per-symbol skip when the base date is missing, invalid `--base-date`, all-symbols-fail exit |
-| `test_stock_tech_buzz_agent.py` | `stock_tech_buzz_agent` | `normalize_company_name` (one outer suffix); `stock_mentions_in_title` case-sensitivity / ambiguous symbols / word boundaries / short-name skip; `get_top_volume_stocks` dedup; `find_stock_buzz` match/no-match; `main` |
+| `test_stock_tech_buzz_agent.py` | `stock_tech_buzz_agent` | `normalize_company_name` (one outer suffix); `stock_mentions_in_title` case-sensitivity / ambiguous symbols / word boundaries / short-name skip; `get_top_volume_stocks` dedup; `find_stock_buzz` match/no-match; `main` (incl. invalid `--stock-limit` / `--discussion-limit` exits 2 before any fetch) |
 | `test_web_search_brave.py` | `web_search_brave` | `strip_markup`; `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` pagination / early-stop / truncation / `raise_for_status`; `result_to_dict`; `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
 | `test_web_search_duckduckgo.py` | `web_search_duckduckgo` | `fetch_results` via a fake `DDGS` context manager, including `DDGSException` propagation; `result_to_dict`; `parse_args`; `main` (missing `ddgs` dependency, search error, JSON/text output, no results) |
 | `test_web_search_exa.py` | `web_search_exa` | `load_dotenv` (missing file, populate, quoting, real-env precedence); `fetch_results` single-request `numResults` capping / truncation / `raise_for_status` / missing `results` key; `result_to_dict` (including `null` text field); `parse_args`; `main` (missing key, request error, JSON/text output, no results) |
@@ -169,6 +170,11 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 4. Run `python3 -m pytest tests/test_<module>.py -q`.
 
 ## Not covered here (see the repo root README's plan)
+
+`stock_intrinsic_value.py` has no `test_stock_intrinsic_value.py` of its own. Its
+fetch → inputs → assumptions → estimates → JSON pipeline is exercised only
+indirectly, through `get_valuation` in `test_stock_info_server.py` (canned
+fundamentals); its argument parsing, text report and crumb handshake are untested.
 
 Chart rendering (`render_chart` in the two matplotlib scripts) and live
 end-to-end calls are out of scope for this suite — they belong to the Tier 3 /

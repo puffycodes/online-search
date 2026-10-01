@@ -123,3 +123,13 @@ class TestMain:
         monkeypatch.setattr(hn, "get_hottest_tech_discussions", lambda limit: [])
         hn.main([])
         assert "No stories found." in capsys.readouterr().out
+
+    @pytest.mark.parametrize("bad", ["0", "-1", "abc"])
+    def test_invalid_limit_exits_2_before_fetch(self, monkeypatch, bad):
+        def fail(limit):
+            raise AssertionError("should not fetch")
+
+        monkeypatch.setattr(hn, "get_hottest_tech_discussions", fail)
+        with pytest.raises(SystemExit) as exc:
+            hn.main(["--limit", bad])
+        assert exc.value.code == 2

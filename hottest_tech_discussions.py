@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 import requests
 
-from cli_utils import die
+from cli_utils import die, positive_int
 
 HN_BASE = "https://hacker-news.firebaseio.com/v0"
 TOP_STORIES_URL = f"{HN_BASE}/topstories.json"
@@ -99,7 +99,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--limit",
-        type=int,
+        type=positive_int,
         default=RESULTS_TO_SHOW,
         help=f"Number of stories to return (default: {RESULTS_TO_SHOW})",
     )

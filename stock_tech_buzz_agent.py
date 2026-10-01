@@ -22,7 +22,7 @@ import requests
 
 import hottest_tech_discussions as hn
 import market_top_volume as market
-from cli_utils import die
+from cli_utils import die, positive_int
 
 STOCK_LIMIT_PER_EXCHANGE = 10
 DISCUSSION_LIMIT = 50
@@ -138,13 +138,13 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--stock-limit",
-        type=int,
+        type=positive_int,
         default=STOCK_LIMIT_PER_EXCHANGE,
         help=f"Number of top-volume stocks to pull per exchange (default: {STOCK_LIMIT_PER_EXCHANGE})",
     )
     parser.add_argument(
         "--discussion-limit",
-        type=int,
+        type=positive_int,
         default=DISCUSSION_LIMIT,
         help=f"Number of hottest tech discussions to search (default: {DISCUSSION_LIMIT})",
     )

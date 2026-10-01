@@ -116,3 +116,14 @@ class TestMain:
         with pytest.raises(SystemExit):
             agent.main(["--json"])
         assert json.loads(capsys.readouterr().err) == {"error": "down"}
+
+    @pytest.mark.parametrize("flag", ["--stock-limit", "--discussion-limit"])
+    @pytest.mark.parametrize("bad", ["0", "-1", "abc"])
+    def test_invalid_limit_exits_2_before_fetch(self, monkeypatch, flag, bad):
+        def fail(**k):
+            raise AssertionError("should not fetch")
+
+        monkeypatch.setattr(agent, "find_stock_buzz", fail)
+        with pytest.raises(SystemExit) as exc:
+            agent.main([flag, bad])
+        assert exc.value.code == 2
