@@ -36,6 +36,21 @@ class TestFormatPlace:
         assert weather.format_place({"location": "Nowhere", "admin1": None, "country": None}) == "Nowhere"
 
 
+class TestPlaceFields:
+    def test_maps_geocode_match(self):
+        place = {"name": "Paris", "admin1": "Île-de-France", "country": "France",
+                 "latitude": 48.85, "longitude": 2.35, "population": 2_000_000}
+        assert weather.place_fields(place) == {
+            "location": "Paris", "admin1": "Île-de-France", "country": "France",
+            "latitude": 48.85, "longitude": 2.35,
+        }
+
+    def test_missing_fields_are_none(self):
+        assert weather.place_fields({"name": "X"}) == {
+            "location": "X", "admin1": None, "country": None, "latitude": None, "longitude": None,
+        }
+
+
 class TestGeocode:
     def test_returns_first_result(self, monkeypatch):
         monkeypatch.setattr(

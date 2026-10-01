@@ -4,7 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Open-Meteo air quality API (no API key).
-- Use weather.py's geocode().
+- Use weather.py's geocode() and place_fields().
 
 ## Actions
 

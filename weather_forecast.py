@@ -24,6 +24,7 @@ from weather import (
     fetch_json,
     format_place,
     geocode,
+    place_fields,
     weather_description,
 )
 
@@ -82,11 +83,7 @@ def get_forecast(location, days=DEFAULT_FORECAST_DAYS, unit="celsius"):
     ]
 
     return {
-        "location": place.get("name"),
-        "admin1": place.get("admin1"),
-        "country": place.get("country"),
-        "latitude": place.get("latitude"),
-        "longitude": place.get("longitude"),
+        **place_fields(place),
         "unit": "°C" if unit == "celsius" else "°F",
         "days": forecast_days,
     }

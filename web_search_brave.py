@@ -21,12 +21,11 @@ readable report.
 
 import argparse
 import html
-import os
 import re
 
 import requests
 
-from cli_utils import die, load_dotenv, positive_int, print_results
+from cli_utils import die, load_dotenv, positive_int, print_results, require_env
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -106,13 +105,7 @@ def main(argv=None):
     args = parse_args(argv)
 
     load_dotenv()
-    api_key = os.environ.get("BRAVE_API_KEY")
-    if not api_key:
-        die(
-            "BRAVE_API_KEY environment variable must be set. "
-            "See the module docstring in web_search_brave.py for how to obtain one.",
-            args.json,
-        )
+    api_key = require_env("BRAVE_API_KEY", "web_search_brave.py", args.json)
 
     if not args.json:
         print(f"Searching for: {args.query}\n")

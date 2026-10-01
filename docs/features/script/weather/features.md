@@ -4,7 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Open-Meteo geocoding and forecast APIs (no API key).
-- Keep geocode(), fetch_json(), format_place() and weather_description() in this script so weather_forecast.py and air_quality.py can import them.
+- Keep geocode(), fetch_json(), format_place(), place_fields() and weather_description() in this script so weather_forecast.py and air_quality.py can import them.
 
 ## Actions
 

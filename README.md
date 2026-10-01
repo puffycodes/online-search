@@ -58,7 +58,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script, helper module and web app (see [`tests/README.md`](tests/README.md))
-- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `validate_url_scheme()` for the `url_*.py` scripts, `positive_int` argparse type, `.env` loading, result-list formatting/printing) imported by the command-line scripts
+- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `validate_url_scheme()` for the `url_*.py` scripts, `positive_int` argparse type, `.env` loading and `require_env()` for API keys, result-list formatting/printing) imported by the command-line scripts
 
 ---
 
@@ -148,6 +148,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - `geocode(location)` — Looks up a free-text location name and returns its top-matching place dict (name, admin1, country, latitude, longitude), or `None` if nothing matches.
 - `fetch_current_weather(latitude, longitude, unit="celsius")` — Fetches the `current_weather` object for a coordinate pair.
+- `place_fields(place)` — Returns the `{location, admin1, country, latitude, longitude}` fields every record built from a `geocode()` match starts with. Shared with `weather_forecast.py`'s `get_forecast()` and `air_quality.py`'s `get_air_quality()`.
 - `weather_description(code)` — Maps a WMO weather code to a short description, or `"Unknown (code N)"` for one not in `WEATHER_CODES`.
 - `get_weather(location, unit="celsius")` — Orchestrates geocoding and the weather fetch; returns the flattened `{location, admin1, country, latitude, longitude, temperature, unit, windspeed, winddirection, weather_code, condition, time}` record, or `None` if the location can't be found.
 - `format_place(row)` — Builds a `"City, Region, Country"` label from a geocoded record (the region is dropped when it just repeats the city, the country appended when present). Shared with `weather_forecast.py`'s `format_forecast()`.
@@ -541,7 +542,7 @@ Prints the top movers on a stock market you name — the highest-volume stocks, 
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- the repo's own `yahoo_finance.py` (headers, timeout and the cookie + crumb handshake) and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests
@@ -661,7 +662,7 @@ The JSON array carries the same fields for every metric (`change_percent` is pre
 ### How it works
 
 1. **Pick a data path from the market** — US markets (`us`, `nyse`, `nasdaq`, `amex`) use Yahoo's keyless predefined screeners (`query1.finance.yahoo.com/v1/finance/screener/predefined/saved`) — `most_actives`, `day_gainers`, or `day_losers` depending on `--metric` — each spanning the whole US market. Every other market uses the generic screener (`query1.finance.yahoo.com/v1/finance/screener`), which requires auth.
-2. **Authenticate when needed** — For the generic screener, the script first hits `fc.yahoo.com` to pick up session cookies, then fetches a crumb token from `/v1/test/getcrumb`, and passes it on the screener call. The predefined path skips this.
+2. **Authenticate when needed** — For the generic screener, the script calls [`yahoo_finance.fetch_crumb()`](#yahoo_financepy), which hits `fc.yahoo.com` (falling back to `finance.yahoo.com`) to pick up session cookies, then fetches a crumb token from `/v1/test/getcrumb`; the crumb is passed on the screener call, and a missing or unusable one is an error. The predefined path skips this.
 3. **Query by the chosen metric** — The generic screener is POSTed with `quoteType: "EQUITY"`, a `region` equality filter (`gb`, `de`, `jp`, …), and a sort that depends on `--metric`: `dayvolume` DESC for `volume`, `percentchange` DESC for `gainers`, `percentchange` ASC for `losers`. For `gainers` / `losers` a `dayvolume > MIN_MOVER_VOLUME` operand is added server-side.
 4. **Filter to the primary exchange** — Where a market maps to specific Yahoo exchange codes (e.g. `LSE`, `TOR`, `HKG`, or `NYQ` / `NMS,NCM,NGM` for the US sub-exchanges), quotes on other venues are dropped. `us` applies no exchange filter.
 5. **Filter, sort, trim, display** — For `gainers` / `losers`, quotes below `MIN_MOVER_VOLUME` shares are dropped locally too (the server-side filter is unreliable for cross-listings). The survivors are re-sorted locally on the metric's field — `regularMarketVolume` descending, or `regularMarketChangePercent` descending (`gainers`) / ascending (`losers`) — trimmed to the top N, and printed as rank, ticker, company name, listing exchange, and the three stats (the metric's own stat first).
@@ -678,13 +679,13 @@ These are set as constants near the top of the file — edit them directly to ch
 | `DEFAULT_METRIC` | `"volume"` | Metric used when `--metric` isn't passed |
 | `MIN_MOVER_VOLUME` | 50_000 | Minimum shares traded for a stock to appear in `gainers` / `losers` results |
 | `DEFAULT_LIMIT` | 10 | Number of stocks to display |
-| `REQUEST_TIMEOUT` | 15 | Per-request timeout in seconds |
-| `HEADERS` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
+
+The request headers, timeout and cookie/crumb URLs are shared with the other Yahoo scripts and live in [`yahoo_finance.py`](#yahoo_financepy) (`HEADERS`, `REQUEST_TIMEOUT`, `COOKIE_URLS`, `CRUMB_URL`).
 
 ### API reference
 
 - `fetch_predefined_quotes(session, scr_id)` — GETs a keyless predefined screener (`most_actives` / `day_gainers` / `day_losers`) and returns the raw list of quote dicts (US path).
-- `fetch_region_quotes(session, region, sort_field, sort_type, min_volume=None)` — Performs the cookie + crumb handshake, POSTs the generic screener filtered to `region` (optionally with a `dayvolume` floor) and sorted as given, and returns the raw quote dicts.
+- `fetch_region_quotes(session, region, sort_field, sort_type, min_volume=None)` — Gets a crumb via `yahoo_finance.fetch_crumb(session)` (raising `requests.RequestException` if there isn't one), POSTs the generic screener filtered to `region` (optionally with a `dayvolume` floor) and sorted as given, and returns the raw quote dicts.
 - `get_movers(market, metric, limit)` — Chooses the data path from `MARKETS[market]` and the query shape from `METRICS[metric]`, applies the exchange-code filter (and, for movers, the `MIN_MOVER_VOLUME` floor), sorts locally on the metric's field, and returns the top N.
 - `quote_to_dict(rank, quote)` — Flattens one quote into the `{rank, symbol, name, exchange, volume, price, change_percent, currency}` shape used for `--json`.
 - `format_quote(row, metric)` — Formats one flattened row into a multi-line human-readable string, leading with the stat the metric ranks on.
@@ -1231,7 +1232,7 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`stock_candlestick.py`](#stock_candlestickpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) also borrows its `HEADERS` / `REQUEST_TIMEOUT`, and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance chart-endpoint constants, the query-window builder, the HTTP call, and the raw-payload navigation. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`stock_candlestick.py`](#stock_candlestickpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) and [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) use its cookie + crumb handshake, and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, and the crumb handshake. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1247,10 +1248,16 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`s
 | `REQUEST_TIMEOUT` | 15 | Request timeout in seconds |
 | `VALID_RANGES` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
 | `SECONDS_PER_DAY` | 86400 | Used to pad an explicit `--end` by a day so the final bar is inclusive |
+| `COOKIE_URLS` | `("https://fc.yahoo.com", "https://finance.yahoo.com")` | Pages tried in order to pick up Yahoo's consent cookie |
+| `CRUMB_URL` | `…/v1/test/getcrumb` | Crumb endpoint for the screener / `quoteSummary` calls |
 
 ### API reference
 
 - `parse_date(value)` — Parses a `YYYY-MM-DD` string to a UTC `datetime`, raising `ValueError` with a clear message on a bad format.
+- `add_window_args(parser, default_range, last_help)` — Adds the shared window flags to an argparse parser: a mutually exclusive `--range` (choices `VALID_RANGES`, default `default_range`) / `--last N` (`cli_utils.positive_int`, help text `last_help`), plus `--start` / `--end`. Used by all three price scripts.
+- `session_datetime(timestamp, gmtoffset)` — Converts a Yahoo UTC epoch timestamp into a naive exchange-local `datetime`, so its date is the exchange's own trading day. Used by the three price scripts and `app/stock_information/`.
+- `fetch_crumb(session)` — Picks up the consent cookie on `session` (trying each of `COOKIE_URLS` until one answers) and returns the crumb from `CRUMB_URL`, or `None` if that request errors or the body isn't a short, non-HTML token. Callers decide whether a missing crumb is fatal (`market_top_volume.py` raises; `stock_intrinsic_value.py` falls back to crumbless requests).
+- `crumb_session()` — Returns `(session, crumb)`: a fresh `requests.Session` carrying `HEADERS`, plus `fetch_crumb(session)`.
 - `build_params(interval="1d", range_=None, start=None, end=None, last=None)` — Returns the chart-endpoint query params. The window is chosen by, in priority order: an explicit `start`/`end` pair (→ `period1`/`period2`, end padded a day), then `last` (→ a calendar look-back widened for `1wk` / `1mo` bars), then `range_`. Raises `ValueError` for `end` without `start` or an `end` not after `start`. `includeAdjustedClose=true` is always set. Callers pass `interval="1d"` (the default) for daily data.
 - `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
 - `extract_series(result)` — Returns `(meta, series)` where `series` is a dict of parallel lists straight off the payload — `timestamp`, `open`, `high`, `low`, `close`, `volume` — plus `adjclose` (a list or `None`) and the resolved `gmtoffset`. Callers turn these into row dicts.
@@ -1258,7 +1265,7 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`s
 
 ### Notes / limitations
 
-- Changing a constant or the `build_params` window logic here affects **all three** `stock_*` scripts that use it. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_close_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all three** price scripts that use it, and changing the crumb handshake affects both `market_top_volume.py` and `stock_intrinsic_value.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_close_history.py` gets the same params it did before.
 
 ---
 
@@ -1492,7 +1499,7 @@ What it computes:
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `yahoo_finance.py` (for its `HEADERS` / timeout), `valuation.py`, and `cli_utils.py` — run from the repo root so they import
+- the repo's own `yahoo_finance.py` (for its `HEADERS`, timeout and cookie + crumb handshake), `valuation.py`, and `cli_utils.py` — run from the repo root so they import
 
 ### Usage
 
@@ -1551,7 +1558,7 @@ Intrinsic value estimates (per share unless noted)
 
 ### How it works
 
-1. **Cookie + crumb** — a `requests.Session` GETs `fc.yahoo.com` (then `finance.yahoo.com`) to pick up the EU-consent cookie, then `query1.finance.yahoo.com/v1/test/getcrumb` for the crumb token the fundamentals endpoint now requires.
+1. **Cookie + crumb** — [`yahoo_finance.crumb_session()`](#yahoo_financepy) opens a `requests.Session` that GETs `fc.yahoo.com` (then `finance.yahoo.com`) to pick up the EU-consent cookie, then `query1.finance.yahoo.com/v1/test/getcrumb` for the crumb token the fundamentals endpoint now requires.
 2. **Fetch** — GETs `quoteSummary` for `price,summaryDetail,defaultKeyStatistics,financialData,earningsTrend,summaryProfile`, trying `query2` then `query1`, with the crumb and then without. A bad ticker returns an error envelope (raised) or an empty `result` (raised).
 3. **Parse** — `collect_inputs()` digs each figure out of the nested modules, unwrapping Yahoo's `{"raw": …}` wrappers, and derives net debt (`totalDebt − totalCash`) and revenue per share.
 4. **Assumptions** — `resolve_assumptions()`: the discount rate is the CLI value, else CAPM (`risk_free + beta × equity_risk_premium`), else `0.09`; the growth is the CLI value, else the analyst `+5y` estimate, else `+1y`, else `0.05`. If `terminal_growth ≥ discount_rate` the discount rate is nudged up so the model stays defined. Every choice is shown with its source.
@@ -2085,7 +2092,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 
 ### How it works
 
-1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `BRAVE_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `BRAVE_API_KEY` is read from the environment via `cli_utils.require_env()`. Missing means the script exits with an error before making any request.
 2. **Fetch, paginating as needed** — Calls the Brave Search API's `/res/v1/web/search` endpoint with the query and an `X-Subscription-Token` header. The API caps each request at 20 results (`MAX_RESULTS_PER_REQUEST`), so `--limit` values above that page across multiple requests using the `offset` parameter.
 3. **Strip highlighting markup** — Brave wraps matched terms in titles/descriptions with `<strong>` tags and HTML-escapes entities (e.g. `&quot;`); `strip_markup()` removes the tags and unescapes the entities before display.
 4. **Display top N** — Prints each result's rank, title, URL, and snippet.
@@ -2312,7 +2319,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 
 ### How it works
 
-1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `SERPAPI_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `SERPAPI_API_KEY` is read from the environment via `cli_utils.require_env()`. Missing means the script exits with an error before making any request.
 2. **Fetch, paginating as needed** — Calls SerpApi's `/search.json` endpoint with `engine=google` and the query. The engine caps each request at 100 organic results (`MAX_RESULTS_PER_REQUEST`), so `--limit` values above that page across multiple requests using the `start` parameter.
 3. **Check for an in-band error** — SerpApi reports failures (e.g. an invalid key or exhausted quota) as an HTTP 200 response with an `"error"` field rather than a non-2xx status, so `fetch_results()` checks for that explicitly and raises to trigger the normal error path. A query with no results normally just returns an empty `organic_results` list; as a safety net, an `"error"` field containing SerpApi's "no results" message (`"Google hasn't returned any results for this query."`, matched on `NO_RESULTS_MARKER`) is also treated as an empty result, so paging stops there instead of failing.
 4. **Display top N** — Prints each result's rank, title, URL, and snippet.
@@ -2426,7 +2433,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 
 ### How it works
 
-1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `SERPER_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `SERPER_API_KEY` is read from the environment via `cli_utils.require_env()`. Missing means the script exits with an error before making any request.
 2. **Fetch, paginating as needed** — POSTs to Serper's `/search` endpoint with the query as a JSON body. The engine caps each page at 100 organic results (`MAX_RESULTS_PER_REQUEST`), so `--limit` values above that page across multiple requests using the `page` parameter.
 3. **Check for an in-band error** — Serper reports some failures (e.g. an invalid key) as an HTTP 200 (well, sometimes non-2xx) response carrying a `"message"` field instead of `"organic"` results, so `fetch_results()` checks for that explicitly and raises to trigger the normal error path; an actual non-2xx status (e.g. `403` for an unauthorized key) is raised by `raise_for_status()` beforehand.
 4. **Display top N** — Prints each result's rank, title, URL, and snippet.
@@ -2536,7 +2543,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 
 ### How it works
 
-1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `TAVILY_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `TAVILY_API_KEY` is read from the environment via `cli_utils.require_env()`. Missing means the script exits with an error before making any request.
 2. **Fetch in a single request** — POSTs to Tavily's `/search` endpoint with the API key, query, `search_depth: "basic"`, and `max_results` set to `min(--limit, MAX_RESULTS_PER_REQUEST)`. Tavily's API has no offset/page parameter, so `--limit` values above `MAX_RESULTS_PER_REQUEST` (20) are silently capped rather than paginated.
 3. **Display top N** — Prints each result's rank, title, URL, and content excerpt (Tavily's own relevance-ranked snippet).
 
@@ -2646,7 +2653,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 
 ### How it works
 
-1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `EXA_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `EXA_API_KEY` is read from the environment via `cli_utils.require_env()`. Missing means the script exits with an error before making any request.
 2. **Fetch in a single request** — POSTs to Exa's `/search` endpoint (`x-api-key` header) with `numResults` set to `min(--limit, MAX_RESULTS_PER_REQUEST)` and `contents.text.maxCharacters` set to `SNIPPET_MAX_CHARACTERS`, so Exa truncates each result's full page text into a snippet-sized excerpt server-side. Exa's API has no offset/page parameter, so `--limit` values above `MAX_RESULTS_PER_REQUEST` (100) are silently capped rather than paginated.
 3. **Display top N** — Prints each result's rank, title, URL, and truncated text excerpt.
 
@@ -2760,7 +2767,7 @@ With `--json`, the leading progress line is suppressed and the result prints as 
 
 ### How it works
 
-1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `PERPLEXITY_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
+1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `PERPLEXITY_API_KEY` is read from the environment via `cli_utils.require_env()`. Missing means the script exits with an error before making any request.
 2. **Ask the model** — POSTs to Perplexity's OpenAI-compatible `/chat/completions` endpoint with the query as a single user message and the chosen `--model`. Sonar performs its own web search server-side as part of answering.
 3. **Extract the answer and its sources** — The synthesized answer comes from `choices[0].message.content`; the sources it cited come from the response's `search_results` array (`title`, `url`, `date`). A response with no `choices` at all, or with an empty answer, is treated as a failure and raised as an error, since there's no answer to show.
 4. **Trim and display** — The sources list is trimmed to `--limit` locally (Perplexity has no request-time parameter to ask for fewer citations), then the answer and numbered source list are printed (or the equivalent `{answer, sources}` JSON object with `--json`).
@@ -3335,7 +3342,7 @@ pip install -r requirements-dev.txt
 python3 -m pytest
 ```
 
-Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing, `cli_utils.py`), each script's argument parser and output formatters, `stock_intrinsic_value.py`'s Yahoo cookie/crumb handshake, and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
+Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing and window flags, `cli_utils.py`), each script's argument parser and output formatters, the Yahoo cookie/crumb handshake (`yahoo_finance.py`, `market_top_volume.py`, `stock_intrinsic_value.py`), and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
 
 [`tests/README.md`](tests/README.md) documents the layout, the `FakeResponse` / `FakeSession` doubles and `chart_result` fixture, the monkeypatching conventions, a per-module coverage table, and how to add a test.
 
@@ -3352,6 +3359,7 @@ Small helpers shared by the command-line scripts: uniform error exits, URL-schem
 ### API reference
 
 - `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
+- `require_env(name, script, as_json=False)` — Returns environment variable `name`, or calls `die()` (status code 1) with `"<name> environment variable must be set. See the module docstring in <script> for how to obtain one."` if it is unset or empty. Used by the six `web_search_*.py` scripts that need an API key, each calling `load_dotenv()` first so a `.env` value counts.
 - `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the three `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`), which all take a URL positional and reject a bare domain/path before making any request.
 - `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
 - `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).

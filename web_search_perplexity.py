@@ -30,11 +30,10 @@ readable report.
 
 import argparse
 import json
-import os
 
 import requests
 
-from cli_utils import die, load_dotenv, positive_int
+from cli_utils import die, load_dotenv, positive_int, require_env
 
 SEARCH_URL = "https://api.perplexity.ai/chat/completions"
 # Sonar answers take noticeably longer than a plain search-results
@@ -125,13 +124,7 @@ def main(argv=None):
     args = parse_args(argv)
 
     load_dotenv()
-    api_key = os.environ.get("PERPLEXITY_API_KEY")
-    if not api_key:
-        die(
-            "PERPLEXITY_API_KEY environment variable must be set. "
-            "See the module docstring in web_search_perplexity.py for how to obtain one.",
-            args.json,
-        )
+    api_key = require_env("PERPLEXITY_API_KEY", "web_search_perplexity.py", args.json)
 
     if not args.json:
         print(f"Asking: {args.query}\n")

@@ -44,8 +44,6 @@ QUOTE_SUMMARY_HOSTS = [
     "https://query2.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
     "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
 ]
-COOKIE_URL = "https://fc.yahoo.com"
-CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
 MODULES = [
     "price",
     "summaryDetail",
@@ -68,31 +66,9 @@ GRAHAM_PE_CAP = 40.0         # keep 8.5 + 2g sane for high growth assumptions
 # --------------------------------------------------------------------------- #
 # Fetch                                                                        #
 # --------------------------------------------------------------------------- #
-def _crumb_session():
-    """A requests.Session carrying Yahoo's consent cookie, plus its crumb."""
-    session = requests.Session()
-    session.headers.update(yf.HEADERS)
-    for url in (COOKIE_URL, "https://finance.yahoo.com"):
-        try:
-            session.get(url, timeout=yf.REQUEST_TIMEOUT)
-        except requests.RequestException:
-            continue
-        else:
-            break
-    crumb = None
-    try:
-        resp = session.get(CRUMB_URL, timeout=yf.REQUEST_TIMEOUT)
-        text = resp.text.strip()
-        if resp.ok and text and "<" not in text and len(text) < 64:
-            crumb = text
-    except requests.RequestException:
-        pass
-    return session, crumb
-
-
 def fetch_fundamentals(symbol):
     """Return the ``quoteSummary`` module dict for ``symbol`` (raises on failure)."""
-    session, crumb = _crumb_session()
+    session, crumb = yf.crumb_session()
     params = {"modules": ",".join(MODULES), "formatted": "false"}
     attempts = [(host, True) for host in QUOTE_SUMMARY_HOSTS]
     attempts += [(host, False) for host in QUOTE_SUMMARY_HOSTS]

@@ -6,7 +6,7 @@
 - Use the Perplexity Sonar API.
 - Read PERPLEXITY_API_KEY from the environment, or from a .env file at the repo root via cli_utils.load_dotenv() (a real environment variable wins).
     - If the key is missing, fail before making any request.
-- Use cli_utils.py's load_dotenv().
+- Use cli_utils.py's load_dotenv() and require_env().
 
 ## Actions
 

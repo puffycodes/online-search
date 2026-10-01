@@ -14,13 +14,12 @@ prints {"error": "..."} to stderr.
 """
 
 import argparse
-import datetime as dt
 import json
 
 import requests
 
 import yahoo_finance as yf
-from cli_utils import die, positive_int
+from cli_utils import die
 
 DEFAULT_RANGE = "1mo"
 
@@ -46,7 +45,7 @@ def extract_rows(result):
         if close is None:
             # In-progress session or a data gap - not a settled close.
             continue
-        date = dt.datetime.fromtimestamp(ts + gmtoffset, dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d")
+        date = yf.session_datetime(ts, gmtoffset).strftime("%Y-%m-%d")
         volume = volumes[i] if i < len(volumes) else None
         rows.append(
             {
@@ -70,21 +69,7 @@ def parse_args(argv=None):
         "symbol",
         help="Ticker in Yahoo notation, e.g. AAPL, VOD.L, D05.SI, SAP.DE",
     )
-    window = parser.add_mutually_exclusive_group()
-    window.add_argument(
-        "--range",
-        choices=yf.VALID_RANGES,
-        default=DEFAULT_RANGE,
-        help=f"Look-back window (default: {DEFAULT_RANGE})",
-    )
-    window.add_argument(
-        "--last",
-        type=positive_int,
-        metavar="N",
-        help="Return only the most recent N trading sessions",
-    )
-    parser.add_argument("--start", help="Start date YYYY-MM-DD (with optional --end)")
-    parser.add_argument("--end", help="End date YYYY-MM-DD (defaults to today)")
+    yf.add_window_args(parser, DEFAULT_RANGE, "Return only the most recent N trading sessions")
     parser.add_argument(
         "--json",
         action="store_true",

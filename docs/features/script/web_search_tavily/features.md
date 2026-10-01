@@ -6,7 +6,7 @@
 - Use the Tavily Search API.
 - Read TAVILY_API_KEY from the environment, or from a .env file at the repo root via cli_utils.load_dotenv() (a real environment variable wins).
     - If the key is missing, fail before making any request.
-- Use cli_utils.py's load_dotenv(), format_result() and print_results().
+- Use cli_utils.py's load_dotenv(), require_env(), format_result() and print_results().
 
 ## Actions
 

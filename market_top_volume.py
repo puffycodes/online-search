@@ -22,11 +22,9 @@ import json
 
 import requests
 
+import yahoo_finance as yf
 from cli_utils import die, positive_int
 
-# Yahoo rejects requests without a browser-like User-Agent.
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-REQUEST_TIMEOUT = 15
 DEFAULT_LIMIT = 10
 DEFAULT_MARKET = "us"
 DEFAULT_METRIC = "volume"
@@ -38,8 +36,6 @@ PREDEFINED_URL = (
     "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
 )
 SCREENER_URL = "https://query1.finance.yahoo.com/v1/finance/screener"
-CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
-COOKIE_URL = "https://fc.yahoo.com"
 
 # metric -> how to ask each screener for it
 #   scr_id:     predefined screener id (US markets)
@@ -115,7 +111,7 @@ MARKETS = {
 
 def _session():
     session = requests.Session()
-    session.headers.update(HEADERS)
+    session.headers.update(yf.HEADERS)
     return session
 
 
@@ -127,17 +123,15 @@ def fetch_predefined_quotes(session, scr_id):
         "scrIds": scr_id,
         "count": 250,
     }
-    response = session.get(PREDEFINED_URL, params=params, timeout=REQUEST_TIMEOUT)
+    response = session.get(PREDEFINED_URL, params=params, timeout=yf.REQUEST_TIMEOUT)
     response.raise_for_status()
     return response.json()["finance"]["result"][0]["quotes"]
 
 
 def fetch_region_quotes(session, region, sort_field, sort_type, min_volume=None):
-    # A crumb is required for the generic screener; it is tied to the
-    # cookies set by the first request.
-    session.get(COOKIE_URL, timeout=REQUEST_TIMEOUT)
-    crumb = session.get(CRUMB_URL, timeout=REQUEST_TIMEOUT).text.strip()
-    if not crumb or "<html" in crumb.lower():
+    # The generic screener needs a crumb tied to this session's cookies.
+    crumb = yf.fetch_crumb(session)
+    if not crumb:
         raise requests.RequestException("could not obtain a Yahoo Finance crumb")
 
     operands = [{"operator": "EQ", "operands": ["region", region]}]
@@ -158,7 +152,7 @@ def fetch_region_quotes(session, region, sort_field, sort_type, min_volume=None)
         SCREENER_URL,
         params={"crumb": crumb},
         json=body,
-        timeout=REQUEST_TIMEOUT,
+        timeout=yf.REQUEST_TIMEOUT,
     )
     response.raise_for_status()
     payload = response.json()

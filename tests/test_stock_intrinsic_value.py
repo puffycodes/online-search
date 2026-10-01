@@ -281,7 +281,7 @@ class TestFetchFundamentals:
         self._patch_session(monkeypatch, session)
         assert siv.fetch_fundamentals("AAA") == _modules()
         urls = [call[0] for call in session.get_calls]
-        assert urls[:2] == [siv.COOKIE_URL, siv.CRUMB_URL]
+        assert urls[:2] == [siv.yf.COOKIE_URLS[0], siv.yf.CRUMB_URL]
         assert urls[2] == siv.QUOTE_SUMMARY_HOSTS[0].format(symbol="AAA")
         params = session.get_calls[2][1]["params"]
         assert params["crumb"] == "crumb123"

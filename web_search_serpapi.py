@@ -22,11 +22,10 @@ readable report.
 """
 
 import argparse
-import os
 
 import requests
 
-from cli_utils import die, load_dotenv, positive_int, print_results
+from cli_utils import die, load_dotenv, positive_int, print_results, require_env
 
 SEARCH_URL = "https://serpapi.com/search.json"
 REQUEST_TIMEOUT = 10
@@ -107,13 +106,7 @@ def main(argv=None):
     args = parse_args(argv)
 
     load_dotenv()
-    api_key = os.environ.get("SERPAPI_API_KEY")
-    if not api_key:
-        die(
-            "SERPAPI_API_KEY environment variable must be set. "
-            "See the module docstring in web_search_serpapi.py for how to obtain one.",
-            args.json,
-        )
+    api_key = require_env("SERPAPI_API_KEY", "web_search_serpapi.py", args.json)
 
     if not args.json:
         print(f"Searching for: {args.query}\n")

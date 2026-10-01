@@ -5,6 +5,7 @@
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use Yahoo Finance's screener endpoints (unofficial; no API key).
     - US markets use the keyless predefined screeners; other markets use the generic screener, which needs a cookie and crumb.
+- Use yahoo_finance.py's HEADERS, REQUEST_TIMEOUT and fetch_crumb().
 - Keep get_movers() importable, for stock_tech_buzz_agent.py.
 
 ## Actions

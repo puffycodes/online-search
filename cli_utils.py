@@ -84,6 +84,23 @@ def die(message, as_json=False):
     sys.exit(1)
 
 
+def require_env(name, script, as_json=False):
+    """Return the environment variable ``name``, or exit via ``die()`` if unset.
+
+    Used for the web-search API keys; call ``load_dotenv()`` first so a key in
+    ``.env`` counts. ``script`` names the file whose docstring explains how to
+    obtain the key.
+    """
+    value = os.environ.get(name)
+    if not value:
+        die(
+            f"{name} environment variable must be set. "
+            f"See the module docstring in {script} for how to obtain one.",
+            as_json,
+        )
+    return value
+
+
 def validate_url_scheme(url, as_json=False):
     """Exit via ``die()`` unless ``url`` starts with ``http://`` or ``https://``.
 

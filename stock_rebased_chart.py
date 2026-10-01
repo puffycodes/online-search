@@ -23,13 +23,12 @@ On failure the process exits non-zero and prints an error to stderr.
 """
 
 import argparse
-import datetime as dt
 import sys
 
 import requests
 
 import yahoo_finance as yf
-from cli_utils import die, positive_int
+from cli_utils import die
 from indicators import rebase
 
 DEFAULT_RANGE = "6mo"
@@ -52,7 +51,7 @@ def fetch_closes(symbol, params):
         if close is None:
             # In-progress session or a data gap - not a settled close.
             continue
-        date = dt.datetime.fromtimestamp(ts + gmtoffset, dt.timezone.utc).replace(tzinfo=None).date()
+        date = yf.session_datetime(ts, gmtoffset).date()
         rows.append((date, close))
     return meta, rows
 
@@ -98,21 +97,7 @@ def parse_args(argv=None):
         nargs="+",
         help="Tickers in Yahoo notation, e.g. AAPL VOD.L D05.SI SAP.DE",
     )
-    window = parser.add_mutually_exclusive_group()
-    window.add_argument(
-        "--range",
-        choices=yf.VALID_RANGES,
-        default=DEFAULT_RANGE,
-        help=f"Look-back window (default: {DEFAULT_RANGE})",
-    )
-    window.add_argument(
-        "--last",
-        type=positive_int,
-        metavar="N",
-        help="Fetch only the most recent N sessions",
-    )
-    parser.add_argument("--start", help="Start date YYYY-MM-DD (with optional --end)")
-    parser.add_argument("--end", help="End date YYYY-MM-DD (defaults to today)")
+    yf.add_window_args(parser, DEFAULT_RANGE, "Fetch only the most recent N sessions")
     parser.add_argument(
         "--base-date",
         help="Reference date YYYY-MM-DD that each series is rebased to read "

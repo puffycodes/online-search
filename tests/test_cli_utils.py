@@ -1,5 +1,6 @@
 """Tests for cli_utils: dotenv loading, result formatting/printing, the
-die() error-exit helper, and the positive_int argparse type."""
+die() error-exit helper, require_env, URL-scheme validation, and the
+positive_int argparse type."""
 
 import argparse
 import json
@@ -13,6 +14,7 @@ from cli_utils import (
     load_dotenv,
     positive_int,
     print_results,
+    require_env,
     validate_url_scheme,
 )
 
@@ -85,6 +87,32 @@ class TestPositiveInt:
     def test_rejects_non_integer(self, raw):
         with pytest.raises(argparse.ArgumentTypeError, match="expected an integer"):
             positive_int(raw)
+
+
+class TestRequireEnv:
+    def test_returns_value_when_set(self, monkeypatch):
+        monkeypatch.setenv("CLI_UTILS_TEST_KEY", "abc")
+        assert require_env("CLI_UTILS_TEST_KEY", "x.py") == "abc"
+
+    @pytest.mark.parametrize("value", [None, ""])
+    def test_missing_or_empty_exits_1_plain(self, monkeypatch, capsys, value):
+        if value is None:
+            monkeypatch.delenv("CLI_UTILS_TEST_KEY", raising=False)
+        else:
+            monkeypatch.setenv("CLI_UTILS_TEST_KEY", value)
+        with pytest.raises(SystemExit) as exc:
+            require_env("CLI_UTILS_TEST_KEY", "web_search_x.py")
+        assert exc.value.code == 1
+        assert capsys.readouterr().err.strip() == (
+            "Error: CLI_UTILS_TEST_KEY environment variable must be set. "
+            "See the module docstring in web_search_x.py for how to obtain one."
+        )
+
+    def test_missing_exits_1_json(self, monkeypatch, capsys):
+        monkeypatch.delenv("CLI_UTILS_TEST_KEY", raising=False)
+        with pytest.raises(SystemExit):
+            require_env("CLI_UTILS_TEST_KEY", "web_search_x.py", as_json=True)
+        assert "CLI_UTILS_TEST_KEY" in json.loads(capsys.readouterr().err)["error"]
 
 
 class TestValidateUrlScheme:

@@ -27,7 +27,6 @@ Usage:
 """
 
 import argparse
-import datetime as dt
 import json
 import re
 import sys
@@ -548,10 +547,6 @@ def normalize_symbol(value):
     return symbol
 
 
-def _local_time(timestamp, gmtoffset):
-    return dt.datetime.fromtimestamp(timestamp + gmtoffset, dt.timezone.utc).replace(tzinfo=None)
-
-
 def get_stock_info(symbol):
     """Fetch the quote summary for ``symbol`` from Yahoo's chart endpoint.
 
@@ -581,7 +576,7 @@ def get_stock_info(symbol):
     high = meta.get("regularMarketDayHigh")
     low = meta.get("regularMarketDayLow")
     if market_time and high is not None and low is not None:
-        session_date = _local_time(market_time, gmtoffset).strftime("%Y-%m-%d")
+        session_date = yf.session_datetime(market_time, gmtoffset).strftime("%Y-%m-%d")
     else:
         session_date = latest.get("date")
         high = latest.get("high")
@@ -599,7 +594,7 @@ def get_stock_info(symbol):
 
     price_time = None
     if market_time:
-        price_time = _local_time(market_time, gmtoffset).strftime("%Y-%m-%d %H:%M")
+        price_time = yf.session_datetime(market_time, gmtoffset).strftime("%Y-%m-%d %H:%M")
         if meta.get("timezone"):
             price_time += " " + meta["timezone"]
 

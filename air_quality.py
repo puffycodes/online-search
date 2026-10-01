@@ -25,7 +25,7 @@ import json
 import requests
 
 from cli_utils import die
-from weather import fetch_json, format_place, geocode
+from weather import fetch_json, format_place, geocode, place_fields
 
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
@@ -86,11 +86,7 @@ def get_air_quality(location):
     us_aqi = current.get("us_aqi")
 
     return {
-        "location": place.get("name"),
-        "admin1": place.get("admin1"),
-        "country": place.get("country"),
-        "latitude": place.get("latitude"),
-        "longitude": place.get("longitude"),
+        **place_fields(place),
         "us_aqi": us_aqi,
         "us_aqi_category": us_aqi_category(us_aqi),
         "european_aqi": current.get("european_aqi"),

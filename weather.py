@@ -80,6 +80,20 @@ def fetch_current_weather(latitude, longitude, unit="celsius"):
     return data.get("current_weather") or {}
 
 
+def place_fields(place):
+    """The location fields every record built from a geocode() match starts
+    with: location, admin1, country, latitude, longitude. Shared by
+    get_weather() here, get_forecast() in weather_forecast.py and
+    get_air_quality() in air_quality.py."""
+    return {
+        "location": place.get("name"),
+        "admin1": place.get("admin1"),
+        "country": place.get("country"),
+        "latitude": place.get("latitude"),
+        "longitude": place.get("longitude"),
+    }
+
+
 def weather_description(code):
     return WEATHER_CODES.get(code, f"Unknown (code {code})")
 
@@ -94,11 +108,7 @@ def get_weather(location, unit="celsius"):
     current = fetch_current_weather(place["latitude"], place["longitude"], unit=unit)
 
     return {
-        "location": place.get("name"),
-        "admin1": place.get("admin1"),
-        "country": place.get("country"),
-        "latitude": place.get("latitude"),
-        "longitude": place.get("longitude"),
+        **place_fields(place),
         "temperature": current.get("temperature"),
         "unit": "°C" if unit == "celsius" else "°F",
         "windspeed": current.get("windspeed"),

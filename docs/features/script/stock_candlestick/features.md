@@ -4,7 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use Yahoo Finance's chart endpoint (unofficial; no API key).
-- Use yahoo_finance.py's build_params(), fetch_history(), extract_series() and meta_summary().
+- Use yahoo_finance.py's add_window_args(), build_params(), fetch_history(), extract_series(), session_datetime() and meta_summary().
 - Use indicators.py's moving_average() and moving-average crossover functions.
 - Use matplotlib to draw the chart.
 

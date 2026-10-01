@@ -1,12 +1,14 @@
-"""Tests for yahoo_finance: parse_date, build_params, meta_summary, extract_series, fetch_history."""
+"""Tests for yahoo_finance: parse_date, window args, session dates, crumb handshake, build_params,
+meta_summary, extract_series, fetch_history."""
 
+import argparse
 import datetime as dt
 
 import pytest
 import requests
 
 import yahoo_finance as yf
-from helpers import FakeResponse
+from helpers import FakeResponse, FakeSession
 
 
 class TestParseDate:
@@ -19,6 +21,96 @@ class TestParseDate:
     def test_invalid_raises_valueerror(self, bad):
         with pytest.raises(ValueError, match="invalid date"):
             yf.parse_date(bad)
+
+
+class TestAddWindowArgs:
+    def _parser(self):
+        parser = argparse.ArgumentParser()
+        yf.add_window_args(parser, "6mo", "only the last N")
+        return parser
+
+    def test_defaults(self):
+        args = self._parser().parse_args([])
+        assert (args.range, args.last, args.start, args.end) == ("6mo", None, None, None)
+
+    def test_start_end_and_last_parse(self):
+        args = self._parser().parse_args(["--last", "5", "--start", "2024-01-01", "--end", "2024-02-01"])
+        assert (args.last, args.start, args.end) == (5, "2024-01-01", "2024-02-01")
+
+    @pytest.mark.parametrize("argv", [
+        ["--range", "1mo", "--last", "5"],   # mutually exclusive
+        ["--range", "7d"],                   # not a Yahoo range
+        ["--last", "0"],                     # positive_int
+    ])
+    def test_rejects_exit_2(self, argv):
+        with pytest.raises(SystemExit) as exc:
+            self._parser().parse_args(argv)
+        assert exc.value.code == 2
+
+
+class TestSessionDatetime:
+    def test_applies_gmtoffset_and_is_naive(self):
+        # 2024-01-02 23:30 UTC is already 2024-01-03 at UTC+8.
+        ts = int(dt.datetime(2024, 1, 2, 23, 30, tzinfo=dt.timezone.utc).timestamp())
+        result = yf.session_datetime(ts, 8 * 3600)
+        assert result == dt.datetime(2024, 1, 3, 7, 30)
+        assert result.tzinfo is None
+
+    def test_negative_offset_moves_date_back(self):
+        ts = int(dt.datetime(2024, 1, 3, 2, 0, tzinfo=dt.timezone.utc).timestamp())
+        assert yf.session_datetime(ts, -5 * 3600).date() == dt.date(2024, 1, 2)
+
+
+class _RaisingFirstGetSession(FakeSession):
+    """FakeSession whose first ``n`` GETs raise a connection error."""
+
+    def __init__(self, n, **kwargs):
+        super().__init__(**kwargs)
+        self._fail = n
+
+    def get(self, url, **kwargs):
+        if self._fail:
+            self._fail -= 1
+            self.get_calls.append((url, kwargs))
+            raise requests.ConnectionError("down")
+        return super().get(url, **kwargs)
+
+
+class TestFetchCrumb:
+    def test_cookie_then_crumb(self):
+        session = FakeSession(get_responses=[FakeResponse(text="ok"), FakeResponse(text=" crumb123\t")])
+        assert yf.fetch_crumb(session) == "crumb123"
+        assert [c[0] for c in session.get_calls] == [yf.COOKIE_URLS[0], yf.CRUMB_URL]
+        assert all(c[1]["timeout"] == yf.REQUEST_TIMEOUT for c in session.get_calls)
+
+    def test_falls_back_to_next_cookie_page(self):
+        session = _RaisingFirstGetSession(
+            1, get_responses=[FakeResponse(text="ok"), FakeResponse(text="crumb123")]
+        )
+        assert yf.fetch_crumb(session) == "crumb123"
+        assert [c[0] for c in session.get_calls] == [*yf.COOKIE_URLS, yf.CRUMB_URL]
+
+    def test_crumb_request_error_returns_none(self):
+        session = _RaisingFirstGetSession(len(yf.COOKIE_URLS) + 1)
+        assert yf.fetch_crumb(session) is None
+
+    @pytest.mark.parametrize("crumb_response", [
+        FakeResponse(text="<html>consent</html>"),
+        FakeResponse(text="   "),
+        FakeResponse(text="x" * 64),
+        FakeResponse(text="crumb123", status_code=401),
+    ])
+    def test_unusable_crumb_returns_none(self, crumb_response):
+        session = FakeSession(get_responses=[FakeResponse(text="ok"), crumb_response])
+        assert yf.fetch_crumb(session) is None
+
+
+class TestCrumbSession:
+    def test_session_has_headers_and_crumb(self, monkeypatch):
+        session = FakeSession(get_responses=[FakeResponse(text="ok"), FakeResponse(text="crumb123")])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        assert yf.crumb_session() == (session, "crumb123")
+        assert session.headers == yf.HEADERS
 
 
 class TestBuildParams:

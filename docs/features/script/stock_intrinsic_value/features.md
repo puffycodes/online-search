@@ -4,6 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use Yahoo Finance's quoteSummary endpoint (unofficial; needs a cookie and crumb, no API key).
+- Use yahoo_finance.py's crumb_session() for the cookie and crumb.
 - Use every valuation method in valuation.py.
 - Keep fetch_fundamentals(), collect_inputs(), resolve_assumptions(), compute_estimates() and build_json() importable, for the stock information web app.
 

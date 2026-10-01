@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 """
-Shared helpers for pulling price history from Yahoo Finance's public chart
-endpoint. No API key or authentication required.
+Shared helpers for Yahoo Finance's public endpoints. No API key required.
 
 Used by stock_close_history.py, stock_candlestick.py and stock_rebased_chart.py
-for price history, by stock_intrinsic_value.py for its request headers and
-timeout, and by app/stock_information/stock_info_server.py for its quote. Each
-caller keeps its own row shaping (rounding, date formatting, which rows to drop)
-and its own output stage; everything up to and including the HTTP call and the
+for price history (the chart endpoint, the --range/--last/--start/--end window
+flags, and exchange-local session dates), by market_top_volume.py and
+stock_intrinsic_value.py for the cookie + crumb handshake their endpoints need,
+and by app/stock_information/stock_info_server.py for its quote. Each caller
+keeps its own row shaping (rounding, date formatting, which rows to drop) and
+its own output stage; everything up to and including the HTTP call and the
 raw-payload navigation lives here.
 """
 
 import datetime as dt
 
 import requests
+
+from cli_utils import positive_int
 
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 # Yahoo rejects requests without a browser-like User-Agent.
@@ -25,12 +28,77 @@ VALID_RANGES = [
 ]
 SECONDS_PER_DAY = 86400
 
+# Cookie + crumb handshake for the endpoints that need it (the generic
+# screener and quoteSummary). The cookie pages are tried in order until one
+# answers; the crumb is tied to the cookies that request set.
+COOKIE_URLS = ("https://fc.yahoo.com", "https://finance.yahoo.com")
+CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
+
 
 def parse_date(value):
     try:
         return dt.datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
     except ValueError:
         raise ValueError(f"invalid date {value!r}, expected YYYY-MM-DD")
+
+
+def add_window_args(parser, default_range, last_help):
+    """Add the shared time-window flags to an argparse ``parser``.
+
+    ``--range`` and ``--last`` are mutually exclusive; ``--start`` / ``--end``
+    sit outside the group and take priority in build_params().
+    """
+    window = parser.add_mutually_exclusive_group()
+    window.add_argument(
+        "--range",
+        choices=VALID_RANGES,
+        default=default_range,
+        help=f"Look-back window (default: {default_range})",
+    )
+    window.add_argument(
+        "--last",
+        type=positive_int,
+        metavar="N",
+        help=last_help,
+    )
+    parser.add_argument("--start", help="Start date YYYY-MM-DD (with optional --end)")
+    parser.add_argument("--end", help="End date YYYY-MM-DD (defaults to today)")
+
+
+def session_datetime(timestamp, gmtoffset):
+    """A Yahoo UTC epoch ``timestamp`` as a naive datetime in exchange-local
+    time, so its date is the exchange's own trading day."""
+    return dt.datetime.fromtimestamp(timestamp + gmtoffset, dt.timezone.utc).replace(tzinfo=None)
+
+
+def fetch_crumb(session):
+    """Pick up Yahoo's consent cookie on ``session`` and return its crumb.
+
+    Returns ``None`` when no usable crumb comes back (an error page, an HTML
+    consent wall, or an empty body); callers decide whether that is fatal.
+    """
+    for url in COOKIE_URLS:
+        try:
+            session.get(url, timeout=REQUEST_TIMEOUT)
+        except requests.RequestException:
+            continue
+        else:
+            break
+    try:
+        resp = session.get(CRUMB_URL, timeout=REQUEST_TIMEOUT)
+    except requests.RequestException:
+        return None
+    text = resp.text.strip()
+    if resp.ok and text and "<" not in text and len(text) < 64:
+        return text
+    return None
+
+
+def crumb_session():
+    """A ``requests.Session`` with the browser-like HEADERS, plus its crumb (or None)."""
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    return session, fetch_crumb(session)
 
 
 def build_params(interval="1d", range_=None, start=None, end=None, last=None):
