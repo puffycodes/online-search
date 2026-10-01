@@ -118,7 +118,7 @@ def extract_rows(result):
         if None in (o, h, low, c):
             # In-progress bar or a data gap - skip it.
             continue
-        date = dt.datetime.utcfromtimestamp(ts + gmtoffset)
+        date = dt.datetime.fromtimestamp(ts + gmtoffset, dt.timezone.utc).replace(tzinfo=None)
         volume = volumes[i] if i < len(volumes) else None
         rows.append(
             {

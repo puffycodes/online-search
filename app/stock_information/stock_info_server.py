@@ -549,7 +549,7 @@ def normalize_symbol(value):
 
 
 def _local_time(timestamp, gmtoffset):
-    return dt.datetime.utcfromtimestamp(timestamp + gmtoffset)
+    return dt.datetime.fromtimestamp(timestamp + gmtoffset, dt.timezone.utc).replace(tzinfo=None)
 
 
 def get_stock_info(symbol):

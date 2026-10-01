@@ -3,9 +3,11 @@
 Shared helpers for pulling price history from Yahoo Finance's public chart
 endpoint. No API key or authentication required.
 
-Used by stock_close_history.py and stock_candlestick.py. Each of those scripts
-keeps its own row shaping (rounding, date formatting, which rows to drop) and
-its own output stage; everything up to and including the HTTP call and the
+Used by stock_close_history.py, stock_candlestick.py and stock_rebased_chart.py
+for price history, by stock_intrinsic_value.py for its request headers and
+timeout, and by app/stock_information/stock_info_server.py for its quote. Each
+caller keeps its own row shaping (rounding, date formatting, which rows to drop)
+and its own output stage; everything up to and including the HTTP call and the
 raw-payload navigation lives here.
 """
 

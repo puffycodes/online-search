@@ -22,7 +22,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
-- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for three of the `stock_*` scripts: Yahoo Finance chart-endpoint fetch + payload parsing
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing, used by the three price scripts, `stock_intrinsic_value.py` (headers/timeout) and `app/stock_information/`
 - [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py` and `stock_intrinsic_value.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
@@ -57,7 +57,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/url-summary.md`](#claude-code-agent-url-summary) — Claude Code subagent that calls `url_content.py` once per given URL and reports a summary of each page's content
 
 **[Development](#development)**
-- [`tests/`](tests/) — offline `pytest` suite for the scripts, helper modules and web apps (`stock_intrinsic_value.py` has no test module of its own; its pipeline is exercised through the stock-information app's tests — see [`tests/README.md`](tests/README.md))
+- [`tests/`](tests/) — offline `pytest` suite for every script, helper module and web app (see [`tests/README.md`](tests/README.md))
 - [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `validate_url_scheme()` for the `url_*.py` scripts, `positive_int` argparse type, `.env` loading, result-list formatting/printing) imported by the command-line scripts
 
 ---
@@ -1231,7 +1231,7 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`stock_candlestick.py`](#stock_candlestickpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy). It holds everything those scripts had in common — the Yahoo Finance chart-endpoint constants, the query-window builder, the HTTP call, and the raw-payload navigation. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`stock_candlestick.py`](#stock_candlestickpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) also borrows its `HEADERS` / `REQUEST_TIMEOUT`, and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance chart-endpoint constants, the query-window builder, the HTTP call, and the raw-payload navigation. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -3335,7 +3335,7 @@ pip install -r requirements-dev.txt
 python3 -m pytest
 ```
 
-Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing, `cli_utils.py`), each script's argument parser and output formatters, and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
+Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing, `cli_utils.py`), each script's argument parser and output formatters, `stock_intrinsic_value.py`'s Yahoo cookie/crumb handshake, and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
 
 [`tests/README.md`](tests/README.md) documents the layout, the `FakeResponse` / `FakeSession` doubles and `chart_result` fixture, the monkeypatching conventions, a per-module coverage table, and how to add a test.
 

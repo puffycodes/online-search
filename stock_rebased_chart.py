@@ -52,7 +52,7 @@ def fetch_closes(symbol, params):
         if close is None:
             # In-progress session or a data gap - not a settled close.
             continue
-        date = dt.datetime.utcfromtimestamp(ts + gmtoffset).date()
+        date = dt.datetime.fromtimestamp(ts + gmtoffset, dt.timezone.utc).replace(tzinfo=None).date()
         rows.append((date, close))
     return meta, rows
 
