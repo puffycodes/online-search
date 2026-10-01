@@ -34,9 +34,11 @@ REQUEST_TIMEOUT = 10
 RESULTS_TO_SHOW = 10
 # SerpApi's Google engine caps organic results at 100 per request.
 MAX_RESULTS_PER_REQUEST = 100
-# SerpApi reports a query with no results through the same "error" field it
-# uses for real failures, e.g. "Google hasn't returned any results for this
-# query."; that case is an empty result, not an error.
+# A query with no results normally comes back as an empty "organic_results"
+# list (verified live 2026-10-01). Some SerpApi responses instead put a
+# message like "Google hasn't returned any results for this query." in the
+# "error" field; as a safety net, that case is treated as an empty result
+# rather than a failure.
 NO_RESULTS_MARKER = "hasn't returned any results"
 
 
