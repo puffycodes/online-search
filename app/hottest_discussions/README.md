@@ -6,8 +6,9 @@ See [`docs/features.md`](docs/features.md) for the feature spec this app impleme
 
 ## Features
 
-- **Top discussions area** — the main card list on the page, populated by clicking Refresh. Each card shows rank, linked title, points, comment count, posted time (UTC) and a "discuss on HN" link.
+- **Top discussions area** — the main card list on the page, populated by clicking Refresh. Each card shows rank and title on the first line, the title linking to the discussed article (or to the HN thread for posts with no external link, such as Ask HN), then points, comment count, posted time (UTC) and a "discuss on HN" link.
 - **Refresh button** — calls `GET /api/discussions?limit=N` and renders the result in place.
+- **Fetched time** — after a refresh, the footer shows when the discussions were fetched (`Fetched YYYY-MM-DD HH:MM UTC`, from the API's `fetched_at`).
 - **"Show" drop-down** — how many discussions to retrieve: 10 (default), 25 or 50. Refresh reads it each time it's clicked.
 - **Empty on start** — the page shows no discussions until Refresh is clicked; loading the page makes no Hacker News call.
 - **`hottest_tech_discussions.py` as the source** — the ranking runs in that script, not in a copy of it, so the page and the CLI always agree.
