@@ -16,6 +16,7 @@
     - How many results to return (default: 10).
 - Retrieve the results, up to 100 per request, paging for more.
 - Treat an error field in the response body (e.g. an invalid key or quota used up) as a failure.
+    - Except SerpApi's "hasn't returned any results" message, which uses the same field: treat that as no (more) results.
 - Output, one entry per result:
     - {{Rank}} {{Title}}
     - {{URL}}

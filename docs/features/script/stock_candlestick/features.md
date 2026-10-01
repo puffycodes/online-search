@@ -16,9 +16,9 @@
     - The time window, one of:
         - A range: 5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y or max (default: 6mo).
         - The last N sessions (cannot be combined with a range).
-        - A start date, and optionally an end date (default: today). This overrides a range or last N.
+        - A start date, and optionally an end date (default: today). This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
     - The candle size: 1d (default), 1wk or 1mo.
-    - The image path to write (default: {{Symbol}}_candlestick.png), or open an interactive window instead.
+    - The image path to write (default: {{Symbol}}_candlestick.png, with any "." in the symbol replaced by "_", e.g. VOD_L_candlestick.png), or open an interactive window instead.
     - Whether to add a volume panel below the prices (default: no).
     - The moving averages to overlay (default: 5, 10, 20 and 50 bars; "none" for no averages).
     - The pair of moving averages whose crossovers are marked (default: 20 and 50; "none" for no markers).
@@ -29,7 +29,8 @@
     - {{Moving Averages}} as lines.
     - An up arrow below the bar where the fast average crosses above the slow one, and a down arrow above the bar where it crosses below.
     - {{Volume}} bars in their own panel, if asked for.
-    - A title with {{Symbol}} {{Exchange}} {{Currency}} {{Candle Size}}
+    - A title with {{Symbol}} {{Exchange}} {{Number of Bars}} {{Candle Size}} {{First Date}} → {{Last Date}}
+    - {{Currency}} in the price axis label.
 - Output: "Wrote {{Image Path}}".
 - An unknown ticker, or a window with no data, fails with an error.
 - On failure:

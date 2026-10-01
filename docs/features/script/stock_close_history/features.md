@@ -14,7 +14,7 @@
     - The time window, one of:
         - A range: 5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y or max (default: 1mo).
         - The last N sessions (cannot be combined with a range).
-        - A start date, and optionally an end date (default: today). This overrides a range or last N.
+        - A start date, and optionally an end date (default: today). This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
 - Retrieve the daily prices for the window.
     - Keep only settled sessions: skip any session with no close (in progress, or a data gap).
     - Date each session by the exchange's local trading day.

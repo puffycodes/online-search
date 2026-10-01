@@ -105,6 +105,21 @@ class TestFetchResults:
         with pytest.raises(requests.RequestException, match="Invalid API key."):
             wss.fetch_results("q", 1, "key")
 
+    def test_no_results_error_is_empty_result(self, monkeypatch):
+        response = FakeResponse(
+            json_data={"error": "Google hasn't returned any results for this query."}
+        )
+        monkeypatch.setattr(wss.requests, "get", lambda url, **kw: response)
+        assert wss.fetch_results("q", 5, "key") == []
+
+    def test_no_results_error_on_later_page_keeps_earlier_results(self, monkeypatch):
+        responses = iter([
+            FakeResponse(json_data={"organic_results": [{"title": str(i)} for i in range(100)]}),
+            FakeResponse(json_data={"error": "Google hasn't returned any results for this query."}),
+        ])
+        monkeypatch.setattr(wss.requests, "get", lambda url, **kw: next(responses))
+        assert len(wss.fetch_results("q", 150, "key")) == 100
+
 
 class TestResultToDict:
     def test_maps_link_and_joins_snippet_lines(self):

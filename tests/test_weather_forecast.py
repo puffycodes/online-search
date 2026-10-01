@@ -70,6 +70,18 @@ class TestFormatForecast:
         assert "Clear sky" in out
         assert "2024-01-01" in out
 
+    def test_shows_precipitation_amount_and_chance(self):
+        row = {
+            "location": "X", "admin1": None, "country": None, "unit": "°C",
+            "days": [
+                {"date": "2024-01-01", "condition": "Slight rain", "temp_max": 5, "temp_min": 1,
+                 "precipitation_sum": 3.4, "precipitation_probability_max": 72, "windspeed_max": 12},
+            ],
+        }
+        lines = wf.format_forecast(row).splitlines()
+        assert "Precip mm" in lines[2] and "Precip %" in lines[2]
+        assert "3.4" in lines[4] and "72" in lines[4]
+
 
 class TestMain:
     def test_request_error_exits(self, monkeypatch, capsys):

@@ -34,6 +34,10 @@ REQUEST_TIMEOUT = 10
 RESULTS_TO_SHOW = 10
 # SerpApi's Google engine caps organic results at 100 per request.
 MAX_RESULTS_PER_REQUEST = 100
+# SerpApi reports a query with no results through the same "error" field it
+# uses for real failures, e.g. "Google hasn't returned any results for this
+# query."; that case is an empty result, not an error.
+NO_RESULTS_MARKER = "hasn't returned any results"
 
 
 def fetch_results(query, limit, api_key):
@@ -55,6 +59,8 @@ def fetch_results(query, limit, api_key):
         # SerpApi reports failures (e.g. an invalid key) as a 200 response
         # with an "error" field rather than a non-2xx status.
         if "error" in payload:
+            if NO_RESULTS_MARKER in str(payload["error"]):
+                break
             raise requests.RequestException(payload["error"])
 
         items = payload.get("organic_results", [])

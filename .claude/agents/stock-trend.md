@@ -49,7 +49,7 @@ print(f"{d['symbol']}  {d['exchange']}  {d['currency']}")
 print(f"{len(closes)} sessions  {dates[0]} -> {dates[-1]}")
 print(f"overall trend : {trend(closes)}")
 print(f"last-20 trend  : {trend(closes, window=20) if len(closes) >= 20 else 'n/a'}")
-print(f"last-5 trend   : {trend(closes, window=5)}")
+print(f"last-5 trend   : {trend(closes, window=5) if len(closes) >= 5 else 'n/a'}")
 print(f"change over span : {span_pct:+.1f}%")
 for n in (5, 10, 20, 50):
     if len(closes) >= n:
@@ -62,7 +62,7 @@ PY
 
 `trend(prices, window=None)` fits a least-squares line through the closes and reports `"up"`, `"down"`, or `"flat"` (the fitted move across the span must clear ~1% of the mean price, otherwise it's called flat noise). `window=N` restricts it to the last N sessions. `moving_average(prices, n)` gives the n-session simple moving average; the last value is the current one. `price_vs_moving_average(prices, n)` reports `"above"` / `"below"` / `"equal"` per session — its last value says whether the latest close is above or below that SMA.
 
-- If you fetched with `--last N` or a `--start/--end` span instead of `--range`, drop the `last-20` / `last-5` sub-windows if the series is short, and adjust the moving-average list to what the length supports.
+- If you fetched with `--last N` or a `--start/--end` span instead of `--range`, the series may be short: the snippet prints `n/a` for a `last-20` / `last-5` sub-window longer than the series (leave those out of the report), and adjust the moving-average list to what the length supports.
 
 ## Step 3 — report
 

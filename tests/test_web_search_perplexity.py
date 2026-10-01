@@ -92,6 +92,13 @@ class TestFetchAnswer:
         with pytest.raises(requests.RequestException, match="no answer"):
             wsp.fetch_answer("q", "key")
 
+    @pytest.mark.parametrize("content", ["", "   ", None])
+    def test_empty_answer_raises(self, monkeypatch, content):
+        response = FakeResponse(json_data={"choices": [{"message": {"content": content}}]})
+        monkeypatch.setattr(wsp.requests, "post", lambda url, **kw: response)
+        with pytest.raises(requests.RequestException, match="no answer"):
+            wsp.fetch_answer("q", "key")
+
     def test_missing_choices_key_raises(self, monkeypatch):
         response = FakeResponse(json_data={})
         monkeypatch.setattr(wsp.requests, "post", lambda url, **kw: response)

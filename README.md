@@ -243,13 +243,13 @@ Looking up the 5-day forecast for 'Tokyo'...
 
 5-day forecast for Tokyo, Japan
 
-Date        Condition                    High °C    Low °C  Precip %  Wind km/h
--------------------------------------------------------------------------------
-2026-09-08  Heavy rain                      28.5      22.4        88        9.4
-2026-09-09  Heavy rain                      30.6      18.8        96       11.1
-2026-09-10  Moderate rain                   22.2      18.6        86        5.8
-2026-09-11  Moderate rain                   22.3      18.3        65        5.9
-2026-09-12  Dense drizzle                   25.0      20.4        29        6.3
+Date        Condition                    High °C    Low °C  Precip mm  Precip %  Wind km/h
+------------------------------------------------------------------------------------------
+2026-09-08  Heavy rain                      28.5      22.4       31.2        88        9.4
+2026-09-09  Heavy rain                      30.6      18.8       24.6        96       11.1
+2026-09-10  Moderate rain                   22.2      18.6        8.7        86        5.8
+2026-09-11  Moderate rain                   22.3      18.3        4.1        65        5.9
+2026-09-12  Dense drizzle                   25.0      20.4        0.6        29        6.3
 ```
 
 #### Tool usage (`--json`)
@@ -313,7 +313,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - `fetch_daily_forecast(latitude, longitude, days=5, unit="celsius")` — Fetches the `daily` object for a coordinate pair.
 - `get_forecast(location, days=5, unit="celsius")` — Orchestrates geocoding (via `weather.geocode()`) and the daily-forecast fetch; returns `{location, admin1, country, latitude, longitude, unit, days}` where `days` is a list of `{date, weather_code, condition, temp_max, temp_min, precipitation_sum, precipitation_probability_max, windspeed_max}` in chronological order, or `None` if the location can't be found.
-- `format_forecast(row)` — Renders a `get_forecast()` record as a human-readable table (its place line comes from `weather.format_place()`).
+- `format_forecast(row)` — Renders a `get_forecast()` record as a human-readable table — date, condition, high, low, precipitation amount (mm), chance of rain (%) and max wind — with its place line from `weather.format_place()`.
 - `_valid_days(value)` — argparse `type` for `--days`: an integer in `[1, MAX_FORECAST_DAYS]`; raises `argparse.ArgumentTypeError` otherwise.
 - `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--days`, `--unit`, and `--json`.
 - `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
@@ -557,7 +557,7 @@ python3 market_top_volume.py [--market MARKET] [--metric {volume,gainers,losers}
 |---|---|---|
 | `--market MARKET` | `us` | Market to query — see the table below |
 | `--metric METRIC` | `volume` | Ranking metric: `volume` (most shares traded), `gainers` (biggest % rise), `losers` (biggest % fall) |
-| `--limit N` | 10 | Number of stocks to return; use `1` for just the single leader |
+| `--limit N` | 10 | Number of stocks to return (must be 1 or more); use `1` for just the single leader |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### `--metric` values
@@ -695,7 +695,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - If any request fails (network error, timeout, non-2xx, missing crumb, or a screener error payload), the script prints an error and exits with status code 1 — plain text on stderr normally, or `{"error": "..."}` on stderr when `--json` is passed.
 - An unrecognized `--market` or `--metric` value is rejected by argument parsing itself (exit code 2); the error message lists every valid choice.
-- `--limit` values below 1 are clamped up to 1.
+- A `--limit` that isn't a positive integer is rejected by argparse (exit code 2) before any network call.
 - If the screener returns no quotes for the market after filtering, the script prints `"No <metric> data returned for market '<MARKET>'."` (or `[]` with `--json`) and exits normally.
 
 ### Notes / limitations
@@ -919,7 +919,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
 2. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` for "this year" / "past year", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise `--range 6mo`.
-3. Runs `python3 stock_close_history.py SYMBOL <window flags> --json > /tmp/stock_trend.json` from the repo root, then a `python3` heredoc that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions, the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages.
+3. Runs `python3 stock_close_history.py SYMBOL <window flags> --json > /tmp/stock_trend.json` from the repo root, then a `python3` heredoc that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions (`n/a` when the series is shorter than that sub-window), the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages.
 4. Reports a one-line verdict (up trend / down trend / roughly flat over the dates examined) plus a few supporting lines, calling out when the short-window trend disagrees with the overall one, and closes with a caveat that this is not a prediction or investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
 
 ### Configuration
@@ -1805,8 +1805,9 @@ python3 stock_tech_buzz_agent.py [--stock-limit N] [--discussion-limit N] [--jso
 ```
 Fetching top 10 NYSE + top 10 Nasdaq stocks by volume, and searching the top 50 tech discussions...
 
-1. NVDA - NVIDIA Corporation (NASDAQ, Volume: 92,250,395)
-   - "NVIDIA unveils new AI chip" (Score: 512)
+1. NVDA - NVIDIA Corporation (NASDAQ)
+   Volume: 92,250,395  |  Price: 181.24  |  Change: +1.87%
+   - "NVIDIA unveils new AI chip" (Score: 512, Comments: 231)
      https://news.ycombinator.com/item?id=12345678
 
 ...
@@ -1875,13 +1876,13 @@ These are set as constants near the top of the file — edit them directly to ch
 - `stock_mentions_in_title(quote, title)` — Returns `True` if a quote's ticker symbol or normalized company name appears in a discussion title.
 - `find_stock_buzz(limit_per_exchange=10, discussion_limit=50)` — Orchestrates fetching both data sources and matching; returns `(results, stocks, discussions)`.
 - `result_to_dict(result)` — Flattens one `{stock, discussions}` match into the record used for **both** output modes (nested discussion URLs come from `hottest_tech_discussions.discussion_url`).
-- `format_result(rank, row)` — Renders a `result_to_dict()` record as a text block.
+- `format_result(rank, row)` — Renders a `result_to_dict()` record as a text block: symbol, name and exchange; volume, price and % change; then each matching discussion's title, score, comment count and link.
 - `parse_args(argv=None)` — Parses `--stock-limit`, `--discussion-limit`, and `--json` CLI flags.
 - `main(argv=None)` — Entry point; fetches, handles top-level network errors, and prints results.
 
 ### Error handling
 
-- If fetching either the stock data or the discussion data fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If fetching either the stock data or the discussion data fails (network error, timeout, non-2xx response, or a malformed screener payload), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
 - A `--stock-limit` or `--discussion-limit` that isn't a positive integer is rejected by argparse (exit code 2) before any network call.
 - If no stock is mentioned in any discussion, the script prints a "No overlap found..." message (or `[]` with `--json`) and exits normally — this is expected and common, not an error condition.
 
@@ -2313,7 +2314,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 
 1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `SERPAPI_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
 2. **Fetch, paginating as needed** — Calls SerpApi's `/search.json` endpoint with `engine=google` and the query. The engine caps each request at 100 organic results (`MAX_RESULTS_PER_REQUEST`), so `--limit` values above that page across multiple requests using the `start` parameter.
-3. **Check for an in-band error** — SerpApi reports failures (e.g. an invalid key or exhausted quota) as an HTTP 200 response with an `"error"` field rather than a non-2xx status, so `fetch_results()` checks for that explicitly and raises to trigger the normal error path.
+3. **Check for an in-band error** — SerpApi reports failures (e.g. an invalid key or exhausted quota) as an HTTP 200 response with an `"error"` field rather than a non-2xx status, so `fetch_results()` checks for that explicitly and raises to trigger the normal error path. The one exception is SerpApi's "no results" message (`"Google hasn't returned any results for this query."`, matched on `NO_RESULTS_MARKER`), which uses the same field but just means an empty result, so paging stops there instead.
 4. **Display top N** — Prints each result's rank, title, URL, and snippet.
 
 ### Configuration
@@ -2338,7 +2339,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Error handling
 
 - If `SERPAPI_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
-- If a request fails (network error, timeout, non-2xx response, or a 200 response carrying an `"error"` field — e.g. an invalid key or exceeded quota), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If a request fails (network error, timeout, non-2xx response, or a 200 response carrying an `"error"` field — e.g. an invalid key or exceeded quota — other than SerpApi's "hasn't returned any results" message), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
 - If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
 
 ### Notes / limitations
@@ -2761,7 +2762,7 @@ With `--json`, the leading progress line is suppressed and the result prints as 
 
 1. **Load credentials** — `load_dotenv()` populates `os.environ` from a `.env` file in the repo root (`KEY=VALUE` lines; existing real environment variables are never overwritten, so they always take precedence), then `PERPLEXITY_API_KEY` is read from the environment. Missing means the script exits with an error before making any request.
 2. **Ask the model** — POSTs to Perplexity's OpenAI-compatible `/chat/completions` endpoint with the query as a single user message and the chosen `--model`. Sonar performs its own web search server-side as part of answering.
-3. **Extract the answer and its sources** — The synthesized answer comes from `choices[0].message.content`; the sources it cited come from the response's `search_results` array (`title`, `url`, `date`). A response with no `choices` at all is treated as a failure and raised as an error, since there's no answer to show.
+3. **Extract the answer and its sources** — The synthesized answer comes from `choices[0].message.content`; the sources it cited come from the response's `search_results` array (`title`, `url`, `date`). A response with no `choices` at all, or with an empty answer, is treated as a failure and raised as an error, since there's no answer to show.
 4. **Trim and display** — The sources list is trimmed to `--limit` locally (Perplexity has no request-time parameter to ask for fewer citations), then the answer and numbered source list are printed (or the equivalent `{answer, sources}` JSON object with `--json`).
 
 ### Configuration
@@ -2777,7 +2778,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### API reference
 
 - `load_dotenv(path=cli_utils.ENV_FILE)` (imported from [`cli_utils.py`](#cli_utilspy), shared across the `web_search_*.py` scripts) — Populates `os.environ` from a simple `KEY=VALUE` `.env` file; missing file is silently ignored; never overwrites an already-set environment variable.
-- `fetch_answer(query, api_key, model=DEFAULT_MODEL)` — Calls the Sonar chat-completions endpoint; returns `(answer, sources)`, where `sources` is the raw `search_results` list (possibly empty); raises `requests.RequestException` if the response carries no `choices` at all.
+- `fetch_answer(query, api_key, model=DEFAULT_MODEL)` — Calls the Sonar chat-completions endpoint; returns `(answer, sources)`, where `sources` is the raw `search_results` list (possibly empty); raises `requests.RequestException` if the response carries no `choices` or an empty answer.
 - `source_to_dict(rank, item)` — Flattens one raw citation into the `{rank, title, url, date}` record used for **both** output modes.
 - `format_answer(answer, sources)` — Renders the answer plus a numbered source list (or just the answer, if there are no sources) as a human-readable string.
 - `parse_args(argv=None)` — Parses the `query` positional plus `--model`, `--limit`, and `--json` CLI flags.
@@ -2786,7 +2787,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Error handling
 
 - If `PERPLEXITY_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
-- If the request fails (network error, timeout, or a non-2xx response) or the response carries no `choices`, the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed. Perplexity returns `401` both for an invalid/missing key and for a billing/quota problem on an otherwise-valid key (`"type": "insufficient_quota"` in the body) — since there's no free tier, a `401` on a key you know is correct usually means billing needs to be set up or topped up at https://www.perplexity.ai/settings/api, not that the key itself is wrong.
+- If the request fails (network error, timeout, or a non-2xx response) or the response carries no `choices` or an empty answer, the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed. Perplexity returns `401` both for an invalid/missing key and for a billing/quota problem on an otherwise-valid key (`"type": "insufficient_quota"` in the body) — since there's no free tier, a `401` on a key you know is correct usually means billing needs to be set up or topped up at https://www.perplexity.ai/settings/api, not that the key itself is wrong.
 
 ### Notes / limitations
 
@@ -3352,7 +3353,7 @@ Small helpers shared by the command-line scripts: uniform error exits, URL-schem
 
 - `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
 - `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the three `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`), which all take a URL positional and reject a bare domain/path before making any request.
-- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts) the result-count flags of all seven `web_search_*.py` scripts `--limit` (`hottest_tech_discussions.py`) and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
+- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
 - `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).
 - `format_result(row)` — Renders a `{rank, title, url, snippet}` record (the shape every `web_search_*.py` script but `web_search_perplexity.py` produces) as a multi-line human-readable string.
 - `print_results(rows, as_json)` — Prints a list of `{rank, title, url, snippet}` records: the list as JSON with `as_json=True`; otherwise `"No results found."` for an empty list, or each row through `format_result()` separated by a blank line. This is the shared tail of each of those scripts' `main()`.

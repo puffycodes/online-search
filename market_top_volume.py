@@ -22,7 +22,7 @@ import json
 
 import requests
 
-from cli_utils import die
+from cli_utils import die, positive_int
 
 # Yahoo rejects requests without a browser-like User-Agent.
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -255,7 +255,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--limit",
-        type=int,
+        type=positive_int,
         default=DEFAULT_LIMIT,
         help="Number of stocks to return (default: %(default)s). Use 1 for the single leader.",
     )
@@ -269,10 +269,9 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    limit = max(1, args.limit)
 
     try:
-        quotes = get_movers(args.market, args.metric, limit)
+        quotes = get_movers(args.market, args.metric, args.limit)
     except (requests.RequestException, KeyError, ValueError) as exc:
         die(f"failed to fetch {args.metric} for market '{args.market}': {exc}", args.json)
 

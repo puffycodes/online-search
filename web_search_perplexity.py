@@ -64,7 +64,9 @@ def fetch_answer(query, api_key, model=DEFAULT_MODEL):
     if not choices:
         raise requests.RequestException("Perplexity returned no answer.")
 
-    answer = choices[0].get("message", {}).get("content", "")
+    answer = choices[0].get("message", {}).get("content") or ""
+    if not answer.strip():
+        raise requests.RequestException("Perplexity returned no answer.")
     sources = data.get("search_results") or []
     return answer, sources
 

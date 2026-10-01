@@ -16,7 +16,7 @@
     - The Sonar model (default: sonar), e.g. sonar-pro, sonar-reasoning, sonar-reasoning-pro.
     - How many sources to show (default: 10). Perplexity decides how many to cite; this only trims the list.
 - Ask the model; it searches the web itself and writes an answer.
-    - A response with no answer is a failure.
+    - A response with no answer, or an empty one, is a failure.
 - Output:
     - {{Answer}}
     - One entry per source: {{Rank}} {{Title}} {{URL}} {{Date}}

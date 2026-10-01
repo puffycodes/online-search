@@ -117,6 +117,32 @@ class TestMain:
             agent.main(["--json"])
         assert json.loads(capsys.readouterr().err) == {"error": "down"}
 
+    def test_malformed_payload_exits_json(self, monkeypatch, capsys):
+        def boom(**k):
+            raise KeyError("finance")
+
+        monkeypatch.setattr(agent, "find_stock_buzz", boom)
+        with pytest.raises(SystemExit) as exc:
+            agent.main(["--json"])
+        assert exc.value.code == 1
+        assert "error" in json.loads(capsys.readouterr().err)
+
+    def test_text_shows_price_change_and_comments(self, monkeypatch, capsys):
+        stock = {"symbol": "NVDA", "shortName": "NVIDIA Corporation", "_exchange": "nasdaq",
+                 "regularMarketVolume": 1234567, "regularMarketPrice": 120.5,
+                 "regularMarketChangePercent": -2.25}
+        story = {"id": 1, "title": "NVDA ships a chip", "score": 300, "descendants": 45}
+        monkeypatch.setattr(
+            agent, "find_stock_buzz",
+            lambda **k: ([{"stock": stock, "discussions": [story]}], [stock], [story]),
+        )
+        agent.main([])
+        out = capsys.readouterr().out
+        assert "Volume: 1,234,567" in out
+        assert "Price: 120.50" in out
+        assert "Change: -2.25%" in out
+        assert "Comments: 45" in out
+
     @pytest.mark.parametrize("flag", ["--stock-limit", "--discussion-limit"])
     @pytest.mark.parametrize("bad", ["0", "-1", "abc"])
     def test_invalid_limit_exits_2_before_fetch(self, monkeypatch, flag, bad):

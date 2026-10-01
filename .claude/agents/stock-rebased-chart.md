@@ -27,7 +27,7 @@ Each `SYMBOL` is a Yahoo Finance ticker. Map each company to its ticker and, for
 - "past 3 months", "this year", "last 5 years" → `--range 3mo` / `--range ytd` / `--range 5y`. Valid ranges: `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max`.
 - "in August", "since June", "between March and July", or any named month or explicit span → `--start` and `--end` (YYYY-MM-DD).
 - Nothing specific → omit the window flags; the tool defaults to `--range 6mo`.
-- `--range` and `--last` cannot be combined; `--start`/`--end` overrides both.
+- `--range` and `--last` cannot be combined; `--start`/`--end` replaces `--range`, and if combined with `--last N` the window starts at `--start` but only its final N sessions are kept.
 
 ### Picking the base date
 

@@ -152,7 +152,17 @@ class TestFetchRegionQuotes:
 
 
 class TestMain:
-    def test_limit_below_one_is_clamped(self, monkeypatch, capsys):
+    @pytest.mark.parametrize("bad", ["0", "-1", "abc"])
+    def test_invalid_limit_exits_2_before_fetch(self, monkeypatch, bad):
+        def fail(*a, **k):
+            raise AssertionError("should not fetch")
+
+        monkeypatch.setattr(mtv, "get_movers", fail)
+        with pytest.raises(SystemExit) as exc:
+            mtv.main(["--limit", bad, "--json"])
+        assert exc.value.code == 2
+
+    def test_limit_passed_through(self, monkeypatch, capsys):
         seen = {}
 
         def fake(market, metric, limit):
@@ -160,8 +170,8 @@ class TestMain:
             return []
 
         monkeypatch.setattr(mtv, "get_movers", fake)
-        mtv.main(["--limit", "0", "--json"])
-        assert seen["limit"] == 1
+        mtv.main(["--limit", "3", "--json"])
+        assert seen["limit"] == 3
         assert json.loads(capsys.readouterr().out) == []
 
     def test_error_exits_json(self, monkeypatch, capsys):

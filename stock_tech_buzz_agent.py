@@ -120,11 +120,14 @@ def result_to_dict(result):
 def format_result(rank, row):
     """Render a record from result_to_dict() as a text block."""
     lines = [
-        f"{rank}. {row['symbol']} - {row['name']} "
-        f"({row['exchange']}, Volume: {row['volume']:,})"
+        f"{rank}. {row['symbol']} - {row['name']} ({row['exchange']})",
+        f"   Volume: {row['volume']:,}  |  Price: {row['price']:,.2f}  |  "
+        f"Change: {row['change_percent']:+.2f}%",
     ]
     for d in row["discussions"]:
-        lines.append(f"   - \"{d['title']}\" (Score: {d['score']})")
+        lines.append(
+            f"   - \"{d['title']}\" (Score: {d['score']}, Comments: {d['comments']})"
+        )
         lines.append(f"     {d['discussion_url']}")
     return "\n".join(lines)
 
@@ -169,7 +172,7 @@ def main(argv=None):
         results, stocks, discussions = find_stock_buzz(
             limit_per_exchange=args.stock_limit, discussion_limit=args.discussion_limit
         )
-    except requests.RequestException as exc:
+    except (requests.RequestException, KeyError, ValueError) as exc:
         die(str(exc), args.json)
 
     rows = [result_to_dict(r) for r in results]

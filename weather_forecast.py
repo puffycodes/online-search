@@ -99,13 +99,14 @@ def format_forecast(row):
     header = (
         f"{'Date':<12}{'Condition':<26}"
         f"{'High ' + row['unit']:>10}{'Low ' + row['unit']:>10}"
-        f"{'Precip %':>10}{'Wind km/h':>11}"
+        f"{'Precip mm':>11}{'Precip %':>10}{'Wind km/h':>11}"
     )
     lines = [f"{len(row['days'])}-day forecast for {place}", "", header, "-" * len(header)]
     for day in row["days"]:
         lines.append(
             f"{day['date']:<12}{day['condition']:<26}"
             f"{day['temp_max']:>10}{day['temp_min']:>10}"
+            f"{day['precipitation_sum']:>11}"
             f"{day['precipitation_probability_max']:>10}{day['windspeed_max']:>11}"
         )
     return "\n".join(lines)

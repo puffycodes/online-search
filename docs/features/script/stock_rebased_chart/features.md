@@ -4,7 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use Yahoo Finance's chart endpoint (unofficial; no API key).
-- Use yahoo_finance.py's build_params(), fetch_history(), extract_series() and meta_summary().
+- Use yahoo_finance.py's build_params(), fetch_history(), extract_series() and parse_date().
 - Use indicators.py's rebase().
 - Use matplotlib to draw the chart.
 
@@ -16,8 +16,8 @@
     - The time window, one of:
         - A range: 5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y or max (default: 6mo).
         - The last N sessions (cannot be combined with a range).
-        - A start date, and optionally an end date (default: today). This overrides a range or last N.
-    - The base date, where every series reads 100 (default: the first date of the first symbol's series).
+        - A start date, and optionally an end date (default: today). This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
+    - The base date, where every series reads 100 (default: the first date of the first symbol's series, or of the first symbol that fetched if that one failed).
     - The image path to write (default: rebased_chart.png), or open an interactive window instead.
 - For each symbol, retrieve its daily closes, skipping sessions with no close.
     - If a symbol fails to fetch or has no close in the window, drop it with a warning on stderr and carry on.
