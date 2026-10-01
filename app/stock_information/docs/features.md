@@ -9,9 +9,9 @@
 - Display a text box where the user can enter a stock symbol and submit.
 - After submission:
     - Display the company information
-        - Company name
-        - Stock symbol
-        - Company sector and subsectors
+        - {{Company name}}
+        - {{Stock symbol}}
+        - {{Market Cap}} {{Company sector}} {{Company Industry}}
     - Display the price information
         - Current stock price and price movement
         - High and low stock prices and previous close

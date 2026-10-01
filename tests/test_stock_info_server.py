@@ -263,7 +263,8 @@ class TestHandler:
     def test_page_has_valuation_section(self):
         body = _get("/").wfile.getvalue().decode()
         assert 'id="valuation-rows"' in body and "/api/valuation" in body
-        for section_id in ("company-name", "company-symbol", "company-sector", "company-industry",
+        for section_id in ("company-name", "company-symbol", "company-market-cap", "company-sector",
+                           "company-industry",
                            "current-price", "price-change", "session-high", "session-low",
                            "previous-close"):
             assert f'id="{section_id}"' in body

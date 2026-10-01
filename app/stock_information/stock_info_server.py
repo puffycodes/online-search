@@ -13,8 +13,8 @@ latest session with its date.
 The page then calls /api/valuation, which runs the same pipeline as
 stock_intrinsic_value.py (Yahoo fundamentals -> every valuation.py
 method, with that script's default assumptions) and shows each estimate
-next to the price. The company's sector and industry come from the same
-fundamentals payload. It's a separate call because the fundamentals fetch
+next to the price. The company's market cap, sector and industry come
+from the same fundamentals payload. It's a separate call because the fundamentals fetch
 is slower and more fragile than the quote.
 
 A server is needed (rather than a static page) because Yahoo's endpoints
@@ -134,6 +134,10 @@ PAGE_HTML = """<!DOCTYPE html>
     border-radius: 8px;
     padding: 1.1rem 1.25rem;
   }
+  .company-name { font-size: 1.35rem; font-weight: 600; margin: 0; }
+  .company-symbol { color: var(--muted); margin: 0.15rem 0 0; }
+  .company-profile { margin: 0.5rem 0 0; font-size: 0.9rem; }
+  .company-profile span + span::before { content: "·"; margin: 0 0.45rem; color: var(--muted); }
   .price { font-size: 2rem; font-weight: 600; margin: 0 0 0.2rem; }
   .change { font-weight: 600; font-variant-numeric: tabular-nums; margin-bottom: 0.2rem; }
   .change.up { color: var(--up); }
@@ -179,12 +183,12 @@ PAGE_HTML = """<!DOCTYPE html>
   <p id="status"></p>
   <section id="result" class="card" hidden>
     <h3>Company</h3>
-    <dl>
-      <dt>Name</dt><dd id="company-name"></dd>
-      <dt>Symbol</dt><dd id="company-symbol"></dd>
-      <dt>Sector</dt><dd id="company-sector"></dd>
-      <dt>Industry</dt><dd id="company-industry"></dd>
-    </dl>
+    <p class="company-name" id="company-name"></p>
+    <p class="company-symbol" id="company-symbol"></p>
+    <p class="company-profile">
+      <span id="company-market-cap" title="Market cap"></span><span id="company-sector"
+        title="Sector"></span><span id="company-industry" title="Industry"></span>
+    </p>
     <h3>Price</h3>
     <div class="price" id="current-price"></div>
     <div class="change" id="price-change"></div>
@@ -243,6 +247,19 @@ PAGE_HTML = """<!DOCTYPE html>
   ];
   // Bumped per submit so a slow response for an older symbol is ignored.
   var requestId = 0;
+
+  function bigMoney(value, currency) {
+    if (value === null || value === undefined) return "–";
+    var units = [["T", 1e12], ["B", 1e9], ["M", 1e6], ["K", 1e3]];
+    var text = Number(value).toFixed(2);
+    for (var i = 0; i < units.length; i++) {
+      if (Math.abs(value) >= units[i][1]) {
+        text = (value / units[i][1]).toFixed(2) + units[i][0];
+        break;
+      }
+    }
+    return currency ? text + " " + currency : text;
+  }
 
   function pct(value) {
     if (value === null || value === undefined) return "–";
@@ -340,16 +357,21 @@ PAGE_HTML = """<!DOCTYPE html>
         (Math.abs(q.change_pct) * 100).toFixed(2) + "%) this session";
       change.className = "change" + (q.change > 0 ? " up" : q.change < 0 ? " down" : "");
     }
-    // Sector/industry come from the (slower) fundamentals fetch in /api/valuation.
+    // Market cap/sector/industry come from the (slower) fundamentals fetch in /api/valuation.
     setText("company-symbol", q.symbol + (q.exchange ? " (" + q.exchange + ")" : ""));
-    setText("company-sector", "Loading…");
-    setText("company-industry", "Loading…");
+    setText("company-market-cap", "Market cap loading…");
+    setText("company-sector", "Sector loading…");
+    setText("company-industry", "Industry loading…");
     result.hidden = false;
   }
 
   function renderProfile(v) {
-    setText("company-sector", v ? (v.sector || "Not reported") : "Unavailable");
-    setText("company-industry", v ? (v.industry || "Not reported") : "Unavailable");
+    var cap = v && v.inputs ? v.inputs.market_cap : null;
+    setText("company-market-cap", !v ? "Market cap unavailable"
+      : cap === null || cap === undefined ? "Market cap not reported"
+      : "Market cap " + bigMoney(cap, v.currency));
+    setText("company-sector", !v ? "Sector unavailable" : (v.sector || "Sector not reported"));
+    setText("company-industry", !v ? "Industry unavailable" : (v.industry || "Industry not reported"));
   }
 
   form.addEventListener("submit", function (event) {
