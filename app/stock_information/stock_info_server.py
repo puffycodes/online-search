@@ -16,7 +16,9 @@ stock_intrinsic_value.py (Yahoo fundamentals -> every valuation.py
 method, with that script's default assumptions) and shows how many
 estimates say the price is undervalued / fair value / overvalued, then each
 estimate next to the price. The company's market cap, trailing P/E, dividend yield,
-sector and industry come from the same fundamentals payload. It's a separate call because the fundamentals fetch
+sector and industry come from the same fundamentals payload, as do the
+fundamental indicators (margins, returns, growth, multiples, balance-sheet
+ratios, cash flow, payout) in their own section. It's a separate call because the fundamentals fetch
 is slower and more fragile than the quote.
 
 A server is needed (rather than a static page) because Yahoo's endpoints
@@ -212,6 +214,10 @@ PAGE_HTML = """<!DOCTYPE html>
   .stat-count { display: block; font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
   .stat-label { color: var(--muted); font-size: 0.8rem; }
   .stats-note { color: var(--muted); font-size: 0.8rem; margin: -0.35rem 0 0.75rem; }
+  #fundamentals-status { color: var(--muted); font-size: 0.9rem; margin: 0; }
+  #fundamentals-status.error { color: var(--error); }
+  .indicators th.group { text-align: left; color: var(--text); font-weight: 600; padding-top: 0.8rem; }
+  .indicators tr:first-child th.group { padding-top: 0.4rem; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -265,6 +271,15 @@ PAGE_HTML = """<!DOCTYPE html>
         <span class="value" id="week52-high" title="52-week high"></span>
       </div>
       <div class="range-caption" id="week52-caption"></div>
+    </div>
+    <h3>Fundamentals</h3>
+    <p id="fundamentals-status"></p>
+    <div id="fundamentals" hidden>
+      <table class="indicators">
+        <tbody id="indicator-rows"></tbody>
+      </table>
+      <p class="disclaimer">Trailing 12 months from Yahoo Finance; growth is year over year for the
+        latest quarter. &ndash; means not reported, or not meaningful (e.g. negative earnings).</p>
     </div>
     <h3>Valuations</h3>
     <p id="valuation-status"></p>
@@ -320,6 +335,48 @@ PAGE_HTML = """<!DOCTYPE html>
     ["ev_ebitda_multiple", "EV/EBITDA multiple"],
     ["ps_multiple", "P/S multiple"],
     ["ev_reported_to_equity", "Reported EV → equity (check)"]
+  ];
+  var fundamentalsStatus = document.getElementById("fundamentals-status");
+  var fundamentalsBox = document.getElementById("fundamentals");
+  var indicatorRows = document.getElementById("indicator-rows");
+  // Groups, labels and formats for the server's extract_indicators() keys.
+  var INDICATOR_GROUPS = [
+    ["Profitability", [
+      ["gross_margin", "Gross margin", "pct"],
+      ["operating_margin", "Operating margin", "pct"],
+      ["net_margin", "Net margin", "pct"],
+      ["return_on_equity", "Return on equity (ROE)", "pct"],
+      ["return_on_assets", "Return on assets (ROA)", "pct"]
+    ]],
+    ["Growth", [
+      ["revenue_growth", "Revenue growth (YoY)", "pct"],
+      ["earnings_growth", "Earnings growth (YoY)", "pct"],
+      ["analyst_growth_5y", "Analyst 5-year growth estimate", "pct"]
+    ]],
+    ["Valuation", [
+      ["trailing_pe", "P/E (trailing)", "ratio"],
+      ["forward_pe", "P/E (forward)", "ratio"],
+      ["peg", "PEG (trailing P/E ÷ 5y growth)", "ratio"],
+      ["ev_to_ebitda", "EV/EBITDA", "ratio"],
+      ["price_to_book", "P/B", "ratio"],
+      ["price_to_sales", "P/S (trailing)", "ratio"],
+      ["fcf_yield", "Free-cash-flow yield", "pct"]
+    ]],
+    ["Financial health", [
+      ["debt_to_equity", "Debt/equity", "ratio"],
+      ["net_debt_to_ebitda", "Net debt/EBITDA", "ratio"],
+      ["current_ratio", "Current ratio", "ratio"],
+      ["quick_ratio", "Quick ratio", "ratio"]
+    ]],
+    ["Cash flow", [
+      ["free_cash_flow", "Free cash flow", "big"],
+      ["operating_cash_flow", "Operating cash flow", "big"],
+      ["cash_conversion", "Cash conversion (FCF ÷ net income)", "ratio"]
+    ]],
+    ["Shareholder returns", [
+      ["dividend_yield", "Dividend yield", "pct"],
+      ["payout_ratio", "Payout ratio", "pct"]
+    ]]
   ];
   // Bumped per submit so a slow response for an older symbol is ignored.
   var requestId = 0;
@@ -402,6 +459,35 @@ PAGE_HTML = """<!DOCTYPE html>
     valuationBox.hidden = false;
   }
 
+  function renderIndicators(v) {
+    var values = v.indicators || {};
+    indicatorRows.innerHTML = "";
+    INDICATOR_GROUPS.forEach(function (group) {
+      var head = document.createElement("tr");
+      var th = document.createElement("th");
+      th.className = "group";
+      th.colSpan = 2;
+      th.textContent = group[0];
+      head.appendChild(th);
+      indicatorRows.appendChild(head);
+      group[1].forEach(function (item) {
+        var value = values[item[0]];
+        var text = value === null || value === undefined ? "–"
+          : item[2] === "pct" ? pct(value)
+          : item[2] === "big" ? bigMoney(value, v.currency)
+          : Number(value).toFixed(2);
+        var tr = document.createElement("tr");
+        [item[1], text].forEach(function (cell) {
+          var td = document.createElement("td");
+          td.textContent = cell;
+          tr.appendChild(td);
+        });
+        indicatorRows.appendChild(tr);
+      });
+    });
+    fundamentalsBox.hidden = false;
+  }
+
   function fetchJson(url) {
     return fetch(url).then(function (response) {
       return response.json().then(function (body) {
@@ -415,16 +501,23 @@ PAGE_HTML = """<!DOCTYPE html>
     valuationBox.hidden = true;
     valuationStatus.className = "";
     valuationStatus.textContent = "Computing valuations…";
+    fundamentalsBox.hidden = true;
+    fundamentalsStatus.className = "";
+    fundamentalsStatus.textContent = "Loading fundamentals…";
     fetchJson("/api/valuation?symbol=" + encodeURIComponent(symbol))
       .then(function (v) {
         if (id !== requestId) return;
         renderProfile(v);
+        renderIndicators(v);
+        fundamentalsStatus.textContent = "";
         renderValuation(v);
         valuationStatus.textContent = "";
       })
       .catch(function (err) {
         if (id !== requestId) return;
         renderProfile(null);
+        fundamentalsStatus.className = "error";
+        fundamentalsStatus.textContent = "Fundamentals unavailable: " + err.message;
         valuationStatus.className = "error";
         valuationStatus.textContent = "Valuation failed: " + err.message;
       });
@@ -621,7 +714,8 @@ def get_valuation(symbol):
 
     Returns that script's ``--json`` payload (``build_json()``): inputs,
     assumptions, and every estimate with its gap to the price, plus a
-    ``summary`` from summarize_estimates(). Raises
+    ``summary`` from summarize_estimates() and the fundamental
+    ``indicators`` from extract_indicators(). Raises
     requests.RequestException / ValueError / KeyError on a failed fetch,
     and ValueError when Yahoo returns no usable fundamentals.
     """
@@ -634,7 +728,68 @@ def get_valuation(symbol):
     estimates, used = siv.compute_estimates(inputs, assumptions, args)
     payload = siv.build_json(symbol, inputs, assumptions, estimates, used)
     payload["summary"] = summarize_estimates(payload)
+    payload["indicators"] = extract_indicators(modules, inputs)
     return payload
+
+
+def _ratio(numerator, denominator):
+    """numerator / denominator, or None unless both are present and the denominator is positive."""
+    if numerator is None or not denominator or denominator <= 0:
+        return None
+    return numerator / denominator
+
+
+def extract_indicators(modules, inputs):
+    """Pull the fundamental indicators the page shows from the quoteSummary ``modules``.
+
+    ``inputs`` is stock_intrinsic_value.collect_inputs() of the same modules;
+    figures it already parsed are reused rather than read twice. Margins,
+    returns, growth rates and yields are fractions (0.25 == 25%); multiples
+    and ratios are plain numbers. Anything Yahoo leaves out, or that isn't
+    meaningful (e.g. PEG with negative growth), is None.
+    """
+    def num(module, key):
+        return siv._num(modules, module, key)
+
+    trailing_pe = inputs["trailing_pe"]
+    growth_5y = inputs["analyst_growth_5y"]
+    peg = (
+        _ratio(trailing_pe, growth_5y * 100.0)
+        if trailing_pe and trailing_pe > 0 and growth_5y is not None
+        else None
+    )
+    # Yahoo reports debt/equity as a percentage (150.0 == 1.5x).
+    debt_to_equity = num("financialData", "debtToEquity")
+    # Yahoo reports a gross margin of exactly 0 for banks and others with no
+    # cost of goods sold; that means "not applicable", not a 0% margin.
+    gross_margin = num("financialData", "grossMargins") or None
+    fcf = inputs["free_cash_flow"]
+    return {
+        "gross_margin": gross_margin,
+        "operating_margin": num("financialData", "operatingMargins"),
+        "net_margin": num("financialData", "profitMargins"),
+        "return_on_equity": num("financialData", "returnOnEquity"),
+        "return_on_assets": num("financialData", "returnOnAssets"),
+        "revenue_growth": num("financialData", "revenueGrowth"),
+        "earnings_growth": num("financialData", "earningsGrowth"),
+        "analyst_growth_5y": growth_5y,
+        "trailing_pe": trailing_pe,
+        "forward_pe": inputs["forward_pe"],
+        "peg": peg,
+        "ev_to_ebitda": inputs["ev_to_ebitda"],
+        "price_to_book": num("defaultKeyStatistics", "priceToBook"),
+        "price_to_sales": inputs["price_to_sales"],
+        "fcf_yield": _ratio(fcf, inputs["market_cap"]),
+        "debt_to_equity": None if debt_to_equity is None else debt_to_equity / 100.0,
+        "net_debt_to_ebitda": _ratio(inputs["net_debt"], inputs["ebitda"]),
+        "current_ratio": num("financialData", "currentRatio"),
+        "quick_ratio": num("financialData", "quickRatio"),
+        "free_cash_flow": fcf,
+        "operating_cash_flow": num("financialData", "operatingCashflow"),
+        "cash_conversion": _ratio(fcf, num("defaultKeyStatistics", "netIncomeToCommon")),
+        "dividend_yield": _ratio(inputs["dividend_rate"], inputs["price"]),
+        "payout_ratio": num("summaryDetail", "payoutRatio"),
+    }
 
 
 def summarize_estimates(payload, threshold=FAIR_VALUE_THRESHOLD):

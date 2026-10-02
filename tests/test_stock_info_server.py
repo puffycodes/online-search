@@ -182,6 +182,7 @@ class TestGetValuation:
         assert counted + summary["not_available"] == len(
             sis.VALUATION_METHODS
         )
+        assert out["indicators"]["trailing_pe"] == 20.0  # read by the page's Fundamentals section
         json.dumps(out)  # must be serializable for the HTTP response
 
     def test_no_price_raises(self, monkeypatch):
@@ -191,6 +192,73 @@ class TestGetValuation:
         monkeypatch.setattr(sis.siv, "fetch_fundamentals", lambda s: modules)
         with pytest.raises(ValueError, match="no usable fundamentals"):
             sis.get_valuation("AAA")
+
+
+class TestExtractIndicators:
+    def _indicators(self, modules):
+        return sis.extract_indicators(modules, sis.siv.collect_inputs(modules))
+
+    def test_reads_and_derives_indicators(self):
+        modules = _fundamentals()
+        modules["financialData"].update({
+            "grossMargins": {"raw": 0.45}, "operatingMargins": {"raw": 0.3},
+            "profitMargins": {"raw": 0.25}, "returnOnEquity": {"raw": 1.5},
+            "returnOnAssets": {"raw": 0.2}, "revenueGrowth": {"raw": 0.08},
+            "earningsGrowth": {"raw": -0.02}, "debtToEquity": {"raw": 150.0},
+            "currentRatio": {"raw": 0.9}, "quickRatio": {"raw": 0.8},
+            "operatingCashflow": {"raw": 7e9},
+        })
+        modules["defaultKeyStatistics"].update({
+            "priceToBook": {"raw": 40.0}, "netIncomeToCommon": {"raw": 4e9},
+        })
+        modules["summaryDetail"].update({"forwardPE": {"raw": 18.0}, "payoutRatio": {"raw": 0.4}})
+        modules["price"]["marketCap"] = {"raw": 100e9}
+        modules["earningsTrend"] = {"trend": [{"period": "+5y", "growth": {"raw": 0.1}}]}
+        out = self._indicators(modules)
+        assert out == {
+            "gross_margin": 0.45, "operating_margin": 0.3, "net_margin": 0.25,
+            "return_on_equity": 1.5, "return_on_assets": 0.2,
+            "revenue_growth": 0.08, "earnings_growth": -0.02, "analyst_growth_5y": 0.1,
+            "trailing_pe": 20.0, "forward_pe": 18.0,
+            "peg": pytest.approx(2.0),            # 20 P/E / 10% growth
+            "ev_to_ebitda": 12.0, "price_to_book": 40.0, "price_to_sales": 2.5,
+            "fcf_yield": pytest.approx(0.05),     # 5B FCF / 100B market cap
+            "debt_to_equity": 1.5,                # Yahoo's 150 (percent) -> 1.5x
+            "net_debt_to_ebitda": pytest.approx(0.125),  # (2B - 1B) / 8B
+            "current_ratio": 0.9, "quick_ratio": 0.8,
+            "free_cash_flow": 5e9, "operating_cash_flow": 7e9,
+            "cash_conversion": pytest.approx(1.25),  # 5B FCF / 4B net income
+            "dividend_yield": pytest.approx(0.02),   # 2.0 / 100.0
+            "payout_ratio": 0.4,
+        }
+
+    def test_missing_fields_are_none(self):
+        out = self._indicators(_fundamentals())
+        for key in ("gross_margin", "return_on_equity", "revenue_growth", "price_to_book",
+                    "debt_to_equity", "current_ratio", "operating_cash_flow", "payout_ratio",
+                    "peg", "fcf_yield", "cash_conversion", "analyst_growth_5y"):
+            assert out[key] is None, key
+
+    def test_not_meaningful_ratios_are_none(self):
+        modules = _fundamentals()
+        modules["financialData"]["ebitda"] = {"raw": -1e9}
+        modules["defaultKeyStatistics"]["netIncomeToCommon"] = {"raw": -2e9}
+        modules["earningsTrend"] = {"trend": [{"period": "+5y", "growth": {"raw": -0.05}}]}
+        out = self._indicators(modules)
+        assert out["net_debt_to_ebitda"] is None  # negative EBITDA
+        assert out["cash_conversion"] is None     # negative net income
+        assert out["peg"] is None                 # negative growth
+
+    def test_zero_gross_margin_is_none(self):
+        # Yahoo's placeholder for banks (no cost of goods sold), not a real 0% margin.
+        modules = _fundamentals()
+        modules["financialData"]["grossMargins"] = {"raw": 0.0}
+        assert self._indicators(modules)["gross_margin"] is None
+
+    def test_net_cash_gives_negative_net_debt_to_ebitda(self):
+        modules = _fundamentals()
+        modules["financialData"]["totalCash"] = {"raw": 6e9}
+        assert self._indicators(modules)["net_debt_to_ebitda"] == pytest.approx(-0.5)
 
 
 def _payload(price, values):
@@ -312,7 +380,7 @@ class TestHandler:
                            "company-market-cap", "company-pe", "company-dividend-yield", "week52-low", "week52-high", "week52-marker",
                            "day-marker", "count-undervalued", "count-fair-value", "count-overvalued",
                            "current-price", "price-change", "session-high", "session-low",
-                           "previous-close"):
+                           "previous-close", "fundamentals-status", "indicator-rows"):
             assert f'id="{section_id}"' in body
 
     def test_unknown_path_is_404(self):
