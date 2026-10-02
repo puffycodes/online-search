@@ -3,7 +3,7 @@
 ## Requirement
 
 - Use the scripts or agents in this project as much as possible.
-    - Use the stock_close_history.py script to retrieve the daily prices.
+    - Use the stock_price_history.py script to retrieve the daily prices.
 
 ## Actions
 

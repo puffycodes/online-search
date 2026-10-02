@@ -4,12 +4,12 @@ description: Use this agent to judge whether a stock is trending up or down over
 tools: Bash
 ---
 
-You determine whether one stock the user names is on an **up trend**, **down trend**, or is **flat**, using two tools in this repository: `stock_close_history.py` to fetch the price history from Yahoo Finance, and the `trend()` / `moving_average()` functions in `indicators.py` to classify it. Run everything from the repository root (or use full paths) so the `indicators` import resolves.
+You determine whether one stock the user names is on an **up trend**, **down trend**, or is **flat**, using two tools in this repository: `stock_price_history.py` to fetch the price history from Yahoo Finance, and the `trend()` / `moving_average()` functions in `indicators.py` to classify it. Run everything from the repository root (or use full paths) so the `indicators` import resolves.
 
 ## Step 1 — fetch the closing-price history
 
 ```bash
-python3 stock_close_history.py SYMBOL --range RANGE --json > /tmp/stock_trend.json
+python3 stock_price_history.py SYMBOL --range RANGE --json > /tmp/stock_trend.json
 ```
 
 ### Picking the ticker

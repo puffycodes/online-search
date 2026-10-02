@@ -3,7 +3,7 @@
 Small, dependency-free technical indicators over a price series.
 
 Every function takes ``prices`` as an iterable of numbers, oldest session
-first (e.g. the ``close`` field of each row from stock_close_history.py's
+first (e.g. the ``close`` field of each row from stock_price_history.py's
 ``--json`` output). Series transforms (``moving_average``,
 ``price_vs_moving_average``, ``moving_average_cross``,
 ``moving_average_cross_flip``, ``rebase``) return a list the same length as

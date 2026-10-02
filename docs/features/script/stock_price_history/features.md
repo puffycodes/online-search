@@ -8,7 +8,7 @@
 
 ## Actions
 
-- Run as python3 stock_close_history.py from the repo root.
+- Run as python3 stock_price_history.py from the repo root.
 - Take:
     - {{Symbol}}: a ticker in Yahoo notation, including the exchange suffix for non-US listings (e.g. AAPL, VOD.L, D05.SI, SAP.DE).
     - The time window, one of:

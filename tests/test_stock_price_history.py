@@ -1,11 +1,11 @@
-"""Tests for stock_close_history: extract_rows row shaping and main() output/exit paths."""
+"""Tests for stock_price_history: extract_rows row shaping and main() output/exit paths."""
 
 import json
 
 import pytest
 import requests
 
-import stock_close_history as sch
+import stock_price_history as sch
 import yahoo_finance as yf
 
 

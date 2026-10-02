@@ -3,7 +3,7 @@
 ## Requirement
 
 - Use the scripts or agents in this project as much as possible.
-    - Use the stock_close_history.py script to retrieve the closing prices, and the trend() and moving_average() functions in indicators.py to classify them.
+    - Use the stock_price_history.py script to retrieve the closing prices, and the trend() and moving_average() functions in indicators.py to classify them.
 
 ## Actions
 

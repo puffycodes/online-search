@@ -5,7 +5,7 @@ Serve a small local web page for looking up a single stock.
 The page has a text box for a ticker (Yahoo notation: AAPL, VOD.L,
 D05.SI, ...) and a submit button. On submit, the browser calls this
 server's /api/quote endpoint, which fetches the quote through the same
-Yahoo Finance chart helpers as stock_close_history.py (yahoo_finance.py
+Yahoo Finance chart helpers as stock_price_history.py (yahoo_finance.py
 at the repository root) and returns the company name, symbol, current
 price, its movement since the previous close, the day low/high
 of the latest session with its date, and the 52-week low/high (both
@@ -35,7 +35,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# yahoo_finance.py, stock_close_history.py and stock_intrinsic_value.py live
+# yahoo_finance.py, stock_price_history.py and stock_intrinsic_value.py live
 # at the repository root, two levels up from this file (app/stock_information/stock_info_server.py).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -44,7 +44,7 @@ import requests  # noqa: E402
 
 import stock_intrinsic_value as siv  # noqa: E402
 import yahoo_finance as yf  # noqa: E402
-from stock_close_history import extract_rows  # noqa: E402
+from stock_price_history import extract_rows  # noqa: E402
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000

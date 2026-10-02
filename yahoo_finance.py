@@ -2,7 +2,7 @@
 """
 Shared helpers for Yahoo Finance's public endpoints. No API key required.
 
-Used by stock_close_history.py, stock_candlestick_chart.py and stock_rebased_chart.py
+Used by stock_price_history.py, stock_candlestick_chart.py and stock_rebased_chart.py
 for price history (the chart endpoint, the --range/--last/--start/--end window
 flags, and exchange-local session dates), by market_top_volume.py and
 stock_intrinsic_value.py for the cookie + crumb handshake their endpoints need,
