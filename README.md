@@ -23,13 +23,15 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing, used by the three price scripts, `stock_intrinsic_value.py` (headers/timeout) and `app/stock_information/`
-- [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py` and `stock_intrinsic_value.py`
+- [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py`, `stock_fundamental.py` and `stock_intrinsic_value.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
 - [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `rebase`, `trend`
 - [`valuation.py`](#valuationpy) — dependency-free intrinsic-value estimators: `gordon_growth_value`, `discounted_cash_flow`, `multiple_value` / `ev_multiple_value`, `equity_from_enterprise`, `implied_growth_rate` (reverse DCF)
 - [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) — pulls fundamentals from Yahoo Finance and runs every `valuation.py` method (DCF, reverse DCF, dividend discount, P/E, Graham, EV/EBITDA, P/S) against the current price
 - [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
+- [`stock_fundamental.py`](#stock_fundamentalpy) — pulls a stock's fundamental indicators from Yahoo Finance: margins, ROE/ROA, growth, P/E, PEG, EV/EBITDA, P/B, P/S, FCF yield, debt and liquidity ratios, cash flow, dividend yield and payout ratio (also used by `app/stock_information/`)
+- [`.claude/agents/stock-fundamental.md`](#claude-code-agent-stock-fundamental) — Claude Code subagent that calls `stock_fundamental.py` and reports and interprets a named stock's fundamental indicators
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail; plus a feature spec (`features.md`) for every [script](docs/features/script/) and [agent](docs/features/agent/)
 
 **[Tech News & Discussions](#tech-news--discussions)**
@@ -1272,7 +1274,7 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 
 ## app/stock_information/
 
-A small local web app at `app/stock_information/stock_info_server.py`, separate from the CLI scripts above. It serves a page with a stock-symbol text box and a **Submit** button; on submit it shows four sections: **Company** (name; symbol; sector · industry; market cap · trailing P/E · dividend yield), **Price** (current price, its movement and the previous close; then a day-range bar and a 52-week-range bar, each with a marker at the current price), **Fundamentals** (margins, ROE/ROA, growth, P/E, PEG, EV/EBITDA, P/B, P/S, FCF yield, debt/equity, net debt/EBITDA, current/quick ratio, free and operating cash flow, cash conversion, dividend yield and payout ratio, in six groups), and **Valuations** (how many estimates say the price is undervalued / fair value (within 1%) / overvalued, then a table of the estimates). The quote comes from [`yahoo_finance.py`](#yahoo_financepy) (plus `extract_rows()` from [`stock_price_history.py`](#stock_price_historypy) as a fallback). The valuations come from [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy)'s pipeline, run with its default assumptions. See [`app/stock_information/README.md`](app/stock_information/README.md) for the full walkthrough and [`app/stock_information/docs/features.md`](app/stock_information/docs/features.md) for the feature spec.
+A small local web app at `app/stock_information/stock_info_server.py`, separate from the CLI scripts above. It serves a page with a stock-symbol text box and a **Submit** button; on submit it shows four sections: **Company** (name; symbol; sector · industry; market cap · trailing P/E · dividend yield), **Price** (current price, its movement and the previous close; then a day-range bar and a 52-week-range bar, each with a marker at the current price), **Fundamentals** (margins, ROE/ROA, growth, P/E, PEG, EV/EBITDA, P/B, P/S, FCF yield, debt/equity, net debt/EBITDA, current/quick ratio, free and operating cash flow, cash conversion, dividend yield and payout ratio, in six groups), and **Valuations** (how many estimates say the price is undervalued / fair value (within 1%) / overvalued, then a table of the estimates). The quote comes from [`yahoo_finance.py`](#yahoo_financepy) (plus `extract_rows()` from [`stock_price_history.py`](#stock_price_historypy) as a fallback). The fundamental indicators come from [`stock_fundamental.py`](#stock_fundamentalpy)'s `extract_indicators()`, and the valuations from [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy)'s pipeline, run with its default assumptions. See [`app/stock_information/README.md`](app/stock_information/README.md) for the full walkthrough and [`app/stock_information/docs/features.md`](app/stock_information/docs/features.md) for the feature spec.
 
 ### Requirements
 
@@ -1304,7 +1306,7 @@ Open <http://127.0.0.1:8000/>, enter e.g. `AAPL`, and click **Submit**. The page
 1. `GET /` serves the inline HTML page.
 2. On submit, the page calls `GET /api/quote?symbol=...`.
 3. The handler validates the symbol, calls `yahoo_finance.fetch_history()` over a `5d` range, and reads `longName`, `regularMarketPrice`, `regularMarketDayHigh`/`Low`, `regularMarketTime` and `fiftyTwoWeekLow`/`High` from the result's `meta`, falling back to the latest settled daily bar if the price/day fields are missing (the 52-week fields are `null` if absent). The previous close is the close of the last daily bar dated before the latest session, and `change`/`change_pct` are measured against it.
-4. The page then calls `GET /api/valuation?symbol=...`, which runs `stock_intrinsic_value.py`'s `fetch_fundamentals()` → `collect_inputs()` → `resolve_assumptions()` → `compute_estimates()` → `build_json()` with its default arguments. It returns the same payload as `stock_intrinsic_value.py SYMBOL --json` plus an `indicators` dict from the server's `extract_indicators()` (read from the same quoteSummary modules, with a few derived ratios such as PEG, FCF yield, net debt/EBITDA and cash conversion) and a `summary` (`{undervalued, fair_value, overvalued, not_available, threshold}`) from the server's `summarize_estimates()`, which counts the seven per-share estimates against the price: an estimate above the price counts as undervalued, below as overvalued, and less than 1% away as fair value. The page fills in sector/industry from the payload's top-level fields and market cap, trailing P/E and dividend yield (`dividend_rate / price`) from its `inputs`, renders `indicators` as a grouped Fundamentals table, shows the counts as three tiles, and renders the estimates as a table (value per share and price-vs-estimate for each method, reverse-DCF implied growth, and the assumptions used).
+4. The page then calls `GET /api/valuation?symbol=...`, which runs `stock_intrinsic_value.py`'s `fetch_fundamentals()` → `collect_inputs()` → `resolve_assumptions()` → `compute_estimates()` → `build_json()` with its default arguments. It returns the same payload as `stock_intrinsic_value.py SYMBOL --json` plus an `indicators` dict from `stock_fundamental.extract_indicators()` (read from the same quoteSummary modules, with a few derived ratios such as PEG, FCF yield, net debt/EBITDA and cash conversion) and a `summary` (`{undervalued, fair_value, overvalued, not_available, threshold}`) from the server's `summarize_estimates()`, which counts the seven per-share estimates against the price: an estimate above the price counts as undervalued, below as overvalued, and less than 1% away as fair value. The page fills in sector/industry from the payload's top-level fields and market cap, trailing P/E and dividend yield (`dividend_rate / price`) from its `inputs`, renders `indicators` as a grouped Fundamentals table, shows the counts as three tiles, and renders the estimates as a table (value per share and price-vs-estimate for each method, reverse-DCF implied growth, and the assumptions used).
 
 A server is used instead of a static page because Yahoo's endpoints don't send CORS headers, so a browser can't call them directly.
 
@@ -1318,7 +1320,7 @@ A server is used instead of a static page because Yahoo's endpoints don't send C
 
 - Unofficial Yahoo endpoint; Yahoo-notation tickers only (no company-name lookup); price is the last regular-market price (often delayed, no pre/post-market).
 - Valuations are mechanical, not forecasts. With the default assumptions, the P/E, EV/EBITDA and P/S rows use the stock's own current multiple and so land at about the price; the page labels them with the multiple used, and they usually count as "fair value" in the tiles. Those counts are a tally of mechanical estimates, not a judgment that the stock is actually under- or overvalued and not a buy/sell signal. The assumptions can't be overridden from the page. Use `stock_intrinsic_value.py`'s flags for that.
-- Fundamental indicators are Yahoo's trailing-12-month figures as reported; growth is year over year for the latest quarter, not a multi-year rate. Interest coverage, ROIC and buybacks/dilution aren't shown because the quoteSummary modules the app fetches don't carry them.
+- Fundamental indicators share [`stock_fundamental.py`](#stock_fundamentalpy)'s limitations: trailing-12-month figures as reported, quarterly YoY growth, and no interest coverage, ROIC or buybacks/dilution.
 - Binds to localhost by default; `--host 0.0.0.0` exposes it with no authentication.
 
 ---
@@ -1619,6 +1621,130 @@ The agent's frontmatter restricts it to `Bash` (run the script and read its JSON
 - Only as good as the ticker it picks and the assumptions it runs — a DCF swings by large multiples on plausible changes to the discount rate and growth, which is why the agent prefers a scenario range over a single number.
 - The multiple-based rows are not independent estimates unless the user supplies the multiple; by default they reproduce the stock's current valuation. The dividend model is meaningless for low- or non-payers, and the `[check]` row is a data-quality signal, not a valuation.
 - Inherits all the limitations of [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) and [`valuation.py`](#valuationpy) (undocumented Yahoo `quoteSummary` endpoint, one trailing snapshot per field, EPS-growth estimate used as an FCF-growth proxy, no normalisation for one-off items, listing-currency figures).
+
+---
+
+## stock_fundamental.py
+
+Pulls a stock's fundamental indicators from Yahoo Finance's public `quoteSummary` endpoint and reports them in six groups. No API key or authentication required. The fetch and parsing are [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy)'s own `fetch_fundamentals()` and `collect_inputs()`, imported rather than copied, so the two scripts read the same data. Its `extract_indicators()` also supplies the **Fundamentals** section of [`app/stock_information/`](#appstock_information).
+
+| Group | Indicators | Source |
+|---|---|---|
+| Profitability | gross, operating and net margin; return on equity; return on assets | `financialData.grossMargins`, `operatingMargins`, `profitMargins`, `returnOnEquity`, `returnOnAssets` |
+| Growth | revenue and earnings growth (YoY, latest quarter); analyst 5-year growth estimate | `financialData.revenueGrowth`, `earningsGrowth`; `earningsTrend` `+5y` |
+| Valuation | trailing and forward P/E; PEG; EV/EBITDA; P/B; P/S; free-cash-flow yield | `summaryDetail`, `defaultKeyStatistics`; PEG = trailing P/E ÷ (5y growth × 100), FCF yield = FCF ÷ market cap |
+| Financial health | debt/equity; net debt/EBITDA; current ratio; quick ratio | `financialData.debtToEquity` ÷ 100 (Yahoo reports a percentage); (total debt − total cash) ÷ EBITDA; `currentRatio`, `quickRatio` |
+| Cash flow | free cash flow; operating cash flow; cash conversion | `financialData.freeCashflow`, `operatingCashflow`; FCF ÷ `defaultKeyStatistics.netIncomeToCommon` |
+| Shareholder returns | dividend yield; payout ratio | `summaryDetail.dividendRate` ÷ price; `summaryDetail.payoutRatio` |
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `stock_intrinsic_value.py` (for the fetch and parsing; it in turn needs `yahoo_finance.py` and `valuation.py`) and `cli_utils.py` — run from the repo root so they import
+
+### Usage
+
+```bash
+python3 stock_fundamental.py SYMBOL [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, … |
+| `--json` | off | Emit structured JSON on stdout instead of the report |
+
+#### Example
+
+```bash
+python3 stock_fundamental.py AAPL
+```
+
+```
+AAPL - Apple Inc.  (NasdaqGS - USD)
+Price 330.32 USD    Market cap 4.82T    Sector: Technology    Industry: Consumer Electronics
+
+Profitability
+  Gross margin                                 48.65%
+  Operating margin                             32.62%
+  Net margin                                   27.62%
+  Return on equity (ROE)                      148.75%
+  Return on assets (ROA)                       27.08%
+
+Growth
+  Revenue growth (YoY)                         16.40%
+  Earnings growth (YoY)                        28.70%
+  Analyst 5-year growth estimate                    -
+...
+Shareholder returns
+  Dividend yield                                0.33%
+  Payout ratio                                 12.04%
+```
+
+(Figures move with live data.) With `--json`: `{symbol, name, exchange, currency, sector, industry, price, market_cap, indicators}`, where `indicators` holds the 24 keys (`gross_margin`, `operating_margin`, `net_margin`, `return_on_equity`, `return_on_assets`, `revenue_growth`, `earnings_growth`, `analyst_growth_5y`, `trailing_pe`, `forward_pe`, `peg`, `ev_to_ebitda`, `price_to_book`, `price_to_sales`, `fcf_yield`, `debt_to_equity`, `net_debt_to_ebitda`, `current_ratio`, `quick_ratio`, `free_cash_flow`, `operating_cash_flow`, `cash_conversion`, `dividend_yield`, `payout_ratio`). Margins, returns, growth and yields are fractions (`0.25` = 25%); a missing indicator is `null`.
+
+### How it works
+
+1. **Fetch** — `stock_intrinsic_value.fetch_fundamentals()`: the cookie + crumb handshake, then `quoteSummary` for `price,summaryDetail,defaultKeyStatistics,financialData,earningsTrend,summaryProfile`.
+2. **Parse** — `stock_intrinsic_value.collect_inputs()` flattens the figures both scripts share (price, market cap, FCF, EBITDA, net debt, multiples, dividend, analyst growth, sector, industry).
+3. **Indicators** — `extract_indicators(modules, inputs)` reuses those and reads the rest directly from the modules, then derives PEG, FCF yield, net debt/EBITDA, cash conversion and dividend yield. A ratio whose denominator is missing or non-positive is `None`, as are PEG with negative growth and a gross margin of exactly 0 (Yahoo's placeholder for banks, which have no cost of goods sold).
+4. **Report** — one section per group in `INDICATOR_GROUPS` order, or the JSON object.
+
+### API reference
+
+- `INDICATOR_GROUPS` — `[(group, [(key, label, format), ...]), ...]` in display order; `format` is `"pct"`, `"ratio"` or `"big"`.
+- `extract_indicators(modules, inputs)` — Returns the indicators dict from quoteSummary `modules` and `stock_intrinsic_value.collect_inputs(modules)`.
+- `build_report(symbol, inputs, indicators)` / `build_json(symbol, inputs, indicators)` — The text report and the JSON payload.
+- `parse_args(argv=None)`, `main(argv=None)` — The CLI.
+
+### Error handling
+
+- Network failure, a bad ticker, or a response with no usable fundamentals → exits 1, printing `Error: …` to stderr (or `{"error": "…"}` with `--json`).
+- A missing symbol or unknown flag is rejected by argument parsing (exit code 2), before any request is made.
+
+### Notes / limitations
+
+- Trailing-12-month figures as Yahoo reports them — one snapshot, no multi-year history, no adjustment for one-off items. Growth is year over year for the latest quarter, so one unusual quarter can distort it.
+- Interest coverage, ROIC and buybacks/dilution aren't reported: the quoteSummary modules fetched don't carry them.
+- The analyst 5-year growth estimate is often missing, so PEG is often blank.
+- Industry context matters: banks and insurers have no meaningful gross margin, current ratio or debt/equity, and Yahoo often omits them.
+- Same undocumented endpoint and fragile crumb/cookie flow as `stock_intrinsic_value.py`. Amounts are in the listing currency.
+
+---
+
+## Claude Code agent: `stock-fundamental`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-fundamental.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_fundamental.py`](#stock_fundamentalpy).
+
+### Purpose
+
+Lets Claude Code answer requests like "what are Apple's fundamentals?", "what's Tesla's profit margin?", "how much debt does DBS have?", "P/E and PEG for Microsoft" or "is Vodafone's dividend covered?" from live Yahoo Finance figures, instead of stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's margins, returns, growth, valuation multiples, debt or liquidity, cash flow or dividend, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value) instead.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-fundamental"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings; if the ticker is uncertain it says so rather than guessing. For comparisons it runs once per ticker.
+2. Runs `python3 stock_fundamental.py SYMBOL --json` from the repo root.
+3. Parses the JSON (`name`, `sector`, `industry`, `price`, `market_cap`, `indicators`).
+4. Answers any specific indicator the user asked about first; otherwise gives a short read of each group and a table of all indicators. It interprets figures against the company's industry, flags ones that can mislead, and names any `null` indicators. Closes with a caveat that these are trailing, descriptive figures from one snapshot, not investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_fundamental.py`](#stock_fundamentalpy) |
+
+### Notes / limitations
+
+- Requires `stock_fundamental.py` and its `stock_intrinsic_value.py` / `yahoo_finance.py` helpers (and `requests`) to be runnable from the repo root.
+- Inherits all the limitations of [`stock_fundamental.py`](#stock_fundamentalpy): one trailing Yahoo snapshot, quarterly YoY growth, no interest coverage / ROIC / buyback data, often-missing PEG.
 
 ---
 

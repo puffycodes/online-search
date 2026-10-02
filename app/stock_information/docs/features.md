@@ -3,6 +3,7 @@
 ## Requirement
 
 - Use the scripts or agents in this project as much as possible.
+    - Use the stock_fundamental.py script for the fundamental indicators.
 
 ## Actions
 

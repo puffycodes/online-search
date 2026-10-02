@@ -18,7 +18,7 @@ estimates say the price is undervalued / fair value / overvalued, then each
 estimate next to the price. The company's market cap, trailing P/E, dividend yield,
 sector and industry come from the same fundamentals payload, as do the
 fundamental indicators (margins, returns, growth, multiples, balance-sheet
-ratios, cash flow, payout) in their own section. It's a separate call because the fundamentals fetch
+ratios, cash flow, payout; from stock_fundamental.py) in their own section. It's a separate call because the fundamentals fetch
 is slower and more fragile than the quote.
 
 A server is needed (rather than a static page) because Yahoo's endpoints
@@ -37,13 +37,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# yahoo_finance.py, stock_price_history.py and stock_intrinsic_value.py live
-# at the repository root, two levels up from this file (app/stock_information/stock_info_server.py).
+# yahoo_finance.py, stock_price_history.py, stock_intrinsic_value.py and
+# stock_fundamental.py live at the repository root, two levels up from this file (app/stock_information/stock_info_server.py).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 import requests  # noqa: E402
 
+import stock_fundamental as sf  # noqa: E402
 import stock_intrinsic_value as siv  # noqa: E402
 import yahoo_finance as yf  # noqa: E402
 from stock_price_history import extract_rows  # noqa: E402
@@ -339,7 +340,8 @@ PAGE_HTML = """<!DOCTYPE html>
   var fundamentalsStatus = document.getElementById("fundamentals-status");
   var fundamentalsBox = document.getElementById("fundamentals");
   var indicatorRows = document.getElementById("indicator-rows");
-  // Groups, labels and formats for the server's extract_indicators() keys.
+  // Groups, labels and formats for stock_fundamental.extract_indicators() keys
+  // (the same as that script's INDICATOR_GROUPS).
   var INDICATOR_GROUPS = [
     ["Profitability", [
       ["gross_margin", "Gross margin", "pct"],
@@ -715,7 +717,7 @@ def get_valuation(symbol):
     Returns that script's ``--json`` payload (``build_json()``): inputs,
     assumptions, and every estimate with its gap to the price, plus a
     ``summary`` from summarize_estimates() and the fundamental
-    ``indicators`` from extract_indicators(). Raises
+    ``indicators`` from stock_fundamental.extract_indicators(). Raises
     requests.RequestException / ValueError / KeyError on a failed fetch,
     and ValueError when Yahoo returns no usable fundamentals.
     """
@@ -728,68 +730,8 @@ def get_valuation(symbol):
     estimates, used = siv.compute_estimates(inputs, assumptions, args)
     payload = siv.build_json(symbol, inputs, assumptions, estimates, used)
     payload["summary"] = summarize_estimates(payload)
-    payload["indicators"] = extract_indicators(modules, inputs)
+    payload["indicators"] = sf.extract_indicators(modules, inputs)
     return payload
-
-
-def _ratio(numerator, denominator):
-    """numerator / denominator, or None unless both are present and the denominator is positive."""
-    if numerator is None or not denominator or denominator <= 0:
-        return None
-    return numerator / denominator
-
-
-def extract_indicators(modules, inputs):
-    """Pull the fundamental indicators the page shows from the quoteSummary ``modules``.
-
-    ``inputs`` is stock_intrinsic_value.collect_inputs() of the same modules;
-    figures it already parsed are reused rather than read twice. Margins,
-    returns, growth rates and yields are fractions (0.25 == 25%); multiples
-    and ratios are plain numbers. Anything Yahoo leaves out, or that isn't
-    meaningful (e.g. PEG with negative growth), is None.
-    """
-    def num(module, key):
-        return siv._num(modules, module, key)
-
-    trailing_pe = inputs["trailing_pe"]
-    growth_5y = inputs["analyst_growth_5y"]
-    peg = (
-        _ratio(trailing_pe, growth_5y * 100.0)
-        if trailing_pe and trailing_pe > 0 and growth_5y is not None
-        else None
-    )
-    # Yahoo reports debt/equity as a percentage (150.0 == 1.5x).
-    debt_to_equity = num("financialData", "debtToEquity")
-    # Yahoo reports a gross margin of exactly 0 for banks and others with no
-    # cost of goods sold; that means "not applicable", not a 0% margin.
-    gross_margin = num("financialData", "grossMargins") or None
-    fcf = inputs["free_cash_flow"]
-    return {
-        "gross_margin": gross_margin,
-        "operating_margin": num("financialData", "operatingMargins"),
-        "net_margin": num("financialData", "profitMargins"),
-        "return_on_equity": num("financialData", "returnOnEquity"),
-        "return_on_assets": num("financialData", "returnOnAssets"),
-        "revenue_growth": num("financialData", "revenueGrowth"),
-        "earnings_growth": num("financialData", "earningsGrowth"),
-        "analyst_growth_5y": growth_5y,
-        "trailing_pe": trailing_pe,
-        "forward_pe": inputs["forward_pe"],
-        "peg": peg,
-        "ev_to_ebitda": inputs["ev_to_ebitda"],
-        "price_to_book": num("defaultKeyStatistics", "priceToBook"),
-        "price_to_sales": inputs["price_to_sales"],
-        "fcf_yield": _ratio(fcf, inputs["market_cap"]),
-        "debt_to_equity": None if debt_to_equity is None else debt_to_equity / 100.0,
-        "net_debt_to_ebitda": _ratio(inputs["net_debt"], inputs["ebitda"]),
-        "current_ratio": num("financialData", "currentRatio"),
-        "quick_ratio": num("financialData", "quickRatio"),
-        "free_cash_flow": fcf,
-        "operating_cash_flow": num("financialData", "operatingCashflow"),
-        "cash_conversion": _ratio(fcf, num("defaultKeyStatistics", "netIncomeToCommon")),
-        "dividend_yield": _ratio(inputs["dividend_rate"], inputs["price"]),
-        "payout_ratio": num("summaryDetail", "payoutRatio"),
-    }
 
 
 def summarize_estimates(payload, threshold=FAIR_VALUE_THRESHOLD):
