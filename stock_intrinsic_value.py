@@ -22,6 +22,10 @@ growth to the analyst 5-year estimate; override either (and the multiples,
 horizon, and CAPM parameters) with the flags below. Supports --json for
 structured output. On failure the process exits non-zero and prints
 {"error": "..."} to stderr.
+
+fetch_fundamentals() and collect_inputs() are also imported by
+stock_fundamental.py and app/stock_information/stock_info_server.py, so a
+change to them affects both.
 """
 
 import argparse

@@ -5,7 +5,8 @@ Shared helpers for Yahoo Finance's public endpoints. No API key required.
 Used by stock_price_history.py, stock_candlestick_chart.py and stock_rebased_chart.py
 for price history (the chart endpoint, the --range/--last/--start/--end window
 flags, and exchange-local session dates), by market_top_volume.py and
-stock_intrinsic_value.py for the cookie + crumb handshake their endpoints need,
+stock_intrinsic_value.py for the cookie + crumb handshake their endpoints need
+(stock_fundamental.py gets it through stock_intrinsic_value.py's fetch),
 and by app/stock_information/stock_info_server.py for its quote. Each caller
 keeps its own row shaping (rounding, date formatting, which rows to drop) and
 its own output stage; everything up to and including the HTTP call and the

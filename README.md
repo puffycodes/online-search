@@ -1234,7 +1234,7 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) and [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) use its cookie + crumb handshake, and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, and the crumb handshake. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) and [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) use its cookie + crumb handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch), and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, and the crumb handshake. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1268,7 +1268,7 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 
 ### Notes / limitations
 
-- Changing a constant, the window flags or the `build_params` window logic here affects **all three** price scripts that use it, and changing the crumb handshake affects both `market_top_volume.py` and `stock_intrinsic_value.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all three** price scripts that use it, and changing the crumb handshake affects `market_top_volume.py`, `stock_intrinsic_value.py` and (through it) `stock_fundamental.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
 
 ---
 
@@ -1580,6 +1580,7 @@ Intrinsic value estimates (per share unless noted)
 - Yahoo's `freeCashflow` is a levered TTM figure; `earningsTrend` growth is an *EPS* estimate used here as an *FCF* growth proxy. Analyst `+5y` is often missing, in which case the `+1y` number stands in and is a poor perpetual-growth guess.
 - One trailing snapshot per field — no multi-year averaging, no normalisation for one-off items, no segment detail. `quoteSummary` is an undocumented endpoint and its crumb/cookie flow can change without notice.
 - Figures come back in the listing currency; the script does not convert.
+- `fetch_fundamentals()` and `collect_inputs()` are also imported by [`stock_fundamental.py`](#stock_fundamentalpy) and [`app/stock_information/`](#appstock_information), so changing them affects both.
 
 ---
 
