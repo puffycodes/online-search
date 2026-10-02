@@ -1,4 +1,4 @@
-# Stock Closing Price
+# Stock Price History
 
 ## Requirement
 
