@@ -37,7 +37,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`app/hottest_discussions/`](#apphottest_discussions) — small local web app for `hottest_tech_discussions.py`: a page with a "Show" drop-down and Refresh button that runs the script through a local server
-- [`.claude/agents/hottest-discussion-summary.md`](#claude-code-agent-hottest-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions with cited sources
+- [`.claude/agents/hottest-tech-discussion-summary.md`](#claude-code-agent-hottest-tech-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions with cited sources
 
 **[Web Search](#web-search)**
 - [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
@@ -1968,9 +1968,9 @@ Open <http://127.0.0.1:8001/>, pick a count from **Show**, and click **Refresh**
 
 ---
 
-## Claude Code agent: `hottest-discussion-summary`
+## Claude Code agent: `hottest-tech-discussion-summary`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hottest-discussion-summary.md`, built against the feature spec in `docs/features/agent/hottest-discussion-summary/features.md`. Unlike the other agents in this repo, it isn't a thin wrapper around one script — it chains three tools ([`hottest_tech_discussions.py`](#hottest_tech_discussionspy), two of the six `web_search_*.py` engines, and [`url_content.py`](#url_contentpy)) with its own reasoning between each call, to turn a plain list of trending discussions into researched, sourced summaries.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hottest-tech-discussion-summary.md`, built against the feature spec in `docs/features/agent/hottest-tech-discussion-summary/features.md`. Unlike the other agents in this repo, it isn't a thin wrapper around one script — it chains three tools ([`hottest_tech_discussions.py`](#hottest_tech_discussionspy), two of the six `web_search_*.py` engines, and [`url_content.py`](#url_contentpy)) with its own reasoning between each call, to turn a plain list of trending discussions into researched, sourced summaries.
 
 ### Purpose
 
@@ -1979,7 +1979,7 @@ Lets Claude Code answer requests like "summarize today's hottest tech discussion
 ### How it's invoked
 
 - **Automatically** — Claude Code selects this subagent on its own when the user wants each top topic researched and summarized with sources, rather than just a list of what's trending, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "hottest-discussion-summary"`.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "hottest-tech-discussion-summary"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 

@@ -1,5 +1,5 @@
 ---
-name: hottest-discussion-summary
+name: hottest-tech-discussion-summary
 description: Use this agent to produce researched, sourced summaries of today's hottest tech discussions — e.g. "summarize today's hottest tech discussions", "give me a deep-dive on the top HN topics", "research the top 3 trending tech discussions and summarize each with sources". Invoke it when the user wants more than a headline list of what's trending (that's the `hottest-tech-discussions` agent) — they want each top topic researched and summarized with cited sources.
 tools: Bash
 ---
