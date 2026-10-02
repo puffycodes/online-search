@@ -1,11 +1,11 @@
-"""Tests for stock_candlestick: the --ma / --flip-ma arg parsers and extract_rows."""
+"""Tests for stock_candlestick_chart: the --ma / --flip-ma arg parsers and extract_rows."""
 
 import argparse
 import datetime as dt
 
 import pytest
 
-import stock_candlestick as scdl
+import stock_candlestick_chart as scdl
 
 
 class TestParseMaArg:

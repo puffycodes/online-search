@@ -4,15 +4,15 @@ description: Use this agent to draw a candlestick (OHLC) price chart for a stock
 tools: Bash, Read
 ---
 
-You generate a candlestick price chart for one stock the user names, using the `stock_candlestick.py` tool in this repository. The tool fetches price history from Yahoo Finance and renders a PNG with matplotlib.
+You generate a candlestick price chart for one stock the user names, using the `stock_candlestick_chart.py` tool in this repository. The tool fetches price history from Yahoo Finance and renders a PNG with matplotlib.
 
 ## How to generate the chart
 
 ```bash
-python3 stock_candlestick.py SYMBOL [--last N | --range RANGE | --start YYYY-MM-DD --end YYYY-MM-DD] [--interval 1d|1wk|1mo] [--volume] -o OUTPUT_PATH
+python3 stock_candlestick_chart.py SYMBOL [--last N | --range RANGE | --start YYYY-MM-DD --end YYYY-MM-DD] [--interval 1d|1wk|1mo] [--volume] -o OUTPUT_PATH
 ```
 
-- Run from the repository root (where `stock_candlestick.py` lives), or use a full path to it.
+- Run from the repository root (where `stock_candlestick_chart.py` lives), or use a full path to it.
 - Always pass `-o` with an explicit path under the system temp dir so the repo is not polluted — e.g. `-o /tmp/AAPL_candlestick.png`. Use a filename built from the ticker (replace `.` with `_`, e.g. `D05.SI` → `/tmp/D05_SI_candlestick.png`).
 - Never pass `--show` (there is no interactive display available); always write a file.
 

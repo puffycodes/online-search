@@ -1,5 +1,5 @@
 ---
-name: stock-closing-price
+name: stock-close-history
 description: Use this agent to look up a specific stock's past daily prices — open, high, low, and close — e.g. "what did AAPL close at yesterday", "Tesla's OHLC last week", "DBS high and low for August", "what was Vodafone's last close". Invoke it whenever the user asks for a historical or previous open, high, low, or closing price of a named company or ticker.
 tools: Bash
 ---

@@ -14,12 +14,12 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 
 **[Market & Stock Data](#market--stock-data)**
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
-- [`.claude/agents/top-volume-stock.md`](#claude-code-agent-top-volume-stock) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
+- [`.claude/agents/market-top-volume.md`](#claude-code-agent-market-top-volume) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`stock_close_history.py`](#stock_close_historypy) — past daily open / high / low / close prices for a single stock
-- [`.claude/agents/stock-closing-price.md`](#claude-code-agent-stock-closing-price) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
+- [`.claude/agents/stock-close-history.md`](#claude-code-agent-stock-close-history) — Claude Code subagent that calls `stock_close_history.py` and reports a stock's past open / high / low / close prices
 - [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_close_history.py` + `indicators.py` and reports whether a named stock is trending up or down
-- [`stock_candlestick.py`](#stock_candlestickpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
-- [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick.py` and produces a candlestick chart for a named stock
+- [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
+- [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick_chart.py` and produces a candlestick chart for a named stock
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing, used by the three price scripts, `stock_intrinsic_value.py` (headers/timeout) and `app/stock_information/`
@@ -710,9 +710,9 @@ The request headers, timeout and cookie/crumb URLs are shared with the other Yah
 
 ---
 
-## Claude Code agent: `top-volume-stock`
+## Claude Code agent: `market-top-volume`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/top-volume-stock.md`. Like the `hottest-tech-discussions` agent, it calls no API itself — it shells out to [`market_top_volume.py`](#market_top_volumepy) via the `Bash` tool and reports the result conversationally.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/market-top-volume.md`. Like the `hottest-tech-discussions` agent, it calls no API itself — it shells out to [`market_top_volume.py`](#market_top_volumepy) via the `Bash` tool and reports the result conversationally.
 
 ### Purpose
 
@@ -721,7 +721,7 @@ Lets Claude Code answer questions like "what's the top volume stock on the NYSE?
 ### How it's invoked
 
 - **Automatically** — Claude Code selects this subagent on its own for "which stocks are trading the most / up the most / down the most on \<market\>" questions, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "top-volume-stock"`.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "market-top-volume"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 
@@ -819,7 +819,7 @@ With `--json`, results print as a JSON object on stdout. On failure, an exit cod
 
 ### How it works
 
-Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_candlestick.py`. This script keeps its own row shaping and output.
+Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_candlestick_chart.py`. This script keeps its own row shaping and output.
 
 1. **Build the query window** — `yahoo_finance.build_params()` turns the args into params: `--start/--end` become `period1`/`period2` epoch bounds (the end is padded a day so the final session is inclusive); `--last N` fetches a generous calendar window (`N*2 + 10` days) to be trimmed later; otherwise `range` is passed through. `interval=1d` and `includeAdjustedClose=true` are always set.
 2. **Fetch** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised as an error rather than parsed.
@@ -863,9 +863,9 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history(
 
 ---
 
-## Claude Code agent: `stock-closing-price`
+## Claude Code agent: `stock-close-history`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-closing-price.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_close_history.py`](#stock_close_historypy) via the `Bash` tool and reports the result conversationally.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-close-history.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_close_history.py`](#stock_close_historypy) via the `Bash` tool and reports the result conversationally.
 
 ### Purpose
 
@@ -874,7 +874,7 @@ Lets Claude Code answer questions like "what did AAPL close at yesterday?", "Tes
 ### How it's invoked
 
 - **Automatically** — Claude Code selects this subagent on its own for "past / previous / historical open, high, low, or closing price of \<company\>" questions, based on the `description` field in its frontmatter.
-- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-closing-price"`.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-close-history"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 
@@ -942,7 +942,7 @@ The agent's frontmatter restricts it to `Bash` (run the script and the analysis 
 
 ---
 
-## stock_candlestick.py
+## stock_candlestick_chart.py
 
 Fetches the past price history of one stock from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_close_history.py`](#stock_close_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/), with simple moving averages of the close overlaid as lines (5 / 10 / 20 / 50 bars by default; via [`indicators.py`](#indicatorspy)) and moving-average-cross flips of a second window pair (20 / 50 by default) marked with arrows. No API key or authentication required. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
 
@@ -960,7 +960,7 @@ pip install requests matplotlib
 ### Usage
 
 ```bash
-python3 stock_candlestick.py SYMBOL [--range RANGE | --last N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--interval {1d,1wk,1mo}] [--volume] [--ma N,N,...] [--flip-ma FAST,SLOW] [-o OUTPUT] [--show]
+python3 stock_candlestick_chart.py SYMBOL [--range RANGE | --last N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--interval {1d,1wk,1mo}] [--volume] [--ma N,N,...] [--flip-ma FAST,SLOW] [-o OUTPUT] [--show]
 ```
 
 | Flag | Default | Description |
@@ -981,7 +981,7 @@ python3 stock_candlestick.py SYMBOL [--range RANGE | --last N] [--start YYYY-MM-
 #### Example
 
 ```bash
-python3 stock_candlestick.py NVDA --range 1y --volume --ma 20,50,200 --flip-ma 5,20
+python3 stock_candlestick_chart.py NVDA --range 1y --volume --ma 20,50,200 --flip-ma 5,20
 ```
 
 ```
@@ -1053,7 +1053,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history(
 
 ## Claude Code agent: `stock-candlestick-chart`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-candlestick-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_candlestick.py`](#stock_candlestickpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-candlestick-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
 
 ### Purpose
 
@@ -1070,7 +1070,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
 2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, `--volume` when volume is mentioned, `--ma` only when the user asks for specific moving averages (the script overlays `5,10,20,50` by default) or asks for none, and `--flip-ma` only when the user names a crossover pair (the script marks `20/50` cross flips by default) or asks for none.
-3. Runs `python3 stock_candlestick.py SYMBOL <window flags> [--interval …] [--volume] [--ma …] [--flip-ma …] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
+3. Runs `python3 stock_candlestick_chart.py SYMBOL <window flags> [--interval …] [--volume] [--ma …] [--flip-ma …] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
 4. Reads the PNG to verify it rendered, then reports a one- or two-sentence summary (ticker, exchange, period, interval, and a brief read of the trend) ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
 
 ### Configuration
@@ -1080,20 +1080,20 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 | Field | Value |
 |---|---|
 | `tools` | `Bash`, `Read` |
-| Underlying script | [`stock_candlestick.py`](#stock_candlestickpy) |
+| Underlying script | [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) |
 
 ### Notes / limitations
 
-- Requires `stock_candlestick.py` and its `yahoo_finance.py` + `indicators.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
+- Requires `stock_candlestick_chart.py` and its `yahoo_finance.py` + `indicators.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's chart or a "symbol may be delisted" error.
 - The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
-- Inherits all the limitations of [`stock_candlestick.py`](#stock_candlestickpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
+- Inherits all the limitations of [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
 
 ---
 
 ## stock_rebased_chart.py
 
-Fetches closing-price history for a series of stocks from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_close_history.py`](#stock_close_historypy) and [`stock_candlestick.py`](#stock_candlestickpy) — rescales each series with [`indicators.py`](#indicatorspy)'s `rebase()` so its price on a common reference date reads as 100, and plots the rebased series together on one chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. This is a relative-performance comparison chart: it answers "which of these stocks has done better *since a given date*", not "which is priced higher". The chart is written to a PNG by default, or shown in an interactive window with `--show`.
+Fetches closing-price history for a series of stocks from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_close_history.py`](#stock_close_historypy) and [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) — rescales each series with [`indicators.py`](#indicatorspy)'s `rebase()` so its price on a common reference date reads as 100, and plots the rebased series together on one chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. This is a relative-performance comparison chart: it answers "which of these stocks has done better *since a given date*", not "which is priced higher". The chart is written to a PNG by default, or shown in an interactive window with `--show`.
 
 ### Requirements
 
@@ -1138,7 +1138,7 @@ The chart draws one line per symbol against its actual session dates, all passin
 
 ### How it works
 
-Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_close_history.py` and `stock_candlestick.py`. This script keeps its own row shaping, the rebasing step, and the render stage.
+Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_close_history.py` and `stock_candlestick_chart.py`. This script keeps its own row shaping, the rebasing step, and the render stage.
 
 1. **Build the query window** — `yahoo_finance.build_params()`: `--start/--end` become `period1`/`period2` epoch bounds (end padded a day so the final session is inclusive); `--last N` fetches a generous calendar window (`N*2 + 10` days) to be trimmed later; otherwise `range` is passed through. `interval` stays at the default `"1d"`.
 2. **Fetch each symbol independently** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint once per symbol. A symbol whose fetch fails (bad ticker, network error) or has no settled close in the window is dropped with a warning to stderr rather than aborting the whole run; the chart is drawn from whichever symbols succeed.
@@ -1232,7 +1232,7 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`stock_candlestick.py`](#stock_candlestickpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) and [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) use its cookie + crumb handshake, and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, and the crumb handshake. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) and [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) use its cookie + crumb handshake, and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, and the crumb handshake. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1262,7 +1262,7 @@ Shared helper module for [`stock_close_history.py`](#stock_close_historypy), [`s
 - `build_params(interval="1d", range_=None, start=None, end=None, last=None)` — Returns the chart-endpoint query params. The window is chosen by, in priority order: an explicit `start`/`end` pair (→ `period1`/`period2`, end padded a day), then `last` (→ a calendar look-back widened for `1wk` / `1mo` bars), then `range_`. Raises `ValueError` for `end` without `start` or an `end` not after `start`. `includeAdjustedClose=true` is always set. Callers pass `interval="1d"` (the default) for daily data.
 - `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
 - `extract_series(result)` — Returns `(meta, series)` where `series` is a dict of parallel lists straight off the payload — `timestamp`, `open`, `high`, `low`, `close`, `volume` — plus `adjclose` (a list or `None`) and the resolved `gmtoffset`. Callers turn these into row dicts.
-- `meta_summary(meta, fallback_symbol=None)` — Pulls the display fields out of a chart result's `meta` block: returns `(symbol, exchange, currency)`, with `symbol` falling back to `fallback_symbol` then `"?"`, `exchange` to `"?"`, and `currency` to `""`. Used by `stock_close_history.py` and `stock_candlestick.py` for their report headers.
+- `meta_summary(meta, fallback_symbol=None)` — Pulls the display fields out of a chart result's `meta` block: returns `(symbol, exchange, currency)`, with `symbol` falling back to `fallback_symbol` then `"?"`, `exchange` to `"?"`, and `currency` to `""`. Used by `stock_close_history.py` and `stock_candlestick_chart.py` for their report headers.
 
 ### Notes / limitations
 
@@ -1328,7 +1328,7 @@ A server is used instead of a static page because Yahoo's endpoints don't send C
 
 ## indicators.py
 
-Small, dependency-free technical indicators over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_close_history.py`](#stock_close_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick.py`](#stock_candlestickpy) (moving-average overlays and cross-flip arrows), [`stock_rebased_chart.py`](#stock_rebased_chartpy) (`rebase`), and the [`stock-trend`](#claude-code-agent-stock-trend) agent. For a concepts-first walkthrough see [`docs/indicators.md`](docs/indicators.md).
+Small, dependency-free technical indicators over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_close_history.py`](#stock_close_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) (moving-average overlays and cross-flip arrows), [`stock_rebased_chart.py`](#stock_rebased_chartpy) (`rebase`), and the [`stock-trend`](#claude-code-agent-stock-trend) agent. For a concepts-first walkthrough see [`docs/indicators.md`](docs/indicators.md).
 
 ### Requirements
 

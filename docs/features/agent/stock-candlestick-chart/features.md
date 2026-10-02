@@ -3,7 +3,7 @@
 ## Requirement
 
 - Use the scripts or agents in this project as much as possible.
-    - Use the stock_candlestick.py script to draw the chart.
+    - Use the stock_candlestick_chart.py script to draw the chart.
 
 ## Actions
 

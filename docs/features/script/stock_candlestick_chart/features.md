@@ -10,7 +10,7 @@
 
 ## Actions
 
-- Run as python3 stock_candlestick.py from the repo root.
+- Run as python3 stock_candlestick_chart.py from the repo root.
 - Take:
     - {{Symbol}}: a ticker in Yahoo notation, including the exchange suffix for non-US listings (e.g. AAPL, VOD.L, D05.SI, SAP.DE).
     - The time window, one of:

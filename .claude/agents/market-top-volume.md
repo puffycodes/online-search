@@ -1,5 +1,5 @@
 ---
-name: top-volume-stock
+name: market-top-volume
 description: Use this agent to find the top movers on a given stock market right now — highest trading volume, biggest gainers, or biggest losers. e.g. "what's the top volume stock on the NYSE", "biggest gainers on NASDAQ today", "worst-performing stocks on the LSE", "most active stock in Singapore". Invoke it whenever the user asks which stocks are trading the most, up the most, or down the most on a particular exchange or market.
 tools: Bash
 ---

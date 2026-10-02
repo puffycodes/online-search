@@ -57,7 +57,7 @@ tests/
   test_hottest_tech_discussions.py
   test_market_top_volume.py
   test_stock_close_history.py
-  test_stock_candlestick.py
+  test_stock_candlestick_chart.py
   test_stock_rebased_chart.py
   test_stock_tech_buzz_agent.py
   test_stock_intrinsic_value.py
@@ -146,7 +146,7 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_hottest_tech_discussions.py` | `hottest_tech_discussions` | `discussion_url`/`posted_at`/`story_to_dict`; `fetch_story` error-swallowing; `get_hottest_tech_discussions` type filter / score sort / limit / candidate-pool slice / pool scales with limit (4×); `main` (incl. invalid `--limit` exits 2 before any fetch) |
 | `test_market_top_volume.py` | `market_top_volume` | `METRICS`/`MARKETS` structural consistency; `quote_to_dict`; `format_quote` ordering; `get_movers` predefined vs region path, filters, sort; `fetch_region_quotes` crumb/error/success; `main` (invalid `--limit` exits 2 before any fetch, valid limit passed through) |
 | `test_stock_close_history.py` | `stock_close_history` | `extract_rows` rounding / unsettled-bar skip / gmtoffset date shift / None-safety; `main` `--last` trim, JSON shape, adj-close column, fetch-error exit, invalid `--start` date exit |
-| `test_stock_candlestick.py` | `stock_candlestick` | `_parse_ma_arg` / `_parse_flip_ma_arg` full matrices; `extract_rows` skips bars with missing OHLC, date is `datetime`; `main` invalid `--start` date exit |
+| `test_stock_candlestick_chart.py` | `stock_candlestick_chart` | `_parse_ma_arg` / `_parse_flip_ma_arg` full matrices; `extract_rows` skips bars with missing OHLC, date is `datetime`; `main` invalid `--start` date exit |
 | `test_stock_rebased_chart.py` | `stock_rebased_chart` | `fetch_closes` None-close skip; `main` base-date defaulting + fallback, per-symbol skip when the base date is missing, invalid `--base-date`, all-symbols-fail exit |
 | `test_stock_tech_buzz_agent.py` | `stock_tech_buzz_agent` | `normalize_company_name` (one outer suffix); `stock_mentions_in_title` case-sensitivity / ambiguous symbols / word boundaries / short-name skip; `get_top_volume_stocks` dedup; `find_stock_buzz` match/no-match; `main` (text output with price / % change / comment count, malformed-payload `KeyError` exits 1 as JSON, invalid `--stock-limit` / `--discussion-limit` exits 2 before any fetch) |
 | `test_stock_intrinsic_value.py` | `stock_intrinsic_value` | `_num` / `_text` raw-unwrap and type matrices; `_analyst_growth` by period; `collect_inputs` flattening plus price / shares / beta / name fallbacks and `net_debt` needing both debt and cash; `resolve_assumptions` CAPM + analyst-5y defaults, user overrides, no-beta / no-estimate defaults, 1y growth fallback, discount rate raised above terminal growth; `compute_estimates` every method against `valuation.py` (reverse DCF round-trips the price), user multiples, negative FCF / non-payer / loss-maker blanks, Graham cap and negative-growth skip, missing net debt as zero; `_vs_price` matrix; `build_json` shape; `build_report` sections and low-yield note; `fetch_fundamentals` cookie → crumb → host order with a `FakeSession`, host fall-through on an error body, HTML crumb ignored (crumbless attempts), all-fail raises last error, non-JSON status; `parse_args` defaults and exit-2 matrix; `main` (JSON/text output, upper-cased symbol, fetch error and no-price exit 1, invalid `--years` exits 2 before any fetch) |
