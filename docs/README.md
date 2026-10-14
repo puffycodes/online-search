@@ -17,6 +17,11 @@ done — they do not predict. The valuation tools *estimate* what a business mig
 be worth, but every estimate depends on assumptions you choose, and the answer
 moves a lot when the assumptions move. Nothing here is investment advice.
 
+## Backlog
+
+[`things-to-explore.md`](things-to-explore.md) lists data sources and features that
+could be added on top of the existing scripts. They are ideas only, not implemented yet.
+
 ## Agent feature specs
 
 [`features/agent/`](features/agent/) holds one `features.md` per Claude Code subagent
