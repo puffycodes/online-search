@@ -103,6 +103,12 @@ def collect_inputs(modules):
         else None
     )
     revenue = _num(modules, "financialData", "totalRevenue")
+    # The forward dividend per share, from Yahoo's forward yield rather than
+    # summaryDetail.dividendRate (mostly no longer returned) or
+    # trailingAnnualDividendRate (in pounds, not the GBp quote, on the LSE):
+    # yield x price is always in the price's own unit. A 0 yield is a non-payer.
+    dividend_yield = _num(modules, "summaryDetail", "dividendYield")
+    dividend_rate = dividend_yield * price if dividend_yield and price else None
 
     return {
         "name": _text(modules, "price", "longName")
@@ -131,7 +137,7 @@ def collect_inputs(modules):
         "price_to_sales": _num(modules, "summaryDetail", "priceToSalesTrailing12Months"),
         "enterprise_value": _num(modules, "defaultKeyStatistics", "enterpriseValue"),
         "ev_to_ebitda": _num(modules, "defaultKeyStatistics", "enterpriseToEbitda"),
-        "dividend_rate": _num(modules, "summaryDetail", "dividendRate"),
+        "dividend_rate": dividend_rate,
         "analyst_growth_5y": _analyst_growth(modules, "+5y"),
         "analyst_growth_1y": _analyst_growth(modules, "+1y"),
     }

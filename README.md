@@ -1494,7 +1494,7 @@ implied_growth_rate(price, fcf, 0.09, 10,
 
 Pulls the fundamentals a stock's intrinsic value needs from Yahoo Finance's public `quoteSummary` endpoint (`query{1,2}.finance.yahoo.com/v10/finance/quoteSummary/<symbol>`), then runs **every** method in [`valuation.py`](#valuationpy) it has inputs for and prints the estimates side by side against the current price. No API key or authentication required — a consent cookie and crumb are fetched automatically.
 
-What it retrieves per ticker: trailing free cash flow, EBITDA, revenue, share count, total debt and cash, trailing/forward EPS, book value per share, beta, dividend rate, the current P/E, P/S and EV/EBITDA multiples, enterprise value, and the analyst growth estimate (`+5y`, falling back to `+1y`).
+What it retrieves per ticker: trailing free cash flow, EBITDA, revenue, share count, total debt and cash, trailing/forward EPS, book value per share, beta, the forward dividend per share (Yahoo's forward dividend yield × price, so it is in the price's own unit — pence for `GBp` listings), the current P/E, P/S and EV/EBITDA multiples, enterprise value, and the analyst growth estimate (`+5y`, falling back to `+1y`).
 
 What it computes:
 
@@ -1646,7 +1646,7 @@ Pulls a stock's fundamental indicators from Yahoo Finance's public `quoteSummary
 | Valuation | trailing and forward P/E; PEG; EV/EBITDA; P/B; P/S; free-cash-flow yield | `summaryDetail`, `defaultKeyStatistics`; PEG = trailing P/E ÷ (5y growth × 100), FCF yield = FCF ÷ market cap |
 | Financial health | debt/equity; net debt/EBITDA; current ratio; quick ratio | `financialData.debtToEquity` ÷ 100 (Yahoo reports a percentage); (total debt − total cash) ÷ EBITDA; `currentRatio`, `quickRatio` |
 | Cash flow | free cash flow; operating cash flow; cash conversion | `financialData.freeCashflow`, `operatingCashflow`; FCF ÷ `defaultKeyStatistics.netIncomeToCommon` |
-| Shareholder returns | dividend yield; payout ratio | `summaryDetail.dividendRate` ÷ price; `summaryDetail.payoutRatio` |
+| Shareholder returns | dividend yield; payout ratio | `summaryDetail.dividendYield` (Yahoo's forward yield, carried as `dividend_rate` = yield × price, then ÷ price); `summaryDetail.payoutRatio` |
 
 ### Requirements
 

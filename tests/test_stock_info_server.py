@@ -151,7 +151,7 @@ def _fundamentals(price=100.0):
                                  "beta": {"raw": 1.0}, "enterpriseValue": {"raw": 101e9},
                                  "enterpriseToEbitda": {"raw": 12.0}},
         "summaryDetail": {"trailingPE": {"raw": 20.0}, "priceToSalesTrailing12Months": {"raw": 2.5},
-                          "dividendRate": {"raw": 2.0}},
+                          "dividendYield": {"raw": 0.02}},
         "summaryProfile": {"sector": "Technology", "industry": "Consumer Electronics"},
     }
 
@@ -166,7 +166,7 @@ class TestGetValuation:
         assert (out["sector"], out["industry"]) == ("Technology", "Consumer Electronics")
         assert "industry" not in out["inputs"]
         assert out["inputs"]["trailing_pe"] == 20.0  # read by the page's P/E line
-        assert out["inputs"]["dividend_rate"] == 2.0  # page shows 2.0 / 100.0 = 2.00% yield
+        assert out["inputs"]["dividend_rate"] == 2.0  # 2% yield x 100.0; page shows 2.0 / 100.0 = 2.00%
         # CAPM default: 4% + 1.0 x 5%
         assert out["assumptions"]["discount_rate"] == pytest.approx(0.09)
         est = out["estimates"]

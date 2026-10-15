@@ -24,7 +24,7 @@ def _modules(price=100.0):
                                  "enterpriseToEbitda": {"raw": 12.0}},
         "summaryDetail": {"trailingPE": {"raw": 20.0}, "forwardPE": {"raw": 16.0},
                           "priceToSalesTrailing12Months": {"raw": 2.5},
-                          "dividendRate": {"raw": 2.0}},
+                          "dividendYield": {"raw": 0.02}},
         "summaryProfile": {"sector": "Technology", "industry": "Consumer Electronics"},
         "earningsTrend": {"trend": [{"period": "+1y", "growth": {"raw": 0.07}},
                                     {"period": "+5y", "growth": {"raw": 0.10}}]},
@@ -106,6 +106,25 @@ class TestCollectInputs:
         del modules["defaultKeyStatistics"]["beta"]
         modules["summaryDetail"]["beta"] = {"raw": 0.8}
         assert siv.collect_inputs(modules)["beta"] == 0.8
+
+    def test_dividend_rate_is_yield_times_price(self):
+        assert siv.collect_inputs(_modules())["dividend_rate"] == pytest.approx(2.0)
+
+    def test_dividend_rate_in_minor_units_like_the_price(self):
+        modules = _modules(price=614.2)  # an LSE quote in GBp
+        modules["price"]["currency"] = "GBp"
+        modules["summaryDetail"]["dividendYield"] = {"raw": 0.0411}
+        # Ignores dividendRate / trailingAnnualDividendRate, which Yahoo gives in pounds.
+        modules["summaryDetail"]["dividendRate"] = {"raw": 0.336}
+        modules["summaryDetail"]["trailingAnnualDividendRate"] = {"raw": 0.336}
+        assert siv.collect_inputs(modules)["dividend_rate"] == pytest.approx(25.244, abs=1e-3)
+
+    @pytest.mark.parametrize("dividend_yield", [0.0, None])
+    def test_zero_or_missing_yield_is_no_dividend(self, dividend_yield):
+        modules = _modules()
+        modules["summaryDetail"]["dividendYield"] = (
+            None if dividend_yield is None else {"raw": dividend_yield})
+        assert siv.collect_inputs(modules)["dividend_rate"] is None
 
     def test_name_falls_back_to_short_name(self):
         modules = _modules()
@@ -198,7 +217,7 @@ class TestComputeEstimates:
 
     def test_non_payer_has_no_dividend_estimate(self):
         modules = _modules()
-        del modules["summaryDetail"]["dividendRate"]
+        del modules["summaryDetail"]["dividendYield"]
         assert _run(modules)[2]["dividend_discount"] is None
 
     def test_loss_maker_has_no_earnings_estimates(self):
@@ -263,7 +282,7 @@ class TestOutput:
 
     def test_build_report_flags_low_dividend_yield(self):
         modules = _modules()
-        modules["summaryDetail"]["dividendRate"] = {"raw": 0.5}  # 0.5% yield
+        modules["summaryDetail"]["dividendYield"] = {"raw": 0.005}  # 0.5% yield
         report = siv.build_report("AAA", *_run(modules))
         assert "dividend yield < 1%" in report
 

@@ -21,7 +21,7 @@ def _modules(price=100.0):
                                  "beta": {"raw": 1.0}, "enterpriseValue": {"raw": 101e9},
                                  "enterpriseToEbitda": {"raw": 12.0}},
         "summaryDetail": {"trailingPE": {"raw": 20.0}, "priceToSalesTrailing12Months": {"raw": 2.5},
-                          "dividendRate": {"raw": 2.0}},
+                          "dividendYield": {"raw": 0.02}},
         "summaryProfile": {"sector": "Technology", "industry": "Consumer Electronics"},
     }
 
@@ -78,7 +78,7 @@ class TestExtractIndicators:
             "current_ratio": 0.9, "quick_ratio": 0.8,
             "free_cash_flow": 5e9, "operating_cash_flow": 7e9,
             "cash_conversion": pytest.approx(1.25),  # 5B FCF / 4B net income
-            "dividend_yield": pytest.approx(0.02),   # 2.0 / 100.0
+            "dividend_yield": pytest.approx(0.02),   # Yahoo's yield, via 0.02 x 100.0 / 100.0
             "payout_ratio": 0.4,
         }
 
