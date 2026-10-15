@@ -80,6 +80,8 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   canonical URL (BeautifulSoup is already a dependency of `url_links.py`).
 - [ ] **Wayback Machine lookup** (archive.org availability API, no key): when
   `url_availability.py` finds a dead link, report the last archived copy.
+  Opt-in with a `--wayback` flag (off by default), so the script's current
+  behaviour, output and exit codes are unchanged without it.
 - [ ] **RSS/Atom feed reader**: latest items from a site's feed.
 - [ ] **SSL certificate expiry and DNS lookup**: standard library only (`ssl`, `socket`).
 - [ ] **robots.txt and sitemap listing**.
