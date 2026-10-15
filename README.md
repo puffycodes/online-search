@@ -16,12 +16,12 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
 - [`.claude/agents/market-top-volume.md`](#claude-code-agent-market-top-volume) — Claude Code subagent that calls `market_top_volume.py` and reports the top movers (volume / gainers / losers) on a named market
 - [`stock_price_history.py`](#stock_price_historypy) — past daily open / high / low / close prices for a single stock
-- [`.claude/agents/stock-price-history.md`](#claude-code-agent-stock-price-history) — Claude Code subagent that calls `stock_price_history.py` and reports a stock's past open / high / low / close prices
-- [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_price_history.py` + `indicators.py` and reports whether a named stock is trending up or down
+- [`.claude/agents/stock-price-history.md`](#claude-code-agent-stock-price-history) — Claude Code subagent that calls `stock_price_history.py` and reports past open / high / low / close prices of a stock, index, currency pair, crypto coin or commodity future
+- [`.claude/agents/stock-trend.md`](#claude-code-agent-stock-trend) — Claude Code subagent that calls `stock_price_history.py` + `indicators.py` and reports whether a named stock, index, currency pair, crypto coin or commodity future is trending up or down
 - [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) — candlestick (OHLC) price chart for a single stock, with moving-average overlays and cross-flip arrows, rendered to a PNG with matplotlib
-- [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick_chart.py` and produces a candlestick chart for a named stock
+- [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick_chart.py` and produces a candlestick chart for a named stock, index, currency pair, crypto coin or commodity future
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
-- [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks
+- [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks, indices, currency pairs, crypto coins or commodity futures
 - [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing, used by the three price scripts, `stock_intrinsic_value.py` (headers/timeout) and `app/stock_information/`
 - [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py`, `stock_fundamental.py` and `stock_intrinsic_value.py`
 
@@ -772,7 +772,7 @@ python3 stock_price_history.py SYMBOL [--range RANGE | --last N] [--start YYYY-M
 
 | Flag | Default | Description |
 |---|---|---|
-| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, … |
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`), crypto (`BTC-USD`) and futures / commodities (`GC=F`) |
 | `--range RANGE` | `1mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Return only the most recent `N` trading sessions (mutually exclusive with `--range`) |
 | `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
@@ -859,6 +859,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history(
 
 - Relies on an undocumented, unofficial Yahoo Finance endpoint — public and free, but with no guarantee it stays available or unchanged.
 - The ticker must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, `.T`, …). The script does not resolve company names to tickers.
+- Non-stock symbols work too, since the chart endpoint serves them the same way: indices (`^GSPC`, `^FTSE`), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), crypto (`BTC-USD`) and continuous front-month futures (`GC=F`, `CL=F`). Currency pairs always report `volume` 0; crypto has a row for every calendar day including weekends; futures jump at contract rolls and their volume is unreliable (Yahoo sometimes repeats a day's figure). Markets that trade around the clock usually include today's still-moving bar.
 - `open` is the first trade of the session, `high` / `low` the intraday extremes, `close` the raw session close; `adj_close` is `close` back-adjusted for splits and dividends and is the right field for comparing prices across a long span (only `close` is adjusted — `open` / `high` / `low` are as-traded).
 - Prices are end-of-day snapshots in the listing currency, and some markets quote in minor units — e.g. LSE returns `GBp` (pence), not pounds.
 - Date bucketing uses `meta.gmtoffset`; for exchanges Yahoo reports with an unusual offset the calendar date could in principle be off by a day near midnight boundaries.
@@ -871,18 +872,18 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer questions like "what did AAPL close at yesterday?", "Tesla's OHLC last week", or "DBS high and low for August" by running the script and summarizing its JSON output, instead of guessing or using stale training data. Despite the name, it reports the full daily open / high / low / close, not just the close.
+Lets Claude Code answer questions like "what did AAPL close at yesterday?", "Tesla's OHLC last week", or "DBS high and low for August" by running the script and summarizing its JSON output, instead of guessing or using stale training data. Despite the name, it reports the full daily open / high / low / close, not just the close, and works for indices, currency pairs, crypto coins and commodity futures as well as stocks ("where did the S&P 500 close yesterday?", "EUR/USD last week", "gold's high and low in September").
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for "past / previous / historical open, high, low, or closing price of \<company\>" questions, based on the `description` field in its frontmatter.
+- **Automatically** — Claude Code selects this subagent on its own for "past / previous / historical open, high, low, or closing price of \<company / index / exchange rate / coin / commodity\>" questions, based on the `description` field in its frontmatter.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-price-history"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 
 ### What it does
 
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`); if the ticker is uncertain it says so rather than guessing.
 2. Chooses the window from the user's phrasing — `--last 2` for "yesterday" / "last session", `--last N` for "past N days", `--start`/`--end` for a named month or span, `--range ytd|1y|5y|…` for a longer horizon, otherwise the default `--range 1mo`.
 3. Runs `python3 stock_price_history.py SYMBOL <window flags> --json` from the repo root, parses the `{symbol, exchange, currency, prices[]}` object (each price row carrying `open`, `high`, `low`, `close`, `adj_close`, `volume`), and leads with the figure the user asked for — the most recent close by default, or the full OHLC when they asked for open / high / low / a range — followed by a compact table if a series was requested. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
 
@@ -909,18 +910,18 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer requests like "is AAPL trending up?", "what's the trend on Tesla?", "is Vodafone in a downtrend?", "has DBS been going up or down lately?", or "is NVDA on an uptrend this quarter?" with a mechanical read of recent closing prices, instead of guessing a direction from stale training data.
+Lets Claude Code answer requests like "is AAPL trending up?", "what's the trend on Tesla?", "is Vodafone in a downtrend?", "has DBS been going up or down lately?", or "is NVDA on an uptrend this quarter?" — and the same for indices, currency pairs, crypto coins and commodities ("is the yen weakening against the dollar?", "is oil trending down?") — with a mechanical read of recent closing prices, instead of guessing a direction from stale training data.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for questions about the direction, trend, or momentum of a named company or ticker over time, based on the `description` field in its frontmatter.
+- **Automatically** — Claude Code selects this subagent on its own for questions about the direction, trend, or momentum of a named company, ticker, index, exchange rate, crypto coin or commodity over time, based on the `description` field in its frontmatter.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-trend"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 
 ### What it does
 
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`); if the ticker is uncertain it says so rather than guessing.
 2. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` for "this year" / "past year", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise `--range 6mo`.
 3. Runs `python3 stock_price_history.py SYMBOL <window flags> --json > /tmp/stock_trend.json` from the repo root, then a `python3` heredoc that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions (`n/a` when the series is shorter than that sub-window), the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages.
 4. Reports a one-line verdict (up trend / down trend / roughly flat over the dates examined) plus a few supporting lines, calling out when the short-window trend disagrees with the overall one, and closes with a caveat that this is not a prediction or investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
@@ -967,7 +968,7 @@ python3 stock_candlestick_chart.py SYMBOL [--range RANGE | --last N] [--start YY
 
 | Flag | Default | Description |
 |---|---|---|
-| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, … |
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`), crypto (`BTC-USD`) and futures / commodities (`GC=F`) |
 | `--range RANGE` | `6mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Plot only the most recent `N` bars (mutually exclusive with `--range`) |
 | `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
@@ -1045,6 +1046,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history(
 
 - Relies on an undocumented, unofficial Yahoo Finance endpoint — public and free, but with no guarantee it stays available or unchanged.
 - The ticker must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, `.T`, …). The script does not resolve company names to tickers.
+- Non-stock symbols work too, since the chart endpoint serves them the same way: indices (`^GSPC`, `^FTSE`), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), crypto (`BTC-USD`) and continuous front-month futures (`GC=F`, `CL=F`). Currency pairs always report `volume` 0; crypto has a row for every calendar day including weekends; futures jump at contract rolls and their volume is unreliable (Yahoo sometimes repeats a day's figure). Markets that trade around the clock usually include today's still-moving bar.
 - Candle bodies and the moving averages use the **raw** open/high/low/close — prices are not split/dividend-adjusted, so a split inside the window shows up as a large gap.
 - Moving averages are computed only from bars in the fetched window (plus the `--last` padding). A window near or above the number of bars available renders a short line or nothing at all — widen `--range` / `--last` to give a long average enough history.
 - The figure width scales with the bar count (`~0.11 in` per bar), so a long daily range produces a very wide, short image — use `--interval 1wk` or `1mo` for multi-year spans.
@@ -1059,19 +1061,19 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer requests like "show me a candlestick chart of AAPL", "chart Tesla's last 3 months", "plot DBS weekly candles for the first half of the year", or "candlestick chart for Vodafone since June with volume" by running the script and handing back the chart, instead of describing prices from stale training data.
+Lets Claude Code answer requests like "show me a candlestick chart of AAPL", "chart Tesla's last 3 months", "plot DBS weekly candles for the first half of the year", or "candlestick chart for Vodafone since June with volume" — and the same for indices, currency pairs, crypto coins and commodities ("plot Bitcoin over the last month", "chart gold since June") — by running the script and handing back the chart, instead of describing prices from stale training data.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for "see / plot / draw / visualize \<company\>'s price history as a chart" requests, based on the `description` field in its frontmatter.
+- **Automatically** — Claude Code selects this subagent on its own for "see / plot / draw / visualize \<company / index / exchange rate / coin / commodity\>'s price history as a chart" requests, based on the `description` field in its frontmatter.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-candlestick-chart"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 
 ### What it does
 
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …); if the ticker is uncertain it says so rather than guessing.
-2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, `--volume` when volume is mentioned, `--ma` only when the user asks for specific moving averages (the script overlays `5,10,20,50` by default) or asks for none, and `--flip-ma` only when the user names a crossover pair (the script marks `20/50` cross flips by default) or asks for none.
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`); if the ticker is uncertain it says so rather than guessing.
+2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, `--volume` when volume is mentioned (never for a currency pair, which has no volume), `--ma` only when the user asks for specific moving averages (the script overlays `5,10,20,50` by default) or asks for none, and `--flip-ma` only when the user names a crossover pair (the script marks `20/50` cross flips by default) or asks for none.
 3. Runs `python3 stock_candlestick_chart.py SYMBOL <window flags> [--interval …] [--volume] [--ma …] [--flip-ma …] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
 4. Reads the PNG to verify it rendered, then reports a one- or two-sentence summary (ticker, exchange, period, interval, and a brief read of the trend) ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
 
@@ -1116,7 +1118,7 @@ python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--range RANGE | --last N] [-
 
 | Flag | Default | Description |
 |---|---|---|
-| `SYMBOL` (positional, 1+) | — | One or more tickers in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, … |
+| `SYMBOL` (positional, 1+) | — | One or more tickers in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`), crypto (`BTC-USD`) and futures / commodities (`GC=F`) |
 | `--range RANGE` | `6mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Fetch only the most recent `N` sessions (mutually exclusive with `--range`) |
 | `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
@@ -1186,6 +1188,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_histo
 - Rebasing requires an **exact** match on the base date in each symbol's own settled-session list — a symbol that doesn't trade on that calendar date (a market holiday specific to its exchange, a weekend, a later IPO date) is dropped rather than matched to its nearest neighbouring session. Pick a base date inside every symbol's trading history, and be aware that a date only one of several exchanges observes as a holiday can silently drop a symbol.
 - Uses the raw (unadjusted) `close`, not `adj_close` — a split or large dividend inside the window will show up as a distortion relative to the other series. For spans that might cross one, consider whether the tickers involved have upcoming corporate actions.
 - Tickers must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, `.T`, …); currency is not normalized across symbols, so comparing a USD-denominated stock against a GBp-denominated one is still valid (rebasing is currency-agnostic — it's a ratio) but the two would need converting to compare absolute price levels.
+- Non-stock symbols work too, since the chart endpoint serves them the same way: indices (`^GSPC`, `^FTSE`), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), crypto (`BTC-USD`) and continuous front-month futures (`GC=F`, `CL=F`). Currency pairs always report `volume` 0; crypto has a row for every calendar day including weekends; futures jump at contract rolls and their volume is unreliable (Yahoo sometimes repeats a day's figure). Markets that trade around the clock usually include today's still-moving bar. Crypto's weekend rows mean a weekend base date drops every non-crypto symbol.
 - `--show` needs a working matplotlib GUI backend and a display; in a headless environment omit it and read the PNG.
 
 ---
@@ -1196,18 +1199,18 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer requests like "compare AAPL and MSFT since January", "rebased chart of Shell vs BP this year", "which has done better since June, Nvidia or AMD?", or "normalize Apple, Microsoft and Google to 100 from the start of the year and plot them" by running the script and handing back the chart — a *relative-performance* comparison (every line starts at 100 on a common date), not an absolute-price chart.
+Lets Claude Code answer requests like "compare AAPL and MSFT since January", "rebased chart of Shell vs BP this year", "which has done better since June, Nvidia or AMD?", or "normalize Apple, Microsoft and Google to 100 from the start of the year and plot them" — including mixes with indices, currency pairs, crypto coins and commodities ("has Apple beaten the S&P 500 this year?", "compare gold, Bitcoin and the Nasdaq since June") — by running the script and handing back the chart — a *relative-performance* comparison (every line starts at 100 on a common date), not an absolute-price chart.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for "how have these stocks moved relative to each other since \<date\>" / "compare / index / normalize / rebase \<companies\>" requests, based on the `description` field in its frontmatter. For a single stock's own price history as a chart it reaches for [`stock-candlestick-chart`](#claude-code-agent-stock-candlestick-chart) instead.
+- **Automatically** — Claude Code selects this subagent on its own for "how have these stocks (or indices, currencies, coins, commodities) moved relative to each other since \<date\>" / "compare / index / normalize / rebase \<companies\>" requests, based on the `description` field in its frontmatter. For a single stock's own price history as a chart it reaches for [`stock-candlestick-chart`](#claude-code-agent-stock-candlestick-chart) instead.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-rebased-chart"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 
 ### What it does
 
-1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), and passes every one as a separate positional argument; if a ticker is uncertain it says so rather than guessing. Mixed exchanges/currencies are fine — rebasing is a ratio.
+1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`), and passes every one as a separate positional argument; if a ticker is uncertain it says so rather than guessing. Mixed exchanges, currencies and asset classes are fine — rebasing is a ratio.
 2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`.
 3. Chooses the base date: for a "since \<date>" that is also the window start it sets `--start` and lets `--base-date` default to the first date in the first symbol's series; it passes `--base-date` explicitly only when the reference date sits *inside* a longer window, picking a trading day (a symbol with no settled close on that exact date is dropped with a warning).
 4. Runs `python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] <window flags> [--base-date …] -o /tmp/rebased_<TICKERS>.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).

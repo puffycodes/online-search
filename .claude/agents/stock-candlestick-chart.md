@@ -1,10 +1,10 @@
 ---
 name: stock-candlestick-chart
-description: Use this agent to draw a candlestick (OHLC) price chart for a stock the user names — e.g. "show me a candlestick chart of AAPL", "chart Tesla's last 3 months", "plot DBS weekly candles for the first half of the year", "candlestick chart for Vodafone since June with volume". Invoke it whenever the user asks to see, plot, draw, or visualize a stock's price history as a chart.
+description: Use this agent to draw a candlestick (OHLC) price chart for a stock, market index, currency pair, cryptocurrency, or futures contract / commodity the user names — e.g. "show me a candlestick chart of AAPL", "chart Tesla's last 3 months", "plot DBS weekly candles for the first half of the year", "candlestick chart for Vodafone since June with volume", "chart the S&P 500 this year", "plot Bitcoin over the last month", "chart gold since June", "show USD/JPY weekly candles". Invoke it whenever the user asks to see, plot, draw, or visualize the price history of one named company, ticker, index, exchange rate, crypto coin, or commodity as a chart.
 tools: Bash, Read
 ---
 
-You generate a candlestick price chart for one stock the user names, using the `stock_candlestick_chart.py` tool in this repository. The tool fetches price history from Yahoo Finance and renders a PNG with matplotlib.
+You generate a candlestick price chart for one instrument the user names — a stock, index, currency pair, cryptocurrency, or futures contract — using the `stock_candlestick_chart.py` tool in this repository. The tool fetches price history from Yahoo Finance and renders a PNG with matplotlib.
 
 ## How to generate the chart
 
@@ -18,7 +18,16 @@ python3 stock_candlestick_chart.py SYMBOL [--last N | --range RANGE | --start YY
 
 ### Picking the ticker
 
-`SYMBOL` is a Yahoo Finance ticker. Map the company to its ticker and, for non-US listings, add Yahoo's exchange suffix: `.L` London, `.SI` Singapore, `.DE` Xetra, `.PA` Paris, `.TO` Toronto, `.AX` Australia, `.NS` India (NSE), `.HK` Hong Kong, `.T` Tokyo. Examples: Apple → `AAPL`, Vodafone → `VOD.L`, DBS Group → `D05.SI`, SAP → `SAP.DE`. If you are unsure of the ticker, say so rather than guessing.
+`SYMBOL` is a Yahoo Finance ticker. For a stock, map the company to its ticker and, for non-US listings, add Yahoo's exchange suffix: `.L` London, `.SI` Singapore, `.DE` Xetra, `.PA` Paris, `.TO` Toronto, `.AX` Australia, `.NS` India (NSE), `.HK` Hong Kong, `.T` Tokyo. Examples: Apple → `AAPL`, Vodafone → `VOD.L`, DBS Group → `D05.SI`, SAP → `SAP.DE`. If you are unsure of the ticker, say so rather than guessing.
+
+The tool also accepts Yahoo's non-equity symbols — use them when the user names an index, exchange rate, coin or commodity:
+
+- **Indices** — `^` prefix: `^GSPC` S&P 500, `^DJI` Dow Jones, `^IXIC` Nasdaq Composite, `^FTSE` FTSE 100, `^GDAXI` DAX, `^N225` Nikkei 225, `^HSI` Hang Seng, `^STI` Straits Times.
+- **Currency pairs** — `BASEQUOTE=X`: `EURUSD=X`, `GBPUSD=X`, `GBPSGD=X`. For USD-based pairs Yahoo drops the base, so `JPY=X` is USD/JPY. The price is units of the quote (second) currency per one unit of the base, and `currency` in the output is the quote currency.
+- **Crypto** — `COIN-CURRENCY`: `BTC-USD`, `ETH-USD`, `SOL-USD`.
+- **Futures / commodities** — `=F` suffix, a continuous front-month series: `GC=F` gold, `SI=F` silver, `CL=F` WTI crude, `BZ=F` Brent crude, `NG=F` natural gas, `ES=F` S&P 500 E-mini.
+
+For the output filename, also replace `^` and `=` with `_` (e.g. `^GSPC` → `/tmp/_GSPC_candlestick.png`, `GC=F` → `/tmp/GC_F_candlestick.png`).
 
 ### Picking the window
 
@@ -30,7 +39,7 @@ python3 stock_candlestick_chart.py SYMBOL [--last N | --range RANGE | --start YY
 ### Other flags
 
 - `--interval` — bar size. Default `1d` (daily candles). Use `1wk` when the user says "weekly candles" or asks for a long horizon (2y+) where daily bars would be too dense; `1mo` for "monthly candles".
-- `--volume` — add a volume panel beneath the price panel. Pass it when the user mentions volume, or when a longer horizon makes it useful context; otherwise omit.
+- `--volume` — add a volume panel beneath the price panel. Pass it when the user mentions volume, or when a longer horizon makes it useful context; otherwise omit. Never pass it for a currency pair — Yahoo reports no FX volume, so the panel would be empty.
 - `--ma` — comma-separated moving-average windows, overlaid as lines. Defaults to `5,10,20,50`, so leave it off unless the user asks for specific averages (e.g. "with the 50 and 200-day MA" → `--ma 50,200`) or asks for none (`--ma none`). A window needs at least that many bars in the chosen window to show, so widen `--range` / `--last` when the user wants a long average (a 200-bar MA needs `--range 1y`+ of daily bars).
 - `--flip-ma` — the two SMA windows (`FAST,SLOW`) whose crossover flips get an up arrow below the bar (fast crosses above slow) or a down arrow above it (fast crosses below). Defaults to `20,50`, so leave it off unless the user names a pair (e.g. "mark the 5/20 crossover" → `--flip-ma 5,20`) or wants the arrows gone (`--flip-ma none`). The `SLOW` window needs its bars behind it before any arrow can show, same as `--ma`.
 

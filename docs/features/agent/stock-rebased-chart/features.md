@@ -7,10 +7,15 @@
 
 ## Actions
 
-- Take one or more stocks named by the user.
-    - Resolve each company to its Yahoo Finance ticker, adding the exchange suffix for non-US listings (e.g. .L, .SI, .DE, .PA, .TO, .AX, .NS, .HK, .T).
+- Take one or more stocks, market indices, currency pairs, cryptocurrencies or futures contracts / commodities named by the user.
+    - For a stock, resolve the company to its Yahoo Finance ticker, adding the exchange suffix for non-US listings (e.g. .L, .SI, .DE, .PA, .TO, .AX, .NS, .HK, .T).
+    - For anything else, use Yahoo's own symbol:
+        - Index: ^ prefix (e.g. ^GSPC S&P 500, ^FTSE FTSE 100, ^N225 Nikkei 225).
+        - Currency pair: BASEQUOTE=X (e.g. EURUSD=X); for USD-based pairs the base is dropped (JPY=X is USD/JPY). The price is the quote currency per one unit of the base.
+        - Cryptocurrency: COIN-CURRENCY (e.g. BTC-USD).
+        - Futures / commodity: =F suffix, a continuous front-month series (e.g. GC=F gold, CL=F crude oil).
     - If unsure of a ticker, say so rather than guess.
-    - Stocks from different exchanges and currencies can be mixed.
+    - Instruments from different exchanges, currencies and asset classes can be mixed.
     - Put the stock the user treats as the anchor first.
 - Pick the time window from what the user asked:
     - "last N days/weeks" → the last N sessions.
@@ -20,6 +25,7 @@
 - Pick the base date, where every stock is rescaled to read 100:
     - By default, the first date of the window.
     - If the user names a reference date inside a longer window, use that date (a trading day; if the market was closed, the nearest earlier trading day).
+    - Crypto trades every day; with crypto in the mix, pick a weekday the other markets also traded on.
 - Draw the chart to an image file in the system temp directory, never in the project.
     - Read the image back to check that it rendered.
     - If a stock has no price on the base date or fails to fetch, it is left off the chart; say which and why.

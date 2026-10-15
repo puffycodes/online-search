@@ -7,8 +7,13 @@
 
 ## Actions
 
-- Take a stock named by the user.
-    - Resolve the company to its Yahoo Finance ticker, adding the exchange suffix for non-US listings (e.g. .L, .SI, .DE, .PA, .TO, .AX, .NS, .HK, .T).
+- Take a stock, market index, currency pair, cryptocurrency or futures contract / commodity named by the user.
+    - For a stock, resolve the company to its Yahoo Finance ticker, adding the exchange suffix for non-US listings (e.g. .L, .SI, .DE, .PA, .TO, .AX, .NS, .HK, .T).
+    - For anything else, use Yahoo's own symbol:
+        - Index: ^ prefix (e.g. ^GSPC S&P 500, ^FTSE FTSE 100, ^N225 Nikkei 225).
+        - Currency pair: BASEQUOTE=X (e.g. EURUSD=X); for USD-based pairs the base is dropped (JPY=X is USD/JPY). The price is the quote currency per one unit of the base.
+        - Cryptocurrency: COIN-CURRENCY (e.g. BTC-USD).
+        - Futures / commodity: =F suffix, a continuous front-month series (e.g. GC=F gold, CL=F crude oil).
     - If unsure of the ticker, say so rather than guess.
 - Pick the time window from what the user asked:
     - "lately", "recently", "right now", "this quarter" → the past 3 months.
@@ -28,7 +33,8 @@
     - {{Shorter-Window Trends}}, when they disagree with the overall trend.
     - {{Change Over the Window}}
     - {{Last Close vs Moving Averages}}
-    - {{Last Close}} {{Currency}} on {{Date}}, noting minor units (e.g. GBp = pence).
+    - For a currency pair, which currency the trend favours (e.g. an up trend in USD/JPY means the dollar is strengthening against the yen).
+    - {{Last Close}} {{Currency}} on {{Date}}, noting minor units (e.g. GBp = pence). Crypto, currency pairs and futures trade around the clock, so the last price may be today's still-moving bar; say so if it is today's date.
     - A short caveat: this is a mechanical read of past closing prices, not a prediction or investment advice.
 - If there are too few prices to judge a trend, say so plainly.
 - Never fabricate prices, dates or verdicts.
