@@ -30,6 +30,17 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 - [ ] **River flood forecast** (Open-Meteo flood API): river discharge levels.
 - [ ] **Earthquakes near a place** (USGS GeoJSON feed, free): recent quakes filtered by
   magnitude and distance from the coordinates `geocode()` returns.
+- [ ] **`--last N` for `weather_history.py`**: "the past N days" currently means
+  working out `--start`/`--end` by hand. A `--last N` flag (N full days ending
+  yesterday) would make the most common question a single flag, mirroring
+  `yahoo_finance.add_window_args()`.
+
+## Tooling
+
+- [ ] **UTF-8 stdout on Windows**: when the human-readable output is piped, Python
+  writes cp1252, so `°` turns into `�` in Git Bash. A shared helper in `cli_utils.py`
+  could call `sys.stdout.reconfigure(encoding="utf-8")` (Python 3.7+) at startup.
+  `--json` output already escapes non-ASCII and is unaffected.
 
 ## Finance
 

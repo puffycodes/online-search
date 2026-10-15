@@ -181,6 +181,7 @@ These are set as constants near the top of the file — edit them directly to ch
 - Reports only the current conditions at a single instant — no forecast, hourly, or historical data (see [`weather_forecast.py`](#weather_forecastpy) and [`weather_history.py`](#weather_historypy) for those).
 - `weathercode` is Open-Meteo's own WMO-based classification; `WEATHER_CODES` covers the documented codes but treats any other value as `"Unknown (code N)"` rather than guessing.
 - Results are a live snapshot; conditions will differ between runs.
+- On Windows, when the human-readable report is piped or captured rather than shown in a console, Python writes stdout in the ANSI code page (cp1252), so `°` can show up as `�` in a UTF-8 reader such as Git Bash. Set `PYTHONUTF8=1` (or `PYTHONIOENCODING=utf-8`) to avoid it. `--json` output is unaffected, because it escapes non-ASCII characters.
 
 ---
 
@@ -353,6 +354,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `weather_descrip
 - Forecast accuracy degrades toward the far end of the 16-day window, as with any weather model; Open-Meteo does not report a per-day confidence figure this script could surface.
 - `uv_index_max` is the model's peak UV index for the day under the forecast cloud cover — clear-sky values can be higher. Sunrise and sunset are the location's local clock times.
 - Results are a live snapshot; the forecast for a given date will change between runs as new model data comes in.
+- On Windows, when the human-readable report is piped or captured rather than shown in a console, Python writes stdout in the ANSI code page (cp1252), so `°` can show up as `�` in a UTF-8 reader such as Git Bash. Set `PYTHONUTF8=1` (or `PYTHONIOENCODING=utf-8`) to avoid it. `--json` output is unaffected, because it escapes non-ASCII characters.
 
 ---
 
@@ -536,6 +538,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `daily_value()`,
 - `weathercode` is the model's daily summary code, derived from its precipitation and cloud; a day's "Heavy snow fall" can sit alongside a modest snowfall total.
 - Same geocoding caveat as [`weather.py`](#weatherpy): the top match is used. Accents matter — `"Tromso"` resolves to a different place than `"Tromsø"`.
 - Sunrise and sunset are the location's local clock times, from the same time zone Open-Meteo resolves for the coordinates.
+- On Windows, when the human-readable report is piped or captured rather than shown in a console, Python writes stdout in the ANSI code page (cp1252), so `°` can show up as `�` in a UTF-8 reader such as Git Bash. Set `PYTHONUTF8=1` (or `PYTHONIOENCODING=utf-8`) to avoid it. `--json` output is unaffected, because it escapes non-ASCII characters.
 
 ---
 
@@ -557,7 +560,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### What it does
 
 1. Passes the location through mostly as the user wrote it, keeping accents, and adds a country/state qualifier only for an ambiguous name.
-2. Turns the user's wording into `--date` or `--start`/`--end` relative to today; for a span over 366 days it runs the tool once per year and combines the results, saying so.
+2. Turns the user's wording into `--date` or `--start`/`--end` relative to today — "the past N days" means the N full days ending yesterday, since today's figures are partial; for a span over 366 days it runs the tool once per year and combines the results, saying so.
 3. Runs `python3 weather_history.py "LOCATION" (--date … | --start … [--end …]) [--unit …] --json` from the repo root.
 4. Leads with the single day's condition and high/low, or with the range summary (average high/low, warmest and coldest days, total precipitation, wet days) and a compact day table for up to about two weeks. It notes that the figures are gridded model data rather than a station record and that today's are partial. An exit code 2 means it fixes the dates rather than retrying; a "no location found" result is reported as-is; a network-looking failure is retried at most once.
 

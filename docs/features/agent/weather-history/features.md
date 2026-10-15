@@ -14,6 +14,7 @@
     - A single day → that date.
     - A period ("last week", "in August 2023") → its first and last day.
     - "Since {{Date}}" → from that date to today.
+    - "The past N days" → the N full days ending yesterday, as today's figures are partial; say which dates were used.
     - Dates are between 1940-01-01 and today, and a range is at most 366 days; for a longer span, retrieve it a year at a time and combine the results, saying so.
     - For a future date, use the weather-forecast agent instead.
 - Use Celsius by default; use Fahrenheit if the user asks for it or is clearly using it.

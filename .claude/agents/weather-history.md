@@ -19,6 +19,7 @@ python3 weather_history.py "LOCATION" (--date YYYY-MM-DD | --start YYYY-MM-DD [-
 - Turn the user's wording into dates, using today's date for relative phrases:
   - A single day ("on 1 January 2020", "yesterday", "Christmas Day 2010") → `--date`.
   - A period ("last week", "in August 2023", "between 3 and 10 March") → `--start` and `--end` covering it.
+  - "The past N days" / "the last N days" → the N full days ending yesterday (`--start` = today minus N, `--end` = yesterday), since today's figures are still partial. Say which dates you used.
   - "Since <date>" → `--start` only; `--end` defaults to today.
 - Dates must be between 1940-01-01 and today, and a range can span at most 366 days. For a longer span ("summers in the 1990s"), run the tool once per year or period and combine the results yourself — say that you did. For a future date, use the `weather-forecast` agent instead.
 - `--unit` defaults to `celsius`. Use `fahrenheit` only if the user asks for it, mentions °F, or the conversation makes it clearly expected.
