@@ -25,7 +25,7 @@ import re
 
 import requests
 
-from cli_utils import die, load_dotenv, positive_int, print_results, require_env
+from cli_utils import die, load_dotenv, positive_int, print_results, require_env, use_utf8_output
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -102,6 +102,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     load_dotenv()

@@ -1,10 +1,12 @@
 """Tests for cli_utils: dotenv loading, result formatting/printing, the
-die() error-exit helper, require_env, URL-scheme validation, and the
-positive_int argparse type."""
+die() error-exit helper, require_env, URL-scheme validation, the
+positive_int argparse type, and UTF-8 output."""
 
 import argparse
+import io
 import json
 import os
+import sys
 
 import pytest
 
@@ -15,6 +17,7 @@ from cli_utils import (
     positive_int,
     print_results,
     require_env,
+    use_utf8_output,
     validate_url_scheme,
 )
 
@@ -156,3 +159,35 @@ class TestDie:
         assert exc.value.code == 1
         captured = capsys.readouterr()
         assert json.loads(captured.err) == {"error": "bad symbol"}
+
+
+class TestUseUtf8Output:
+    def test_switches_cp1252_streams_to_utf8(self, monkeypatch):
+        out_bytes, err_bytes = io.BytesIO(), io.BytesIO()
+        out = io.TextIOWrapper(out_bytes, encoding="cp1252")
+        err = io.TextIOWrapper(err_bytes, encoding="cp1252")
+        monkeypatch.setattr(sys, "stdout", out)
+        monkeypatch.setattr(sys, "stderr", err)
+        use_utf8_output()
+        print("25°C 東京")
+        print("–", file=sys.stderr)
+        out.flush()
+        err.flush()
+        assert out.encoding == err.encoding == "utf-8"
+        assert out_bytes.getvalue().decode("utf-8").rstrip() == "25°C 東京"
+        assert err_bytes.getvalue().decode("utf-8").rstrip() == "–"
+
+    def test_leaves_streams_without_reconfigure_alone(self, monkeypatch):
+        out, err = io.StringIO(), io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out)
+        monkeypatch.setattr(sys, "stderr", err)
+        use_utf8_output()
+        assert sys.stdout is out and sys.stderr is err
+
+    def test_ignores_reconfigure_errors(self, monkeypatch):
+        class Stubborn(io.StringIO):
+            def reconfigure(self, **kwargs):
+                raise ValueError("can't change encoding now")
+
+        monkeypatch.setattr(sys, "stdout", Stubborn())
+        use_utf8_output()

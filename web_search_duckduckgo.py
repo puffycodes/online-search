@@ -40,7 +40,7 @@ except ImportError:
         DDGS = None
         DDGSException = Exception
 
-from cli_utils import die, positive_int, print_results
+from cli_utils import die, positive_int, print_results, use_utf8_output
 
 RESULTS_TO_SHOW = 10
 
@@ -80,6 +80,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     if DDGS is None:

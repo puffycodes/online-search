@@ -33,7 +33,7 @@ import json
 
 import requests
 
-from cli_utils import die, load_dotenv, positive_int, require_env
+from cli_utils import die, load_dotenv, positive_int, require_env, use_utf8_output
 
 SEARCH_URL = "https://api.perplexity.ai/chat/completions"
 # Sonar answers take noticeably longer than a plain search-results
@@ -121,6 +121,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     load_dotenv()

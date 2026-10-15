@@ -21,7 +21,7 @@ import json
 
 import requests
 
-from cli_utils import die, positive_int, validate_url_scheme
+from cli_utils import die, positive_int, use_utf8_output, validate_url_scheme
 
 TIMEOUT_SECONDS = 10
 MAX_CHARS = 20000
@@ -151,6 +151,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     validate_url_scheme(args.url, args.json)

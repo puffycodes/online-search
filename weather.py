@@ -15,7 +15,7 @@ import json
 
 import requests
 
-from cli_utils import die
+from cli_utils import die, use_utf8_output
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -233,6 +233,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     if not args.json:

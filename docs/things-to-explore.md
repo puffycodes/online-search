@@ -14,14 +14,11 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **UTF-8 stdout on Windows** (Tooling): every human-readable HN and weather report
-   garbles non-ASCII characters when piped on Windows; one small `cli_utils.py` helper
-   fixes it for all of them.
-2. **`--last N` for `weather_history.py`** (Weather): makes "the past N days" a single
+1. **`--last N` for `weather_history.py`** (Weather): makes "the past N days" a single
    flag, mirroring the stock scripts' `--last`.
-3. **Search comments within one thread** (Extending `hn_search.py`): pairs with
+2. **Search comments within one thread** (Extending `hn_search.py`): pairs with
    `hn_thread.py` to search all of a big thread's comments, not just its top 60-80.
-4. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
+3. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
    instructions-only change to the `hottest-tech-discussion-summary` agent, but it
    lengthens an already multi-step workflow.
 
@@ -41,13 +38,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   working out `--start`/`--end` by hand. A `--last N` flag (N full days ending
   yesterday) would make the most common question a single flag, mirroring
   `yahoo_finance.add_window_args()`.
-
-## Tooling
-
-- [ ] **UTF-8 stdout on Windows**: when the human-readable output is piped, Python
-  writes cp1252, so `°` turns into `�` in Git Bash. A shared helper in `cli_utils.py`
-  could call `sys.stdout.reconfigure(encoding="utf-8")` (Python 3.7+) at startup.
-  `--json` output already escapes non-ASCII and is unaffected.
 
 ## Finance
 

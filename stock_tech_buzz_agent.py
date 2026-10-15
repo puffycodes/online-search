@@ -22,7 +22,7 @@ import requests
 
 import hottest_tech_discussions as hn
 import market_top_volume as market
-from cli_utils import die, positive_int
+from cli_utils import die, positive_int, use_utf8_output
 
 STOCK_LIMIT_PER_EXCHANGE = 10
 DISCUSSION_LIMIT = 50
@@ -160,6 +160,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     if not args.json:

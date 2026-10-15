@@ -19,7 +19,7 @@ import json
 import requests
 
 import yahoo_finance as yf
-from cli_utils import die
+from cli_utils import die, use_utf8_output
 
 DEFAULT_RANGE = "1mo"
 
@@ -79,6 +79,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     try:

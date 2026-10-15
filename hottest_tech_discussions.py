@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
-from cli_utils import die, positive_int
+from cli_utils import die, positive_int, use_utf8_output
 from hn import HN_API_BASE, discussion_url, fetch_json, fetch_story, posted_at
 
 TOP_STORIES_URL = f"{HN_API_BASE}/topstories.json"
@@ -84,6 +84,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     if not args.json:

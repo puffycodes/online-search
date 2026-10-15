@@ -70,6 +70,23 @@ def print_results(rows, as_json):
         print()
 
 
+def use_utf8_output():
+    """Write stdout and stderr as UTF-8, whatever the platform's default.
+
+    On Windows, Python writes piped or redirected output in the ANSI code
+    page (cp1252), which garbles characters such as the degree sign in a
+    UTF-8 reader and raises UnicodeEncodeError (crashing the script) on any
+    character cp1252 lacks, e.g. Japanese text or emoji. Called first thing
+    in every script's main(). A stream that can't be reconfigured (one
+    replaced by a test harness, say) is left alone.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def die(message, as_json=False):
     """Print an error to stderr and exit the process non-zero.
 

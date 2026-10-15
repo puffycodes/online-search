@@ -70,7 +70,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script, helper module and web app (see [`tests/README.md`](tests/README.md))
-- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`die()` uniform error-exit, `validate_url_scheme()` for the `url_*.py` scripts, `positive_int` argparse type, `.env` loading and `require_env()` for API keys, result-list formatting/printing) imported by the command-line scripts
+- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`use_utf8_output()` for UTF-8 stdout/stderr on every platform, `die()` uniform error-exit, `validate_url_scheme()` for the `url_*.py` scripts, `positive_int` argparse type, `.env` loading and `require_env()` for API keys, result-list formatting/printing) imported by the command-line scripts
 
 ---
 
@@ -185,7 +185,6 @@ These are set as constants near the top of the file — edit them directly to ch
 - Reports only the current conditions at a single instant — no forecast, hourly, or historical data (see [`weather_forecast.py`](#weather_forecastpy) and [`weather_history.py`](#weather_historypy) for those).
 - `weathercode` is Open-Meteo's own WMO-based classification; `WEATHER_CODES` covers the documented codes but treats any other value as `"Unknown (code N)"` rather than guessing.
 - Results are a live snapshot; conditions will differ between runs.
-- On Windows, when the human-readable report is piped or captured rather than shown in a console, Python writes stdout in the ANSI code page (cp1252), so `°` can show up as `�` in a UTF-8 reader such as Git Bash. Set `PYTHONUTF8=1` (or `PYTHONIOENCODING=utf-8`) to avoid it. `--json` output is unaffected, because it escapes non-ASCII characters.
 
 ---
 
@@ -358,7 +357,6 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `weather_descrip
 - Forecast accuracy degrades toward the far end of the 16-day window, as with any weather model; Open-Meteo does not report a per-day confidence figure this script could surface.
 - `uv_index_max` is the model's peak UV index for the day under the forecast cloud cover — clear-sky values can be higher. Sunrise and sunset are the location's local clock times.
 - Results are a live snapshot; the forecast for a given date will change between runs as new model data comes in.
-- On Windows, when the human-readable report is piped or captured rather than shown in a console, Python writes stdout in the ANSI code page (cp1252), so `°` can show up as `�` in a UTF-8 reader such as Git Bash. Set `PYTHONUTF8=1` (or `PYTHONIOENCODING=utf-8`) to avoid it. `--json` output is unaffected, because it escapes non-ASCII characters.
 
 ---
 
@@ -542,7 +540,6 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `daily_value()`,
 - `weathercode` is the model's daily summary code, derived from its precipitation and cloud; a day's "Heavy snow fall" can sit alongside a modest snowfall total.
 - Same geocoding caveat as [`weather.py`](#weatherpy): the top match is used. Accents matter — `"Tromso"` resolves to a different place than `"Tromsø"`.
 - Sunrise and sunset are the location's local clock times, from the same time zone Open-Meteo resolves for the coordinates.
-- On Windows, when the human-readable report is piped or captured rather than shown in a console, Python writes stdout in the ANSI code page (cp1252), so `°` can show up as `�` in a UTF-8 reader such as Git Bash. Set `PYTHONUTF8=1` (or `PYTHONIOENCODING=utf-8`) to avoid it. `--json` output is unaffected, because it escapes non-ASCII characters.
 
 ---
 
@@ -2558,7 +2555,6 @@ The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` defaul
 - Story scores and comment counts are as of Algolia's last update of that item, which can lag HN slightly for recent stories.
 - Algolia returns at most 1,000 hits per request; this script caps `--limit` at 100 and doesn't page.
 - Links inside a comment keep their visible text only, which HN itself shortens for long URLs.
-- On Windows, the human-readable report can garble non-ASCII characters in titles and comments when piped (see the note under [`weather.py`](#weatherpy)); `--json` output escapes them and is unaffected.
 
 ---
 
@@ -2720,7 +2716,6 @@ The ranking requests use [`hn.py`](#hnpy)'s 10-second `REQUEST_TIMEOUT`, and the
 - **A sample of a big thread.** With the defaults, a 700-comment thread is read as at most 80 comments, the highest-ranked ones; the trimmed-comment counts show how much was skipped. Raise `--top`, `--replies` or `--depth` for more, at the cost of more ranking requests (one per shown comment with replies).
 - `total_comments` counts the comments in Algolia's tree, which can be a little lower than HN's own count (HN includes some deleted and dead comments).
 - Links inside a comment keep their visible text only, which HN shortens for long URLs.
-- On Windows, the human-readable report can garble non-ASCII characters when piped (see the note under [`weather.py`](#weatherpy)); `--json` output is unaffected.
 
 ---
 
@@ -4383,7 +4378,7 @@ Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.p
 
 ## cli_utils.py
 
-Small helpers shared by the command-line scripts: uniform error exits, URL-scheme validation, integer-argument validation, `.env` loading, and the result-list formatting/printing shared by the six `web_search_*.py` scripts that return a flat `[{rank, title, url, snippet}, ...]` array (`web_search_perplexity.py`'s different answer-plus-sources shape doesn't use these last two). Not a CLI — it is imported, not run.
+Small helpers shared by the command-line scripts: UTF-8 output, uniform error exits, URL-scheme validation, integer-argument validation, `.env` loading, and the result-list formatting/printing shared by the six `web_search_*.py` scripts that return a flat `[{rank, title, url, snippet}, ...]` array (`web_search_perplexity.py`'s different answer-plus-sources shape doesn't use these last two). Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -4391,6 +4386,7 @@ Small helpers shared by the command-line scripts: uniform error exits, URL-schem
 
 ### API reference
 
+- `use_utf8_output()` — Switches `sys.stdout` and `sys.stderr` to UTF-8. Every script's `main()` calls it first, before parsing arguments. Without it, Python on Windows writes piped or redirected output in the ANSI code page (cp1252): `°` and similar characters garble in a UTF-8 reader such as Git Bash, and any character cp1252 lacks (Japanese, Chinese, emoji, many symbols in web-search results or HN comments) raises `UnicodeEncodeError` and crashes the script. A stream that can't be reconfigured (e.g. one replaced by a test harness) is left alone. `--json` output was never affected, since `json.dumps` escapes non-ASCII characters.
 - `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
 - `require_env(name, script, as_json=False)` — Returns environment variable `name`, or calls `die()` (status code 1) with `"<name> environment variable must be set. See the module docstring in <script> for how to obtain one."` if it is unset or empty. Used by the six `web_search_*.py` scripts that need an API key, each calling `load_dotenv()` first so a `.env` value counts.
 - `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the three `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`), which all take a URL positional and reject a bare domain/path before making any request.

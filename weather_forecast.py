@@ -21,7 +21,7 @@ import json
 
 import requests
 
-from cli_utils import die
+from cli_utils import die, use_utf8_output
 from weather import (
     FORECAST_URL,
     daily_value,
@@ -194,6 +194,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     if not args.json:

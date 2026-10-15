@@ -33,6 +33,7 @@
     - {{Currency}} in the price axis label.
 - Output: "Wrote {{Image Path}}".
 - An unknown ticker, or a window with no data, fails with an error.
+- Write stdout and stderr as UTF-8 on every platform, so non-ASCII text (°, accents, CJK, emoji) neither garbles nor crashes the script when output is piped on Windows.
 - On failure:
     - A runtime or data failure (including matplotlib not being installed) exits with code 1, with "Error: ..." on stderr.
     - An invalid option value exits with code 2, before any network call.

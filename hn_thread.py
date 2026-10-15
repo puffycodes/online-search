@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
-from cli_utils import die, positive_int
+from cli_utils import die, positive_int, use_utf8_output
 from hn import TEXT_CHARS, clean_text, discussion_url, fetch_json, fetch_story, posted_at
 
 ITEM_URL = "https://hn.algolia.com/api/v1/items/{item_id}"
@@ -299,6 +299,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     if not args.json:

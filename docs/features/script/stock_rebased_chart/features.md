@@ -27,6 +27,7 @@
     - Above 100 means the stock has risen since the base date; below 100 means it has fallen.
 - Output: "Wrote {{Image Path}}", plus a warning for each dropped symbol.
 - If no symbol has data, or none has a close on the base date, fail with an error.
+- Write stdout and stderr as UTF-8 on every platform, so non-ASCII text (°, accents, CJK, emoji) neither garbles nor crashes the script when output is piped on Windows.
 - On failure:
     - A runtime or data failure (including matplotlib not being installed) exits with code 1, with "Error: ..." on stderr.
     - An invalid option value exits with code 2, before any network call.

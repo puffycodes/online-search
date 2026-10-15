@@ -23,7 +23,7 @@ import json
 import requests
 
 import yahoo_finance as yf
-from cli_utils import die, positive_int
+from cli_utils import die, positive_int, use_utf8_output
 
 DEFAULT_LIMIT = 10
 DEFAULT_MARKET = "us"
@@ -262,6 +262,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     try:

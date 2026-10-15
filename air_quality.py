@@ -24,7 +24,7 @@ import json
 
 import requests
 
-from cli_utils import die
+from cli_utils import die, use_utf8_output
 from weather import fetch_json, format_place, geocode, place_fields
 
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -136,6 +136,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     if not args.json:

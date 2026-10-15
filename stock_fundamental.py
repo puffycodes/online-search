@@ -31,7 +31,7 @@ import json
 import requests
 
 import stock_intrinsic_value as siv
-from cli_utils import die
+from cli_utils import die, use_utf8_output
 
 # (group, [(indicator key, label, format)]) in display order. Formats:
 # "pct" = a fraction shown as a percentage, "ratio" = a plain number,
@@ -215,6 +215,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     try:

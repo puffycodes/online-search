@@ -25,7 +25,7 @@ from datetime import datetime
 
 import requests
 
-from cli_utils import die, positive_int, validate_url_scheme
+from cli_utils import die, positive_int, use_utf8_output, validate_url_scheme
 
 TIMEOUT_SECONDS = 10
 USER_AGENT = "Mozilla/5.0 (compatible; online-search-url-availability/1.0)"
@@ -176,6 +176,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     validate_url_scheme(args.url, args.json)

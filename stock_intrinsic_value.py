@@ -34,7 +34,7 @@ import json
 import requests
 
 import yahoo_finance as yf
-from cli_utils import die, positive_int
+from cli_utils import die, positive_int, use_utf8_output
 from valuation import (
     discounted_cash_flow,
     equity_from_enterprise,
@@ -525,6 +525,7 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    use_utf8_output()
     args = parse_args(argv)
 
     try:
