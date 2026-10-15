@@ -1604,7 +1604,7 @@ Lets Claude Code answer requests like "what's AAPL worth?", "is Tesla overvalued
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's or ticker's intrinsic / fair value, whether it is over- or under-valued, or a DCF / reverse-DCF / multiples valuation, based on the `description` field in its frontmatter.
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's or ticker's intrinsic / fair value, whether it is over- or under-valued, or a DCF / reverse-DCF / multiples valuation, based on the `description` field in its frontmatter. Questions about analysts' price targets go to [`stock-analyst-targets`](#claude-code-agent-stock-analyst-targets) instead.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-intrinsic-value"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -1733,7 +1733,7 @@ Lets Claude Code answer requests like "what are Apple's fundamentals?", "what's 
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's margins, returns, growth, valuation multiples, debt or liquidity, cash flow or dividend, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value) instead.
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's margins, returns, growth, valuation multiples, debt or liquidity, cash flow or dividend, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value), earnings and dividend dates to [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar), and analyst price targets to [`stock-analyst-targets`](#claude-code-agent-stock-analyst-targets) instead.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-fundamental"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -3733,7 +3733,7 @@ pip install -r requirements-dev.txt
 python3 -m pytest
 ```
 
-Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing and window flags, `cli_utils.py`), each script's argument parser and output formatters, the Yahoo cookie/crumb handshake (`yahoo_finance.py`, `market_top_volume.py`, `stock_intrinsic_value.py`), and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
+Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing and window flags, `cli_utils.py`), each script's argument parser and output formatters, the Yahoo cookie/crumb handshake and `quoteSummary` fetch (`yahoo_finance.py`, `market_top_volume.py`, `stock_intrinsic_value.py`), and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
 
 [`tests/README.md`](tests/README.md) documents the layout, the `FakeResponse` / `FakeSession` doubles and `chart_result` fixture, the monkeypatching conventions, a per-module coverage table, and how to add a test.
 

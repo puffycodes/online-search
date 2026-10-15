@@ -1,6 +1,6 @@
 ---
 name: stock-intrinsic-value
-description: Use this agent to estimate what a stock is fundamentally worth — its intrinsic or fair value — e.g. "what's AAPL worth?", "is Tesla overvalued?", "run a DCF on Microsoft", "fair value of Novo Nordisk", "what growth is priced into NVDA?", "intrinsic value of DBS with a 10% discount rate". Invoke it whenever the user asks about a named company's or ticker's intrinsic value, fair value, whether it is over- or under-valued, or wants a DCF / reverse-DCF / multiples valuation.
+description: Use this agent to estimate what a stock is fundamentally worth — its intrinsic or fair value — e.g. "what's AAPL worth?", "is Tesla overvalued?", "run a DCF on Microsoft", "fair value of Novo Nordisk", "what growth is priced into NVDA?", "intrinsic value of DBS with a 10% discount rate". Invoke it whenever the user asks about a named company's or ticker's intrinsic value, fair value, whether it is over- or under-valued, or wants a DCF / reverse-DCF / multiples valuation — as opposed to what analysts' price targets say (that's the `stock-analyst-targets` agent).
 tools: Bash
 ---
 
@@ -43,7 +43,7 @@ The command exits non-zero with `{"error": "..."}` on stderr — usually an unkn
 
 The object has `symbol`, `name`, `currency`, `price`, and:
 
-- `inputs` — the fundamentals pulled (`free_cash_flow`, `ebitda`, `revenue`, `shares`, `net_debt`, `eps_ttm`, `dividend_rate`, `beta`, current `trailing_pe` / `ev_to_ebitda` / `price_to_sales`, `analyst_growth_5y` / `analyst_growth_1y`, …). A `null` means Yahoo did not return it.
+- `inputs` — the fundamentals pulled (`free_cash_flow`, `ebitda`, `revenue`, `shares`, `net_debt`, `eps_ttm`, `dividend_rate` (forward dividend per share, from Yahoo's yield × price), `beta`, current `trailing_pe` / `ev_to_ebitda` / `price_to_sales`, `analyst_growth_5y` / `analyst_growth_1y`, …). A `null` means Yahoo did not return it.
 - `assumptions` — the `discount_rate`, `growth`, `terminal_growth`, `years` actually used, each with a `notes` entry saying where it came from (CLI, CAPM, analyst estimate, or default).
 - `multiples_used` — the `pe` / `ev_ebitda` / `ps` multiples applied and whether each was user-supplied or the stock's current one.
 - `estimates` — one entry per method:

@@ -1,6 +1,6 @@
 ---
 name: stock-fundamental
-description: Use this agent to look up a stock's fundamental indicators — profitability, growth, valuation multiples, financial health, cash flow and shareholder returns — e.g. "what are Apple's fundamentals?", "what's Tesla's profit margin?", "how much debt does DBS have?", "P/E and PEG for Microsoft", "is Vodafone's dividend covered?", "ROE of Novo Nordisk". Invoke it whenever the user asks about a named company's or ticker's margins, returns, growth, P/E / P/B / P/S / EV/EBITDA, debt or liquidity ratios, cash flow, dividend yield or payout ratio, as opposed to its intrinsic value (that's the `stock-intrinsic-value` agent) or its price history.
+description: Use this agent to look up a stock's fundamental indicators — profitability, growth, valuation multiples, financial health, cash flow and shareholder returns — e.g. "what are Apple's fundamentals?", "what's Tesla's profit margin?", "how much debt does DBS have?", "P/E and PEG for Microsoft", "is Vodafone's dividend covered?", "ROE of Novo Nordisk". Invoke it whenever the user asks about a named company's or ticker's margins, returns, growth, P/E / P/B / P/S / EV/EBITDA, debt or liquidity ratios, cash flow, dividend yield or payout ratio, as opposed to its intrinsic value (that's the `stock-intrinsic-value` agent), its earnings or dividend dates (`stock-earnings-calendar`), its analyst price targets (`stock-analyst-targets`), or its price history.
 tools: Bash
 ---
 
