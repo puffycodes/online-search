@@ -22,7 +22,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick_chart.py` and produces a candlestick chart for a named stock, index, currency pair, crypto coin or commodity future
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks, indices, currency pairs, crypto coins or commodity futures
-- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing, used by the three price scripts, `stock_intrinsic_value.py` (headers/timeout) and `app/stock_information/`
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing and the cookie + crumb `quoteSummary` fetch, used by the three price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `app/stock_information/`
 - [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py`, `stock_fundamental.py` and `stock_intrinsic_value.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
@@ -32,6 +32,10 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
 - [`stock_fundamental.py`](#stock_fundamentalpy) — pulls a stock's fundamental indicators from Yahoo Finance: margins, ROE/ROA, growth, P/E, PEG, EV/EBITDA, P/B, P/S, FCF yield, debt and liquidity ratios, cash flow, dividend yield and payout ratio (also used by `app/stock_information/`)
 - [`.claude/agents/stock-fundamental.md`](#claude-code-agent-stock-fundamental) — Claude Code subagent that calls `stock_fundamental.py` and reports and interprets a named stock's fundamental indicators
+- [`stock_earnings_calendar.py`](#stock_earnings_calendarpy) — pulls a stock's next earnings date with the EPS and revenue estimates, its ex-dividend and payment dates, and its last four quarters of EPS against estimates from Yahoo Finance
+- [`.claude/agents/stock-earnings-calendar.md`](#claude-code-agent-stock-earnings-calendar) — Claude Code subagent that calls `stock_earnings_calendar.py` and answers when a named stock reports, what's expected, whether it beat, and its dividend dates
+- [`stock_analyst_targets.py`](#stock_analyst_targetspy) — pulls a stock's analyst price targets (low / median / mean / high, with upside), consensus rating and four-month buy / hold / sell trend from Yahoo Finance
+- [`.claude/agents/stock-analyst-targets.md`](#claude-code-agent-stock-analyst-targets) — Claude Code subagent that calls `stock_analyst_targets.py` and summarizes what analysts think of a named stock
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail; plus a feature spec (`features.md`) for every [script](docs/features/script/) and [agent](docs/features/agent/)
 
 **[Tech News & Discussions](#tech-news--discussions)**
@@ -1237,7 +1241,7 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) and [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) use its cookie + crumb handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch), and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, and the crumb handshake. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy) and [`stock_analyst_targets.py`](#stock_analyst_targetspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1256,6 +1260,7 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 | `SECONDS_PER_DAY` | 86400 | Used to pad an explicit `--end` by a day so the final bar is inclusive |
 | `COOKIE_URLS` | `("https://fc.yahoo.com", "https://finance.yahoo.com")` | Pages tried in order to pick up Yahoo's consent cookie |
 | `CRUMB_URL` | `…/v1/test/getcrumb` | Crumb endpoint for the screener / `quoteSummary` calls |
+| `QUOTE_SUMMARY_HOSTS` | `query2` then `query1` `…/v10/finance/quoteSummary/{symbol}` | `quoteSummary` URL templates, tried in order |
 
 ### API reference
 
@@ -1264,6 +1269,8 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 - `session_datetime(timestamp, gmtoffset)` — Converts a Yahoo UTC epoch timestamp into a naive exchange-local `datetime`, so its date is the exchange's own trading day. Used by the three price scripts and `app/stock_information/`.
 - `fetch_crumb(session)` — Picks up the consent cookie on `session` (trying each of `COOKIE_URLS` until one answers) and returns the crumb from `CRUMB_URL`, or `None` if that request errors or the body isn't a short, non-HTML token. Callers decide whether a missing crumb is fatal (`market_top_volume.py` raises; `stock_intrinsic_value.py` falls back to crumbless requests).
 - `crumb_session()` — Returns `(session, crumb)`: a fresh `requests.Session` carrying `HEADERS`, plus `fetch_crumb(session)`.
+- `fetch_quote_summary(symbol, modules)` — GETs `quoteSummary` for the given `modules` (with `formatted=false`) through a `crumb_session()`, trying each of `QUOTE_SUMMARY_HOSTS` with the crumb, then each without it. Returns the first `result` — a dict keyed by module, omitting any Yahoo has no data for — or raises `requests.RequestException` with the last error (an error envelope, a non-JSON body's HTTP status, or `no fundamentals in response`).
+- `summary_num(node, *path)` / `summary_text(node, *path)` — Dig a value out of a nested `quoteSummary` dict. `summary_num` unwraps Yahoo's `{"raw": …}` and returns a float or `None` (bools and strings are not numbers); `summary_text` returns a non-empty string or `None`.
 - `build_params(interval="1d", range_=None, start=None, end=None, last=None)` — Returns the chart-endpoint query params. The window is chosen by, in priority order: an explicit `start`/`end` pair (→ `period1`/`period2`, end padded a day), then `last` (→ a calendar look-back widened for `1wk` / `1mo` bars), then `range_`. Raises `ValueError` for `end` without `start` or an `end` not after `start`. `includeAdjustedClose=true` is always set. Callers pass `interval="1d"` (the default) for daily data.
 - `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
 - `extract_series(result)` — Returns `(meta, series)` where `series` is a dict of parallel lists straight off the payload — `timestamp`, `open`, `high`, `low`, `close`, `volume` — plus `adjclose` (a list or `None`) and the resolved `gmtoffset`. Callers turn these into row dicts.
@@ -1271,7 +1278,7 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 
 ### Notes / limitations
 
-- Changing a constant, the window flags or the `build_params` window logic here affects **all three** price scripts that use it, and changing the crumb handshake affects `market_top_volume.py`, `stock_intrinsic_value.py` and (through it) `stock_fundamental.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all three** price scripts that use it, and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py` and `stock_analyst_targets.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
 
 ---
 
@@ -1506,7 +1513,7 @@ What it computes:
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `yahoo_finance.py` (for its `HEADERS`, timeout and cookie + crumb handshake), `valuation.py`, and `cli_utils.py` — run from the repo root so they import
+- the repo's own `yahoo_finance.py` (for its `quoteSummary` fetch and cookie + crumb handshake), `valuation.py`, and `cli_utils.py` — run from the repo root so they import
 
 ### Usage
 
@@ -1566,7 +1573,7 @@ Intrinsic value estimates (per share unless noted)
 ### How it works
 
 1. **Cookie + crumb** — [`yahoo_finance.crumb_session()`](#yahoo_financepy) opens a `requests.Session` that GETs `fc.yahoo.com` (then `finance.yahoo.com`) to pick up the EU-consent cookie, then `query1.finance.yahoo.com/v1/test/getcrumb` for the crumb token the fundamentals endpoint now requires.
-2. **Fetch** — GETs `quoteSummary` for `price,summaryDetail,defaultKeyStatistics,financialData,earningsTrend,summaryProfile`, trying `query2` then `query1`, with the crumb and then without. A bad ticker returns an error envelope (raised) or an empty `result` (raised).
+2. **Fetch** — [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy) GETs `quoteSummary` for `price,summaryDetail,defaultKeyStatistics,financialData,earningsTrend,summaryProfile`, trying `query2` then `query1`, with the crumb and then without. A bad ticker returns an error envelope (raised) or an empty `result` (raised).
 3. **Parse** — `collect_inputs()` digs each figure out of the nested modules, unwrapping Yahoo's `{"raw": …}` wrappers, and derives net debt (`totalDebt − totalCash`) and revenue per share.
 4. **Assumptions** — `resolve_assumptions()`: the discount rate is the CLI value, else CAPM (`risk_free + beta × equity_risk_premium`), else `0.09`; the growth is the CLI value, else the analyst `+5y` estimate, else `+1y`, else `0.05`. If `terminal_growth ≥ discount_rate` the discount rate is nudged up so the model stays defined. Every choice is shown with its source.
 5. **Estimate** — `compute_estimates()` calls each `valuation.py` function whose inputs are present and positive; the rest come back `None` and render blank.
@@ -1749,6 +1756,258 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 - Requires `stock_fundamental.py` and its `stock_intrinsic_value.py` / `yahoo_finance.py` helpers (and `requests`) to be runnable from the repo root.
 - Inherits all the limitations of [`stock_fundamental.py`](#stock_fundamentalpy): one trailing Yahoo snapshot, quarterly YoY growth, no interest coverage / ROIC / buyback data, often-missing PEG.
+
+---
+
+## stock_earnings_calendar.py
+
+Pulls a stock's earnings calendar from Yahoo Finance's public `quoteSummary` endpoint: when it next reports (with the analyst EPS and revenue estimates for that quarter), its ex-dividend and payment dates, and its last four quarters of EPS against estimates. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
+
+| Section | What it shows | Source |
+|---|---|---|
+| Next earnings | date and UTC time (or Yahoo's estimated window), confirmed vs estimated, upcoming vs past; EPS and revenue estimate low / average / high | `calendarEvents.earnings` |
+| Dividend | ex-dividend and payment dates, each upcoming vs past; the last dividend per share and its ex-date | `calendarEvents.exDividendDate`, `dividendDate`; `defaultKeyStatistics.lastDividendValue`, `lastDividendDate` |
+| Earnings history | up to four quarters: quarter end, fiscal quarter, report date, EPS estimate, actual, surprise | `earningsHistory`; report date and fiscal-quarter label from `earnings.earningsChart` |
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `yahoo_finance.py` (the fetch), `stock_intrinsic_value.py` (number formatting) and `cli_utils.py` — run from the repo root so they import
+
+### Usage
+
+```bash
+python3 stock_earnings_calendar.py SYMBOL [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, … |
+| `--json` | off | Emit structured JSON on stdout instead of the report |
+
+#### Example
+
+```bash
+python3 stock_earnings_calendar.py AAPL
+```
+
+```
+AAPL - Apple Inc.  (NasdaqGS - USD)
+
+Next earnings
+  Date               2026-11-02 20:00 UTC  (confirmed, upcoming)
+  EPS estimate       1.98  (range 1.93 - 2.07) USD
+  Revenue estimate   113.61B  (range 112.25B - 117.22B) USD
+
+Dividend
+  Ex-dividend date   2026-08-10  (past)
+  Payment date       2026-08-13  (past)
+  Last dividend      0.27 USD  (ex-date 2026-08-10)
+
+Earnings history (EPS, USD)
+  Quarter end  Fiscal Q  Reported     Estimate    Actual  Surprise
+  2025-09-30   4Q2025    2025-10-30       1.77      1.85    +4.52%
+  2025-12-31   1Q2026    2026-01-29       2.67      2.84    +6.34%
+  2026-03-31   2Q2026    2026-04-30       1.94      2.01    +3.46%
+  2026-06-30   3Q2026    2026-07-30       1.89      2.02    +6.74%
+```
+
+(Figures move with live data; the closing notes are omitted.) With `--json`: `{symbol, name, exchange, currency, reporting_currency, next_earnings, dividend, earnings_history}`:
+
+- `next_earnings` — `{date, date_end, datetime_utc, is_estimate, status, eps_estimate, revenue_estimate}` or `null`; each estimate is `{low, average, high}` or `null`.
+- `dividend` — `{ex_dividend_date, ex_dividend_status, payment_date, payment_status, last_amount, last_amount_date, amount_currency}` or `null`.
+- `earnings_history` — oldest first, `[{quarter_end, fiscal_quarter, reported_date, eps_estimate, eps_actual, surprise_pct, currency}, ...]`; `surprise_pct` is a fraction (`0.0452` = +4.52%).
+
+### How it works
+
+1. **Fetch** — `yahoo_finance.fetch_quote_summary()`: the cookie + crumb handshake, then `quoteSummary` for `price,financialData,defaultKeyStatistics,calendarEvents,earningsHistory,earnings`.
+2. **Next earnings** — `next_earnings()` sorts `calendarEvents.earnings.earningsDate`. One timestamp is a confirmed date; two are Yahoo's estimated window (`date` → `date_end`). `earningsCallDate` is ignored — it is often stale.
+3. **Dividend** — `dividend_dates()` reads the ex-dividend and payment dates and the last dividend paid.
+4. **History** — `earnings_history()` reads `earningsHistory` and matches each quarter, by quarter-end date, to the `earnings` chart entry carrying its report date and fiscal-quarter label.
+5. **Status** — every date is compared with today's UTC date: on or after → `upcoming`, before → `past`.
+6. **Report** — the three sections, or the JSON object.
+
+### API reference
+
+- `MODULES` — The `quoteSummary` modules fetched.
+- `next_earnings(modules, today)`, `dividend_dates(modules, today, currency)`, `earnings_history(modules)` — The three sections from the raw modules.
+- `extract_calendar(modules, today=None)` — Returns the JSON-shaped dict (without `symbol`); `today` defaults to the current UTC date.
+- `build_report(symbol, calendar)` / `build_json(symbol, calendar)` — The text report and the JSON payload.
+- `parse_args(argv=None)`, `main(argv=None)` — The CLI.
+
+### Error handling
+
+- Network failure or a bad ticker → exits 1, printing `Error: …` to stderr (or `{"error": "…"}` with `--json`).
+- A symbol with no next earnings date **and** no earnings history — an ETF, index, currency or future — exits 1 with `no earnings data for '<symbol>' (only company stocks have earnings)`.
+- A missing symbol or unknown flag is rejected by argument parsing (exit code 2), before any request is made.
+
+### Notes / limitations
+
+- Yahoo keeps the last dividend's dates until the next ones are announced, so the ex-dividend date is often in the past — check its status. The next earnings date can briefly be in the past too, right after a report.
+- Earnings times are UTC; the date shown is the UTC date, which can differ from the exchange-local date for a report near midnight UTC.
+- EPS and revenue estimates are in the **reporting** currency (`financialData.financialCurrency`), which can differ from the trading currency: `VOD.L` trades in `GBp` but reports in `EUR`.
+- For minor-unit listings (`GBp`, `ILA`, `ZAc`) the dividend amount is reported without a currency: Yahoo returns it in pounds or the dividend's declared currency (BP and HSBC come back in USD), not pence, and doesn't say which.
+- Coverage varies outside the US — `VOD.L` has a date but no estimates or history. Same undocumented endpoint and fragile crumb/cookie flow as `stock_intrinsic_value.py`.
+
+---
+
+## Claude Code agent: `stock-earnings-calendar`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-earnings-calendar.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_earnings_calendar.py`](#stock_earnings_calendarpy).
+
+### Purpose
+
+Lets Claude Code answer requests like "when does Apple report earnings?", "what EPS is expected for NVDA this quarter?", "did DBS beat estimates last quarter?" or "when is Microsoft's ex-dividend date?" from live Yahoo Finance data, instead of stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's upcoming or past earnings announcements, EPS or revenue estimates, earnings surprises, or dividend dates, based on the `description` field in its frontmatter. Price targets go to [`stock-analyst-targets`](#claude-code-agent-stock-analyst-targets) instead.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-earnings-calendar"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings; if the ticker is uncertain it says so rather than guessing. It declines ETFs, indices, currencies and commodities (no earnings) without running the script, and runs once per ticker for several companies.
+2. Runs `python3 stock_earnings_calendar.py SYMBOL --json` from the repo root.
+3. Answers the question asked first: the next report date (time in UTC if confirmed; confirmed vs estimated window) with the EPS / revenue consensus; or the latest quarter's beat or miss and the pattern across quarters; or the dividend dates — saying the next ex-dividend date isn't announced yet when the one Yahoo has is past. Several companies go in one table sorted by report date.
+4. Closes with a caveat that dates and estimates can change and should be checked against the company's investor-relations page. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_earnings_calendar.py`](#stock_earnings_calendarpy) |
+
+### Notes / limitations
+
+- Requires `stock_earnings_calendar.py` and its `yahoo_finance.py` / `stock_intrinsic_value.py` / `cli_utils.py` helpers (and `requests`) to be runnable from the repo root.
+- Inherits all the limitations of [`stock_earnings_calendar.py`](#stock_earnings_calendarpy): stale dividend dates until new ones are announced, UTC dates, thinner coverage outside the US.
+
+---
+
+## stock_analyst_targets.py
+
+Pulls the analyst view on a stock from Yahoo Finance's public `quoteSummary` endpoint: the 12-month price targets (low / median / mean / high) and each one's upside from the current price, the consensus recommendation, and how the buy / hold / sell counts have moved over the last four months. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
+
+| Section | What it shows | Source |
+|---|---|---|
+| Price targets | low, median, mean and high target, each with its upside vs the price; number of analysts with a target | `financialData.targetLowPrice`, `targetMedianPrice`, `targetMeanPrice`, `targetHighPrice`, `numberOfAnalystOpinions`, `currentPrice` |
+| Consensus | recommendation key and mean score (1 = strong buy … 5 = strong sell) | `financialData.recommendationKey`, `recommendationMean` |
+| Recommendation trend | strong buy / buy / hold / sell / strong sell counts for this month and the three before | `recommendationTrend` |
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `yahoo_finance.py` (the fetch), `stock_intrinsic_value.py` (number formatting) and `cli_utils.py` — run from the repo root so they import
+
+### Usage
+
+```bash
+python3 stock_analyst_targets.py SYMBOL [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, … |
+| `--json` | off | Emit structured JSON on stdout instead of the report |
+
+#### Example
+
+```bash
+python3 stock_analyst_targets.py AAPL
+```
+
+```
+AAPL - Apple Inc.  (NasdaqGS - USD)
+Price 342.96 USD    39 analysts with a price target
+
+Price targets              Target   vs price
+  Low                      215.00    -37.31%
+  Median                   340.00     -0.86%
+  Mean                     329.38     -3.96%
+  High                     405.00    +18.09%
+
+Consensus  BUY  (mean 2.20 on 1 = strong buy ... 5 = strong sell)
+
+Recommendation trend
+                  Strong buy         Buy        Hold        Sell Strong sell   Total
+  This month               6          19          13           3           3      44
+  1 month ago              6          19          13           3           3      44
+  2 months ago             6          19          14           3           2      44
+  3 months ago             6          22          14           2           2      46
+```
+
+(Figures move with live data; the closing notes are omitted.) With `--json`: `{symbol, name, exchange, currency, price, analysts, targets, upside, recommendation, trend}`, where `targets` and `upside` are keyed `low` / `median` / `mean` / `high` (`upside` as a fraction rounded to 4 places: `0.1809` = +18.09%), `recommendation` is `{key, mean}`, and `trend` is newest first: `[{period, strong_buy, buy, hold, sell, strong_sell, total}, ...]` with `period` `0m`, `-1m`, `-2m`, `-3m`.
+
+### How it works
+
+1. **Fetch** — `yahoo_finance.fetch_quote_summary()`: the cookie + crumb handshake, then `quoteSummary` for `price,financialData,recommendationTrend`.
+2. **Targets** — `extract_targets()` reads the four targets and divides each by the price (`financialData.currentPrice`, falling back to `price.regularMarketPrice`) for its upside. A recommendation key of `none` becomes `null`.
+3. **Trend** — `recommendation_trend()` turns each month's counts into a row with a total, newest first, dropping months with no counts.
+4. **Coverage** — `has_coverage()` is false when there are no targets, no recommendation and no trend; `main()` then fails.
+5. **Report** — the three sections, or the JSON object.
+
+### API reference
+
+- `MODULES` — The `quoteSummary` modules fetched.
+- `extract_targets(modules)` — Returns the JSON-shaped dict (without `symbol`).
+- `recommendation_trend(modules)` — The monthly rating counts, newest first.
+- `has_coverage(data)` — Whether `extract_targets()` found any analyst data.
+- `build_report(symbol, data)` / `build_json(symbol, data)` — The text report and the JSON payload.
+- `parse_args(argv=None)`, `main(argv=None)` — The CLI.
+
+### Error handling
+
+- Network failure or a bad ticker → exits 1, printing `Error: …` to stderr (or `{"error": "…"}` with `--json`).
+- A symbol with no analyst data — an uncovered small cap, ETF, index, currency or future — exits 1 with `no analyst coverage for '<symbol>' (only covered company stocks have targets)`.
+- A missing symbol or unknown flag is rejected by argument parsing (exit code 2), before any request is made.
+
+### Notes / limitations
+
+- These are other analysts' opinions as Yahoo aggregates them, not a forecast this script makes; Yahoo refreshes them irregularly.
+- Targets are in the trading currency, so `GBp` listings are in pence, the same unit as the price.
+- The trend counts ratings, which can come from more analysts than set a price target (Apple: 44 ratings, 39 targets).
+- Same undocumented endpoint and fragile crumb/cookie flow as `stock_intrinsic_value.py`.
+
+---
+
+## Claude Code agent: `stock-analyst-targets`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-analyst-targets.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_analyst_targets.py`](#stock_analyst_targetspy).
+
+### Purpose
+
+Lets Claude Code answer requests like "what's the analyst price target for Apple?", "do analysts rate Tesla a buy?", "how much upside do analysts see in DBS?" or "have analysts turned more bearish on Intel?" from live Yahoo Finance data, instead of stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's analyst price targets, ratings, consensus or upside to target, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value) and earnings dates to [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar) instead.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-analyst-targets"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings; if the ticker is uncertain it says so rather than guessing. It declines ETFs, indices, currencies and commodities (no analyst coverage) without running the script, and runs once per ticker for comparisons.
+2. Runs `python3 stock_analyst_targets.py SYMBOL --json` from the repo root.
+3. Leads with the consensus rating, the median and mean target with the implied upside or downside, and the number of analysts; gives the low–high spread; and describes any shift in the monthly buy / hold / sell counts. Comparisons go in one table.
+4. Closes with a caveat that these are other people's opinions, often wrong, and not investment advice — and never adds a buy/sell view of its own. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_analyst_targets.py`](#stock_analyst_targetspy) |
+
+### Notes / limitations
+
+- Requires `stock_analyst_targets.py` and its `yahoo_finance.py` / `stock_intrinsic_value.py` / `cli_utils.py` helpers (and `requests`) to be runnable from the repo root.
+- Inherits all the limitations of [`stock_analyst_targets.py`](#stock_analyst_targetspy): aggregated opinions refreshed irregularly, rating counts that exceed the target count.
 
 ---
 

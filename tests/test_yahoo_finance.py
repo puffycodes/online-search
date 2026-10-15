@@ -1,5 +1,6 @@
-"""Tests for yahoo_finance: parse_date, window args, session dates, crumb handshake, build_params,
-meta_summary, extract_series, fetch_history."""
+"""Tests for yahoo_finance: parse_date, window args, session dates, crumb handshake,
+fetch_quote_summary, summary_num/summary_text, build_params, meta_summary, extract_series,
+fetch_history."""
 
 import argparse
 import datetime as dt
@@ -111,6 +112,49 @@ class TestCrumbSession:
         monkeypatch.setattr(yf.requests, "Session", lambda: session)
         assert yf.crumb_session() == (session, "crumb123")
         assert session.headers == yf.HEADERS
+
+
+class TestFetchQuoteSummary:
+    def test_requests_the_given_modules_with_crumb(self, monkeypatch):
+        session = FakeSession(get_responses=[
+            FakeResponse(text="cookie"),
+            FakeResponse(text="crumb123"),
+            FakeResponse(json_data={"quoteSummary": {"result": [{"price": {}}], "error": None}}),
+        ])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        assert yf.fetch_quote_summary("AAA", ["price", "calendarEvents"]) == {"price": {}}
+        url, kwargs = session.get_calls[2]
+        assert url == yf.QUOTE_SUMMARY_HOSTS[0].format(symbol="AAA")
+        assert kwargs["params"] == {
+            "modules": "price,calendarEvents", "formatted": "false", "crumb": "crumb123"}
+
+    def test_empty_result_raises(self, monkeypatch):
+        session = FakeSession(get_responses=[FakeResponse(text="cookie"), FakeResponse(text="")]
+                              + [FakeResponse(json_data={"quoteSummary": {"result": []}})] * 2)
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        with pytest.raises(requests.RequestException, match="no fundamentals in response"):
+            yf.fetch_quote_summary("AAA", ["price"])
+
+
+class TestSummaryNumText:
+    @pytest.mark.parametrize("node,expected", [
+        ({"a": {"b": 3}}, 3.0),
+        ({"a": {"b": {"raw": 1.5, "fmt": "1.50"}}}, 1.5),
+        ({"a": {"b": True}}, None),
+        ({"a": {"b": "7"}}, None),
+        ({"a": None}, None),
+    ])
+    def test_num(self, node, expected):
+        assert yf.summary_num(node, "a", "b") == expected
+
+    @pytest.mark.parametrize("node,expected", [
+        ({"a": {"b": "Tech"}}, "Tech"),
+        ({"a": {"b": ""}}, None),
+        ({"a": {"b": 3}}, None),
+        ({"a": "flat"}, None),
+    ])
+    def test_text(self, node, expected):
+        assert yf.summary_text(node, "a", "b") == expected
 
 
 class TestBuildParams:

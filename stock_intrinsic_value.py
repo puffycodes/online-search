@@ -44,10 +44,7 @@ from valuation import (
     multiple_value,
 )
 
-QUOTE_SUMMARY_HOSTS = [
-    "https://query2.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
-    "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
-]
+QUOTE_SUMMARY_HOSTS = yf.QUOTE_SUMMARY_HOSTS
 MODULES = [
     "price",
     "summaryDetail",
@@ -72,63 +69,14 @@ GRAHAM_PE_CAP = 40.0         # keep 8.5 + 2g sane for high growth assumptions
 # --------------------------------------------------------------------------- #
 def fetch_fundamentals(symbol):
     """Return the ``quoteSummary`` module dict for ``symbol`` (raises on failure)."""
-    session, crumb = yf.crumb_session()
-    params = {"modules": ",".join(MODULES), "formatted": "false"}
-    attempts = [(host, True) for host in QUOTE_SUMMARY_HOSTS]
-    attempts += [(host, False) for host in QUOTE_SUMMARY_HOSTS]
-
-    last_error = "no response"
-    for host, use_crumb in attempts:
-        if use_crumb and not crumb:
-            continue
-        query = dict(params)
-        if use_crumb:
-            query["crumb"] = crumb
-        try:
-            resp = session.get(
-                host.format(symbol=symbol), params=query, timeout=yf.REQUEST_TIMEOUT
-            )
-            payload = resp.json()
-        except ValueError:
-            last_error = f"non-JSON response (HTTP {resp.status_code})"
-            continue
-        except requests.RequestException as exc:
-            last_error = str(exc)
-            continue
-        envelope = payload.get("quoteSummary") or {}
-        error = envelope.get("error")
-        if error:
-            last_error = error.get("description") or error.get("code") or str(error)
-            continue
-        results = envelope.get("result")
-        if results:
-            return results[0]
-        last_error = "no fundamentals in response"
-    raise requests.RequestException(last_error)
+    return yf.fetch_quote_summary(symbol, MODULES)
 
 
 # --------------------------------------------------------------------------- #
 # Parse                                                                        #
 # --------------------------------------------------------------------------- #
-def _num(node, *path):
-    """Dig ``path`` out of a nested dict; unwrap Yahoo's {"raw": ...}; -> float|None."""
-    for key in path:
-        if not isinstance(node, dict):
-            return None
-        node = node.get(key)
-    if isinstance(node, dict):
-        node = node.get("raw")
-    if isinstance(node, bool):
-        return None
-    return float(node) if isinstance(node, (int, float)) else None
-
-
-def _text(node, *path):
-    for key in path:
-        if not isinstance(node, dict):
-            return None
-        node = node.get(key)
-    return node if isinstance(node, str) and node else None
+_num = yf.summary_num
+_text = yf.summary_text
 
 
 def _analyst_growth(modules, period):

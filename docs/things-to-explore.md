@@ -14,11 +14,9 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **Earnings calendar and analyst targets**: reuses the crumb handshake and fills
-   the gap next to fundamentals and intrinsic value.
-2. **Historical weather plus UV and sunrise/sunset**: small additions built on `weather.py`.
-3. **Wayback Machine fallback for `url_availability.py`**: high practical value.
-4. **Hacker News search**: lets the tech-discussion agents answer "what did people
+1. **Historical weather plus UV and sunrise/sunset**: small additions built on `weather.py`.
+2. **Wayback Machine fallback for `url_availability.py`**: high practical value.
+3. **Hacker News search**: lets the tech-discussion agents answer "what did people
    say about X?"
 
 ## Weather and environment
@@ -40,10 +38,8 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ## Finance
 
-### Yahoo `quoteSummary`: more modules (reuse `yahoo_finance.crumb_session()`)
+### Yahoo `quoteSummary`: more modules (reuse `yahoo_finance.fetch_quote_summary()`)
 
-- [ ] **Earnings calendar and dividend dates** (`calendarEvents`)
-- [ ] **Analyst recommendations and price targets** (`recommendationTrend`, `financialData`)
 - [ ] **Upgrades/downgrades history** (`upgradeDowngradeHistory`)
 - [ ] **Insider transactions and major holders** (`insiderTransactions`, `majorHoldersBreakdown`)
 

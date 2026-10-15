@@ -4,8 +4,9 @@ Shared helpers for Yahoo Finance's public endpoints. No API key required.
 
 Used by stock_price_history.py, stock_candlestick_chart.py and stock_rebased_chart.py
 for price history (the chart endpoint, the --range/--last/--start/--end window
-flags, and exchange-local session dates), by market_top_volume.py and
-stock_intrinsic_value.py for the cookie + crumb handshake their endpoints need
+flags, and exchange-local session dates), by market_top_volume.py for the
+cookie + crumb handshake, by stock_intrinsic_value.py, stock_earnings_calendar.py
+and stock_analyst_targets.py for the quoteSummary fetch built on that handshake
 (stock_fundamental.py gets it through stock_intrinsic_value.py's fetch),
 and by app/stock_information/stock_info_server.py for its quote. Each caller
 keeps its own row shaping (rounding, date formatting, which rows to drop) and
@@ -34,6 +35,11 @@ SECONDS_PER_DAY = 86400
 # answers; the crumb is tied to the cookies that request set.
 COOKIE_URLS = ("https://fc.yahoo.com", "https://finance.yahoo.com")
 CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
+
+QUOTE_SUMMARY_HOSTS = [
+    "https://query2.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
+    "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
+]
 
 
 def parse_date(value):
@@ -100,6 +106,71 @@ def crumb_session():
     session = requests.Session()
     session.headers.update(HEADERS)
     return session, fetch_crumb(session)
+
+
+def fetch_quote_summary(symbol, modules):
+    """Return the ``quoteSummary`` result for ``symbol``: a dict keyed by the
+    requested ``modules`` (Yahoo omits any it has no data for).
+
+    Tries each host with the crumb, then each without it, and raises
+    ``requests.RequestException`` carrying the last error if none answers.
+    """
+    session, crumb = crumb_session()
+    params = {"modules": ",".join(modules), "formatted": "false"}
+    attempts = [(host, True) for host in QUOTE_SUMMARY_HOSTS]
+    attempts += [(host, False) for host in QUOTE_SUMMARY_HOSTS]
+
+    last_error = "no response"
+    for host, use_crumb in attempts:
+        if use_crumb and not crumb:
+            continue
+        query = dict(params)
+        if use_crumb:
+            query["crumb"] = crumb
+        try:
+            resp = session.get(
+                host.format(symbol=symbol), params=query, timeout=REQUEST_TIMEOUT
+            )
+            payload = resp.json()
+        except ValueError:
+            last_error = f"non-JSON response (HTTP {resp.status_code})"
+            continue
+        except requests.RequestException as exc:
+            last_error = str(exc)
+            continue
+        envelope = payload.get("quoteSummary") or {}
+        error = envelope.get("error")
+        if error:
+            last_error = error.get("description") or error.get("code") or str(error)
+            continue
+        results = envelope.get("result")
+        if results:
+            return results[0]
+        last_error = "no fundamentals in response"
+    raise requests.RequestException(last_error)
+
+
+def summary_num(node, *path):
+    """Dig ``path`` out of a nested quoteSummary dict; unwrap Yahoo's
+    {"raw": ...}; -> float|None."""
+    for key in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(key)
+    if isinstance(node, dict):
+        node = node.get("raw")
+    if isinstance(node, bool):
+        return None
+    return float(node) if isinstance(node, (int, float)) else None
+
+
+def summary_text(node, *path):
+    """Dig ``path`` out of a nested quoteSummary dict -> non-empty str|None."""
+    for key in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(key)
+    return node if isinstance(node, str) and node else None
 
 
 def build_params(interval="1d", range_=None, start=None, end=None, last=None):
