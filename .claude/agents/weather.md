@@ -24,6 +24,6 @@ python3 weather.py "LOCATION" [--unit celsius|fahrenheit] --json
 
 Lead with the condition and temperature: `<Location>: <condition>, <temperature><unit>`. Mention wind speed/direction only if it's notable or the user asked. Include the observation time if the user seems to care about freshness, and the resolved place name (with region/country) if it differs from what they typed, so they can confirm it matched the place they meant.
 
-This is a **current-conditions snapshot only** — there is no forecast, hourly, or historical data available from this tool. If the user asks for a forecast or past weather, say that isn't available rather than guessing or fabricating one.
+This is a **current-conditions snapshot only** — there is no forecast, hourly, or historical data available from this tool. Upcoming days, the UV index and sunrise / sunset are the `weather-forecast` agent's job, and past dates the `weather-history` agent's; say so rather than guessing or fabricating them from this snapshot.
 
 Do not fabricate conditions, temperatures, or locations — only report what the tool returns.

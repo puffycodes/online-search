@@ -24,6 +24,8 @@
     - For several days, a table or list with one row per day:
         - {{Date}} {{Condition}} {{Temperature High}} {{Temperature Low}} {{Chance of Rain}}
         - Call out any day with a notably high chance of rain or a big temperature swing.
+    - For a UV question: {{Peak UV Index}} {{UV Category}} for the day(s) asked, with a brief sun-protection note when the category is High or above.
+    - For a sunrise, sunset or daylight question: {{Sunrise}} {{Sunset}} {{Daylight Hours}}, in the place's local time; say when it is polar night or midnight sun.
     - {{Resolved Place Name}} {{Region}} {{Country}}, if it differs from what the user typed.
-- Report daily summaries only. If the user wants the weather right now, use the weather agent instead.
+- Report daily summaries only. If the user wants the weather right now, use the weather agent instead; for a past date, use the weather-history agent.
 - Never fabricate conditions, temperatures or dates.

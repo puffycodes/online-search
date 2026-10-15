@@ -1,4 +1,5 @@
-"""Tests for weather: weather-code lookup, place formatting and fields, geocode/get_weather, and main()."""
+"""Tests for weather: weather-code lookup, place formatting and fields, fetch_json errors,
+daily-series and sun helpers, geocode/get_weather, and main()."""
 
 import json
 
@@ -6,6 +7,7 @@ import pytest
 import requests
 
 import weather
+from helpers import FakeResponse
 
 
 class TestWeatherDescription:
@@ -49,6 +51,73 @@ class TestPlaceFields:
         assert weather.place_fields({"name": "X"}) == {
             "location": "X", "admin1": None, "country": None, "latitude": None, "longitude": None,
         }
+
+
+class TestFetchJson:
+    def _patch(self, monkeypatch, response):
+        monkeypatch.setattr(weather.requests, "get", lambda url, **kwargs: response)
+
+    def test_returns_json(self, monkeypatch):
+        self._patch(monkeypatch, FakeResponse(json_data={"ok": 1}))
+        assert weather.fetch_json("u", {}) == {"ok": 1}
+
+    def test_open_meteo_reason_is_surfaced(self, monkeypatch):
+        body = {"error": True, "reason": "Parameter 'end_date' is out of allowed range"}
+        self._patch(monkeypatch, FakeResponse(json_data=body, status_code=400))
+        with pytest.raises(requests.HTTPError, match="400: Parameter 'end_date' is out of allowed range"):
+            weather.fetch_json("u", {})
+
+    def test_error_without_reason_uses_raise_for_status(self, monkeypatch):
+        error = requests.HTTPError("503 Server Error")
+        self._patch(monkeypatch, FakeResponse(json_data=None, status_code=503, raise_for_status=error))
+        with pytest.raises(requests.HTTPError, match="503 Server Error"):
+            weather.fetch_json("u", {})
+
+
+class TestDailyValue:
+    def test_present_missing_and_short(self):
+        daily = {"a": [1, None]}
+        assert weather.daily_value(daily, "a", 0) == 1
+        assert weather.daily_value(daily, "a", 1) is None
+        assert weather.daily_value(daily, "a", 5) is None
+        assert weather.daily_value(daily, "b", 0) is None
+
+
+class TestSunFields:
+    def test_local_clock_times_and_hours(self):
+        daily = {"sunrise": ["2024-06-01T05:43"], "sunset": ["2024-06-01T21:12"],
+                 "daylight_duration": [55740.0]}
+        assert weather.sun_fields(daily, 0) == {
+            "sunrise": "05:43", "sunset": "21:12", "daylight_hours": 15.48, "polar": None}
+
+    @pytest.mark.parametrize("seconds,polar", [(0.0, "night"), (86400.0, "day")])
+    def test_polar_placeholders_dropped(self, seconds, polar):
+        daily = {"sunrise": ["2025-12-21T00:00"], "sunset": ["2025-12-21T00:00"],
+                 "daylight_duration": [seconds]}
+        fields = weather.sun_fields(daily, 0)
+        assert (fields["sunrise"], fields["sunset"], fields["polar"]) == (None, None, polar)
+        assert fields["daylight_hours"] == seconds / 3600
+
+    def test_missing_series(self):
+        assert weather.sun_fields({}, 0) == {
+            "sunrise": None, "sunset": None, "daylight_hours": None, "polar": None}
+
+
+class TestFormatSunAndDaylight:
+    @pytest.mark.parametrize("day,expected", [
+        ({"sunrise": "06:47", "sunset": "18:52", "polar": None}, ("06:47", "18:52")),
+        ({"sunrise": None, "sunset": None, "polar": "night"}, ("polar night", "")),
+        ({"sunrise": None, "sunset": None, "polar": "day"}, ("midnight sun", "")),
+        ({"sunrise": None, "sunset": None, "polar": None}, ("-", "-")),
+    ])
+    def test_format_sun(self, day, expected):
+        assert weather.format_sun(day) == expected
+
+    @pytest.mark.parametrize("hours,expected", [
+        (12.09, "12h05m"), (0.0, "0h00m"), (24.0, "24h00m"), (9.999, "10h00m"), (None, "-"),
+    ])
+    def test_format_daylight(self, hours, expected):
+        assert weather.format_daylight(hours) == expected
 
 
 class TestGeocode:

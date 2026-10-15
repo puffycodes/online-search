@@ -53,6 +53,7 @@ tests/
   test_doctests.py            – runs the indicators.py / valuation.py doctests
   test_weather.py
   test_weather_forecast.py
+  test_weather_history.py
   test_air_quality.py
   test_hottest_tech_discussions.py
   test_market_top_volume.py
@@ -143,8 +144,9 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_indicators.py` | `indicators` | every transform + `trend` + `_ols_slope`; `moving_average_cross` tie ("equal"); MA-cross-flip "double flip" and "equal run" behavior; `trend` sign on an all-negative series; `rebase` out-of-range index; error paths |
 | `test_valuation.py` | `valuation` | `_growth_path` branches (including negative years); reference values; `discounted_cash_flow` `net_debt`/`shares` equity bridge; `implied_growth_rate` round-trips `discounted_cash_flow`, monotonicity, out-of-range raises |
 | `test_doctests.py` | `indicators`, `valuation` | keeps the in-module doctests running under pytest |
-| `test_weather.py` | `weather` | `weather_description`, `format_place`, `place_fields`, `geocode`, `get_weather`, `parse_args`, `main` |
-| `test_weather_forecast.py` | `weather_forecast` | `_valid_days`, `get_forecast` day-record assembly, `format_forecast` (incl. precipitation amount and chance columns), `main` |
+| `test_weather.py` | `weather` | `weather_description`, `format_place`, `place_fields`, `fetch_json` (JSON body, Open-Meteo `reason` surfaced on an error status, plain `raise_for_status` otherwise), `daily_value`, `sun_fields` (local clock times, hours, polar night / midnight sun placeholders dropped, missing series), `format_sun`, `format_daylight`, `geocode`, `get_weather`, `parse_args`, `main` |
+| `test_weather_forecast.py` | `weather_forecast` | `_valid_days`, `uv_category` WHO bands (half-up rounding at the edges, missing), `get_forecast` day-record assembly incl. UV and sun fields and missing series, `DAILY_FIELDS` requests them, `format_forecast` (precipitation amount and chance columns, UV-and-sun table, polar night and missing values), `main` |
+| `test_weather_history.py` | `weather_history` | `resolve_window` via `parse_args` (single date, range, end defaults to today, 1940-01-01 / today / 366-day edges allowed, exit-2 matrix: no date, `--end` alone, `--date` with `--start`, reversed, pre-1940, future, over 366 days, bad format); `get_history` day records (all fields, unit, not found, missing values); `fetch_daily_history` params; `summarize` (aggregates, single day, missing values left out, no data); `format_history` (range table and summary, single-day title, polar night and no-data note); `main` (request error and not-found exit 1, JSON output and arguments passed, text progress line, bad window exits 2 before any fetch) |
 | `test_air_quality.py` | `air_quality` | `us_aqi_category` band boundaries + `None`; `get_air_quality` record assembly + missing-`us_aqi` case; `format_air_quality`; `parse_args`; `main` (request error, not found, JSON/text output) |
 | `test_hottest_tech_discussions.py` | `hottest_tech_discussions` | `discussion_url`/`posted_at`/`story_to_dict`; `fetch_story` error-swallowing; `get_hottest_tech_discussions` type filter / score sort / limit / candidate-pool slice / pool scales with limit (4×); `main` (incl. invalid `--limit` exits 2 before any fetch) |
 | `test_market_top_volume.py` | `market_top_volume` | `METRICS`/`MARKETS` structural consistency; `quote_to_dict`; `format_quote` ordering; `get_movers` predefined vs region path, filters, sort; `fetch_region_quotes` crumb/error/success; `main` (invalid `--limit` exits 2 before any fetch, valid limit passed through) |

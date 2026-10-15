@@ -7,8 +7,10 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 **[Weather](#weather)**
 - [`weather.py`](#weatherpy) — current weather (temperature, condition, wind) for a named location, anywhere in the world
 - [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location
-- [`weather_forecast.py`](#weather_forecastpy) — multi-day (1-16 day) weather forecast for a named location, sharing `weather.py`'s geocoding
-- [`.claude/agents/weather-forecast.md`](#claude-code-agent-weather-forecast) — Claude Code subagent that calls `weather_forecast.py` and reports the upcoming multi-day forecast for a named location
+- [`weather_forecast.py`](#weather_forecastpy) — multi-day (1-16 day) weather forecast for a named location, with the daily UV index and sunrise / sunset / daylight hours, sharing `weather.py`'s geocoding
+- [`.claude/agents/weather-forecast.md`](#claude-code-agent-weather-forecast) — Claude Code subagent that calls `weather_forecast.py` and reports the upcoming multi-day forecast, UV index or sunrise / sunset for a named location
+- [`weather_history.py`](#weather_historypy) — past weather for a named location on a date or over a range (back to 1940), with a range summary, from Open-Meteo's archive, sharing `weather.py`'s geocoding
+- [`.claude/agents/weather-history.md`](#claude-code-agent-weather-history) — Claude Code subagent that calls `weather_history.py` and reports the weather on a past date or period at a named location
 - [`air_quality.py`](#air_qualitypy) — current air quality (US AQI, European AQI, and pollutant levels) for a named location, sharing `weather.py`'s geocoding
 - [`.claude/agents/air-quality.md`](#claude-code-agent-air-quality) — Claude Code subagent that calls `air_quality.py` and reports the current air quality / AQI for a named location
 
@@ -148,16 +150,22 @@ These are set as constants near the top of the file — edit them directly to ch
 | Constant | Default | Description |
 |---|---|---|
 | `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+| `SECONDS_PER_DAY` | 86400 | Daylight at or above this is midnight sun in `sun_fields()` |
 | `WEATHER_CODES` | dict of ~27 entries | Maps each WMO `weathercode` to a short human-readable description |
 
 ### API reference
 
+- `fetch_json(url, params)` — GETs an Open-Meteo endpoint and returns the JSON body. On an error status it raises `requests.HTTPError`; when Open-Meteo explains the rejection (`{"error": true, "reason": "..."}`), the message is `"<status>: <reason>"` rather than a bare status line.
 - `geocode(location)` — Looks up a free-text location name and returns its top-matching place dict (name, admin1, country, latitude, longitude), or `None` if nothing matches.
 - `fetch_current_weather(latitude, longitude, unit="celsius")` — Fetches the `current_weather` object for a coordinate pair.
-- `place_fields(place)` — Returns the `{location, admin1, country, latitude, longitude}` fields every record built from a `geocode()` match starts with. Shared with `weather_forecast.py`'s `get_forecast()` and `air_quality.py`'s `get_air_quality()`.
+- `place_fields(place)` — Returns the `{location, admin1, country, latitude, longitude}` fields every record built from a `geocode()` match starts with. Shared with `weather_forecast.py`'s `get_forecast()`, `weather_history.py`'s `get_history()` and `air_quality.py`'s `get_air_quality()`.
 - `weather_description(code)` — Maps a WMO weather code to a short description, or `"Unknown (code N)"` for one not in `WEATHER_CODES`.
+- `daily_value(daily, key, i)` — Day `i` of an Open-Meteo `daily` block's `key` series, or `None` when the series or day is missing.
+- `sun_fields(daily, i)` — `{sunrise, sunset, daylight_hours, polar}` for day `i` of a `daily` block requested with `sunrise`, `sunset` and `daylight_duration`: local `"HH:MM"` times (the scripts call the API with `timezone=auto`) and daylight in hours. With 0 h of daylight (`polar: "night"`) or 24 h (`polar: "day"`), Open-Meteo's midnight placeholders become `None`. Shared by `weather_forecast.py` and `weather_history.py`.
+- `format_sun(day)` — `(sunrise, sunset)` display strings for a record carrying `sun_fields()`: the times, `("polar night", "")`, `("midnight sun", "")`, or `("-", "-")`.
+- `format_daylight(hours)` — Daylight hours as `"12h05m"`, or `"-"` when missing.
 - `get_weather(location, unit="celsius")` — Orchestrates geocoding and the weather fetch; returns the flattened `{location, admin1, country, latitude, longitude, temperature, unit, windspeed, winddirection, weather_code, condition, time}` record, or `None` if the location can't be found.
-- `format_place(row)` — Builds a `"City, Region, Country"` label from a geocoded record (the region is dropped when it just repeats the city, the country appended when present). Shared with `weather_forecast.py`'s `format_forecast()`.
+- `format_place(row)` — Builds a `"City, Region, Country"` label from a geocoded record (the region is dropped when it just repeats the city, the country appended when present). Shared with `weather_forecast.py`'s `format_forecast()` and `weather_history.py`'s `format_history()`.
 - `format_weather(row)` — Renders a `get_weather()` record as a multi-line human-readable string (its place line comes from `format_place()`).
 - `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--unit` and `--json`.
 - `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
@@ -170,7 +178,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Notes / limitations
 
 - Geocoding always takes Open-Meteo's single top match for the query string — an ambiguous name (e.g. a city that exists in several countries) may resolve to the wrong place; disambiguate by adding a country or region to the query (e.g. `"Springfield, Illinois"`).
-- Reports only the current conditions at a single instant — no forecast, hourly, or historical data (Open-Meteo's forecast endpoint supports both; this script only calls the `current_weather` shortcut).
+- Reports only the current conditions at a single instant — no forecast, hourly, or historical data (see [`weather_forecast.py`](#weather_forecastpy) and [`weather_history.py`](#weather_historypy) for those).
 - `weathercode` is Open-Meteo's own WMO-based classification; `WEATHER_CODES` covers the documented codes but treats any other value as `"Unknown (code N)"` rather than guessing.
 - Results are a live snapshot; conditions will differ between runs.
 
@@ -216,9 +224,9 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ## weather_forecast.py
 
-Prints the multi-day weather forecast — condition, high/low temperature, rain chance, and max wind — for a named location, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and forecast APIs. No API key or authentication required.
+Prints the multi-day weather forecast — condition, high/low temperature, rain chance, and max wind, plus the day's peak UV index (with its WHO category) and sunrise, sunset and daylight hours — for a named location, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and forecast APIs. No API key or authentication required.
 
-Requires `weather.py` to be present in the same directory — it imports `geocode`, `fetch_json`, `weather_description`, `format_place`, and `FORECAST_URL` directly from it rather than shelling out or duplicating that logic (the same sharing pattern [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) uses for its two underlying scripts). It also imports `die` from [`cli_utils.py`](#cli_utilspy).
+Requires `weather.py` to be present in the same directory — it imports `geocode`, `fetch_json`, `weather_description`, `format_place`, `place_fields`, the daily-series helpers `daily_value`, `sun_fields`, `format_sun` and `format_daylight`, and `FORECAST_URL` directly from it rather than shelling out or duplicating that logic (the same sharing pattern [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) uses for its two underlying scripts). It also imports `die` from [`cli_utils.py`](#cli_utilspy).
 
 ### Requirements
 
@@ -246,23 +254,29 @@ python3 weather_forecast.py LOCATION [--days N] [--unit {celsius,fahrenheit}] [-
 #### Example output
 
 ```
-Looking up the 5-day forecast for 'Tokyo'...
+Looking up the 3-day forecast for 'Tokyo'...
 
-5-day forecast for Tokyo, Japan
+3-day forecast for Tokyo, Japan
 
 Date        Condition                    High °C    Low °C  Precip mm  Precip %  Wind km/h
 ------------------------------------------------------------------------------------------
-2026-09-08  Heavy rain                      28.5      22.4       31.2        88        9.4
-2026-09-09  Heavy rain                      30.6      18.8       24.6        96       11.1
-2026-09-10  Moderate rain                   22.2      18.6        8.7        86        5.8
-2026-09-11  Moderate rain                   22.3      18.3        4.1        65        5.9
-2026-09-12  Dense drizzle                   25.0      20.4        0.6        29        6.3
+2026-10-15  Partly cloudy                   21.6      16.2        0.0         6       10.2
+2026-10-16  Overcast                        26.2      16.0        0.0         8        4.5
+2026-10-17  Partly cloudy                   23.7      16.2        0.0         4        6.3
+
+Date          UV max  UV level         Sunrise  Sunset  Daylight
+----------------------------------------------------------------
+2026-10-15       3.5  Moderate           05:47   17:06    11h19m
+2026-10-16       4.2  Moderate           05:48   17:05    11h17m
+2026-10-17       5.3  Moderate           05:49   17:03    11h15m
 ```
+
+At high latitudes the sunrise column reads `polar night` or `midnight sun` (with the sunset column blank) on days the sun doesn't rise or set.
 
 #### Tool usage (`--json`)
 
 ```bash
-python3 weather_forecast.py "Chicago" --days 2 --json
+python3 weather_forecast.py "Chicago" --days 1 --json
 ```
 
 ```json
@@ -275,24 +289,20 @@ python3 weather_forecast.py "Chicago" --days 2 --json
   "unit": "°C",
   "days": [
     {
-      "date": "2026-09-08",
-      "weather_code": 3,
-      "condition": "Overcast",
-      "temp_max": 29.0,
-      "temp_min": 16.4,
-      "precipitation_sum": 0.0,
-      "precipitation_probability_max": 3,
-      "windspeed_max": 16.3
-    },
-    {
-      "date": "2026-09-09",
+      "date": "2026-10-15",
       "weather_code": 51,
       "condition": "Light drizzle",
-      "temp_max": 29.7,
-      "temp_min": 20.8,
+      "temp_max": 19.7,
+      "temp_min": 13.5,
       "precipitation_sum": 0.4,
-      "precipitation_probability_max": 42,
-      "windspeed_max": 19.4
+      "precipitation_probability_max": 61,
+      "windspeed_max": 21.0,
+      "uv_index_max": 0.95,
+      "uv_category": "Low",
+      "sunrise": "07:03",
+      "sunset": "18:09",
+      "daylight_hours": 11.1,
+      "polar": null
     }
   ]
 }
@@ -303,8 +313,8 @@ With `--json`, the leading progress line is suppressed and the result prints as 
 ### How it works
 
 1. **Geocode** — Calls `weather.geocode()` (shared with [`weather.py`](#weatherpy)) to resolve the free-text `LOCATION` to its top-matching place.
-2. **Fetch the daily forecast** — Calls Open-Meteo's forecast endpoint with `daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,windspeed_10m_max`, `forecast_days=N`, `timezone=auto` (so daily buckets follow the location's own local calendar day), and the requested `--unit`.
-3. **Decode and display** — Zips the parallel daily arrays into one record per day, maps each day's `weathercode` via `weather.weather_description()`, and prints a table (or the equivalent JSON object with `--json`).
+2. **Fetch the daily forecast** — Calls Open-Meteo's forecast endpoint with `daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,windspeed_10m_max,uv_index_max,sunrise,sunset,daylight_duration`, `forecast_days=N`, `timezone=auto` (so daily buckets follow the location's own local calendar day), and the requested `--unit`.
+3. **Decode and display** — Zips the parallel daily arrays into one record per day, maps each day's `weathercode` via `weather.weather_description()`, classifies the UV index with `uv_category()`, adds `weather.sun_fields()` (local sunrise/sunset, daylight hours, polar night/day), and prints the weather table and a UV-and-sun table (or the equivalent JSON object with `--json`).
 
 ### Configuration
 
@@ -314,18 +324,20 @@ These are set as constants near the top of the file — edit them directly to ch
 |---|---|---|
 | `DEFAULT_FORECAST_DAYS` | 5 | Number of days requested when `--days` isn't passed |
 | `MAX_FORECAST_DAYS` | 16 | Upper bound accepted for `--days` (Open-Meteo's own limit) |
-| `DAILY_FIELDS` | 6 fields (see above) | The Open-Meteo `daily=` parameter value |
+| `DAILY_FIELDS` | 10 fields (see above) | The Open-Meteo `daily=` parameter value |
+| `UV_CATEGORIES` | WHO bands | `(lower bound, label)` pairs: 0 Low, 3 Moderate, 6 High, 8 Very high, 11 Extreme |
 
 ### API reference
 
 - `fetch_daily_forecast(latitude, longitude, days=5, unit="celsius")` — Fetches the `daily` object for a coordinate pair.
-- `get_forecast(location, days=5, unit="celsius")` — Orchestrates geocoding (via `weather.geocode()`) and the daily-forecast fetch; returns `{location, admin1, country, latitude, longitude, unit, days}` where `days` is a list of `{date, weather_code, condition, temp_max, temp_min, precipitation_sum, precipitation_probability_max, windspeed_max}` in chronological order, or `None` if the location can't be found.
-- `format_forecast(row)` — Renders a `get_forecast()` record as a human-readable table — date, condition, high, low, precipitation amount (mm), chance of rain (%) and max wind — with its place line from `weather.format_place()`.
+- `uv_category(uv)` — The WHO category for a daily maximum UV index (rounded half up first), or `None` when missing.
+- `get_forecast(location, days=5, unit="celsius")` — Orchestrates geocoding (via `weather.geocode()`) and the daily-forecast fetch; returns `{location, admin1, country, latitude, longitude, unit, days}` where `days` is a list of `{date, weather_code, condition, temp_max, temp_min, precipitation_sum, precipitation_probability_max, windspeed_max, uv_index_max, uv_category, sunrise, sunset, daylight_hours, polar}` in chronological order, or `None` if the location can't be found.
+- `format_forecast(row)` — Renders a `get_forecast()` record as two human-readable tables — date, condition, high, low, precipitation amount (mm), chance of rain (%) and max wind; then date, UV index and category, sunrise, sunset and daylight — with its place line from `weather.format_place()`.
 - `_valid_days(value)` — argparse `type` for `--days`: an integer in `[1, MAX_FORECAST_DAYS]`; raises `argparse.ArgumentTypeError` otherwise.
 - `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--days`, `--unit`, and `--json`.
 - `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
 
-See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `weather_description()`, and `format_place()`.
+See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `weather_description()`, `format_place()`, `daily_value()`, `sun_fields()`, `format_sun()` and `format_daylight()`.
 
 ### Error handling
 
@@ -339,6 +351,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `weather_descrip
 - One high/low/condition summary per calendar day — no hourly breakdown and no current-conditions reading (use [`weather.py`](#weatherpy) for that).
 - `weathercode` is Open-Meteo's daily summary code for the day as a whole; a day with, say, morning rain and an otherwise clear afternoon is reported under a single condition.
 - Forecast accuracy degrades toward the far end of the 16-day window, as with any weather model; Open-Meteo does not report a per-day confidence figure this script could surface.
+- `uv_index_max` is the model's peak UV index for the day under the forecast cloud cover — clear-sky values can be higher. Sunrise and sunset are the location's local clock times.
 - Results are a live snapshot; the forecast for a given date will change between runs as new model data comes in.
 
 ---
@@ -349,11 +362,11 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer requests like "what's the forecast for Tokyo this week?", "will it rain in London tomorrow?", "5-day forecast for Chicago", or "is it going to be hot in Singapore this weekend?" by running the script and summarizing its JSON output, instead of guessing or using stale training data. For "what's the weather **right now**" questions (no forecast implied), Claude Code reaches for the [`weather`](#claude-code-agent-weather) agent instead.
+Lets Claude Code answer requests like "what's the forecast for Tokyo this week?", "will it rain in London tomorrow?", "5-day forecast for Chicago", "is it going to be hot in Singapore this weekend?", "how strong is the UV in Sydney today?" or "what time is sunset in Paris tomorrow?" by running the script and summarizing its JSON output, instead of guessing or using stale training data. For "what's the weather **right now**" questions (no forecast implied), Claude Code reaches for the [`weather`](#claude-code-agent-weather) agent instead, and for a past date the [`weather-history`](#claude-code-agent-weather-history) agent.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for upcoming/future weather questions about a named place, based on the `description` field in its frontmatter.
+- **Automatically** — Claude Code selects this subagent on its own for upcoming/future weather questions about a named place — including the UV index, sunrise, sunset and daylight hours — based on the `description` field in its frontmatter.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "weather-forecast"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -363,7 +376,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
 2. Maps the user's phrasing to `--days` — "tomorrow" → 2 (reporting the second day), "this week" → 7, a specific count → that count, otherwise the script default of 5 — and to `--unit`, defaulting to `celsius` unless Fahrenheit is asked for or clearly expected.
 3. Runs `python3 weather_forecast.py "LOCATION" [--days N] [--unit celsius|fahrenheit] --json` from the repo root.
-4. Parses the JSON object's `days` array (`date`, `condition`, `temp_max`, `temp_min`, `precipitation_probability_max`, ...) and reports either a single day's condition/high-low/rain-chance or a compact multi-day table, calling out any day with notably high rain chance or a big temperature swing. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
+4. Parses the JSON object's `days` array (`date`, `condition`, `temp_max`, `temp_min`, `precipitation_probability_max`, ...) and reports either a single day's condition/high-low/rain-chance or a compact multi-day table, calling out any day with notably high rain chance or a big temperature swing. For UV questions it gives the peak index and WHO category (with a sun-protection note from `High` up); for sunrise/sunset it gives the local times and notes polar night or midnight sun. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
 
 ### Configuration
 
@@ -379,6 +392,186 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Requires `weather_forecast.py`, its `weather.py` dependency, and the `requests` package to be present and runnable from the repo root.
 - Reports one high/low/condition summary per day, not an hourly breakdown, and has no current-conditions reading — for "right now" it defers to the [`weather`](#claude-code-agent-weather) agent rather than approximating from the forecast's first day.
 - Inherits all the limitations of [`weather_forecast.py`](#weather_forecastpy) itself (geocoding takes only the top match for an ambiguous name, per-day summary codes, forecast accuracy tapering toward day 16, live-snapshot results).
+
+---
+
+## weather_history.py
+
+Prints the past weather — condition, high/low/mean temperature, precipitation, snowfall, max wind, and sunrise/sunset/daylight — for a named location on a single date or over a range of up to 366 days, with a summary for a range (average high and low, warmest and coldest day, total precipitation, wet days, total snowfall). Uses [Open-Meteo](https://open-meteo.com/)'s public geocoding and [historical-weather (archive) API](https://open-meteo.com/en/docs/historical-weather-api), which covers every day from 1940-01-01 to today. No API key or authentication required.
+
+Requires `weather.py` to be present in the same directory — it imports `geocode`, `fetch_json`, `place_fields`, `format_place`, `weather_description` and the daily-series helpers `daily_value`, `sun_fields`, `format_sun` and `format_daylight` directly from it. It also imports `die` from [`cli_utils.py`](#cli_utilspy).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `weather.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+### Usage
+
+```bash
+python3 weather_history.py LOCATION (--date YYYY-MM-DD | --start YYYY-MM-DD [--end YYYY-MM-DD]) [--unit {celsius,fahrenheit}] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `LOCATION` (positional) | — | Free-text place name, e.g. `"London"`, `"New York"`, `"Tromsø"` |
+| `--date` | — | A single day. Cannot be combined with `--start` / `--end` |
+| `--start` | — | First day of a range |
+| `--end` | today | Last day of a range (needs `--start`) |
+| `--unit {celsius,fahrenheit}` | `celsius` | Temperature unit |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
+
+One of `--date` or `--start` is required. Dates must lie between 1940-01-01 and today, and a range can span at most 366 days.
+
+#### Example output
+
+```bash
+python3 weather_history.py London --start 2026-01-05 --end 2026-01-09
+```
+
+```
+Looking up the weather for 'London' on 2026-01-05 to 2026-01-09...
+
+Weather for London, England, United Kingdom, 2026-01-05 to 2026-01-09
+
+Date        Condition                   High °C   Low °C  Mean °C  Precip mm  Snow cm  Wind km/h      Sunrise  Sunset  Daylight
+-------------------------------------------------------------------------------------------------------------------------------
+2026-01-05  Overcast                        1.3     -3.7     -1.3        0.0      0.0       10.6        09:05   17:06     8h01m
+2026-01-06  Slight snow fall                3.6     -5.2     -1.1        1.4     0.28       18.7        09:04   17:08     8h03m
+2026-01-07  Heavy snow fall                 5.6      0.6      2.9        6.8     1.19       19.8        09:04   17:09     8h05m
+2026-01-08  Moderate snow fall              6.8      1.3      3.5       13.5     0.21       23.3        09:04   17:10     8h07m
+2026-01-09  Moderate drizzle                6.1      1.9      3.8        2.9      0.0       25.9        09:03   17:12     8h08m
+
+Summary (5 days)
+  Average high / low   4.7°C / -1.0°C
+  Warmest day          6.8°C on 2026-01-08
+  Coldest night        -5.2°C on 2026-01-06
+  Total precipitation  24.6 mm (4 wet days, >= 1 mm)
+  Total snowfall       1.7 cm
+```
+
+At high latitudes the sunrise column reads `polar night` or `midnight sun` (with the sunset column blank) on days the sun doesn't rise or set.
+
+#### Tool usage (`--json`)
+
+```bash
+python3 weather_history.py "New York" --date 2010-12-25 --json
+```
+
+```json
+{
+  "location": "New York",
+  "admin1": "New York",
+  "country": "United States",
+  "latitude": 40.71427,
+  "longitude": -74.00597,
+  "start_date": "2010-12-25",
+  "end_date": "2010-12-25",
+  "unit": "°C",
+  "days": [
+    {
+      "date": "2010-12-25",
+      "weather_code": 3,
+      "condition": "Overcast",
+      "temp_max": 0.9,
+      "temp_min": -4.0,
+      "temp_mean": -1.7,
+      "precipitation_sum": 0.0,
+      "rain_sum": 0.0,
+      "snowfall_sum": 0.0,
+      "windspeed_max": 9.3,
+      "sunrise": "08:18",
+      "sunset": "17:34",
+      "daylight_hours": 9.26,
+      "polar": null
+    }
+  ],
+  "summary": null
+}
+```
+
+For a range, `summary` is `{days, days_with_data, avg_temp_max, avg_temp_min, warmest: {date, temp_max}, coldest: {date, temp_min}, total_precipitation, wet_days, total_snowfall}`. Precipitation and rain are in mm, snowfall in cm, wind in km/h; any value the archive doesn't have is `null`.
+
+### How it works
+
+1. **Validate the window** — `resolve_window()` turns `--date` / `--start` / `--end` into a `(start, end)` pair during argument parsing, rejecting a missing, combined, reversed, pre-1940, future or over-366-day window with exit code 2 before any request.
+2. **Geocode** — `weather.geocode()` resolves `LOCATION` to its top match.
+3. **Fetch** — Calls `archive-api.open-meteo.com/v1/archive` with `start_date` / `end_date`, `daily=weathercode,temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,rain_sum,snowfall_sum,windspeed_10m_max,sunrise,sunset,daylight_duration`, `timezone=auto` (so days follow the location's own calendar) and the requested `--unit`.
+4. **Build days** — `build_day()` reads each day's values with `weather.daily_value()` (missing → `None`), maps the weather code via `weather_description()`, and adds `weather.sun_fields()` (local `HH:MM` sunrise/sunset, daylight hours, polar night/day).
+5. **Summarize** — `summarize()` averages the highs and lows, finds the warmest and coldest days, and totals precipitation, wet days (≥ 1 mm) and snowfall, leaving out days missing that value.
+6. **Report** — the table and summary, or the JSON object.
+
+### Configuration
+
+| Constant | Default | Description |
+|---|---|---|
+| `ARCHIVE_URL` | `https://archive-api.open-meteo.com/v1/archive` | Open-Meteo historical-weather endpoint |
+| `EARLIEST_DATE` | `1940-01-01` | The archive's first day; earlier dates are rejected |
+| `MAX_RANGE_DAYS` | 366 | Longest range accepted, to keep the table readable |
+| `WET_DAY_MM` | 1.0 | Precipitation (mm) at or above which a day counts as wet |
+| `DAILY_FIELDS` | 11 fields (see above) | The Open-Meteo `daily=` parameter value |
+
+### API reference
+
+- `fetch_daily_history(latitude, longitude, start, end, unit="celsius")` — Fetches the archive's `daily` object for a coordinate pair and `datetime.date` range.
+- `build_day(daily, i)` — Day `i` of a `daily` block as a record.
+- `summarize(days)` — The range summary, or `None` for a single day or a range with no data.
+- `get_history(location, start, end, unit="celsius")` — Orchestrates geocoding, the fetch, day records and summary; returns `{location, admin1, country, latitude, longitude, start_date, end_date, unit, days, summary}`, or `None` if the location can't be found.
+- `format_history(row)` — Renders a `get_history()` record as the table plus summary.
+- `resolve_window(args, parser, today=None)` — Turns the parsed date flags into `(start, end)`, calling `parser.error()` (exit 2) for an invalid window.
+- `parse_args(argv=None, today=None)`, `main(argv=None)` — The CLI; `today` is injectable for tests.
+
+See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `daily_value()`, `sun_fields()`, `format_sun()` and `format_daylight()`.
+
+### Error handling
+
+- An invalid window — no `--date` or `--start`, `--date` combined with `--start`/`--end`, `--end` without `--start`, `--end` before `--start`, a date before 1940-01-01 or after today, or a range over 366 days — is rejected by argument parsing (exit code 2), before any request. A future date's message points to `weather_forecast.py`.
+- If a request fails, the script exits 1 with the error on stderr (`{"error": "..."}` with `--json`). When Open-Meteo rejects a request it explains why, and that reason is the error message.
+- If the location can't be geocoded, it exits 1 with `No location found matching '<LOCATION>'.`
+
+### Notes / limitations
+
+- The data is a **reanalysis** — a weather model run over past observations on a grid of roughly 10-25 km — not a single weather station's record, so it can differ from a nearby station, especially on coasts and in mountains. The latest days come from a faster model and are revised for about a week; today's values are partial.
+- `weathercode` is the model's daily summary code, derived from its precipitation and cloud; a day's "Heavy snow fall" can sit alongside a modest snowfall total.
+- Same geocoding caveat as [`weather.py`](#weatherpy): the top match is used. Accents matter — `"Tromso"` resolves to a different place than `"Tromsø"`.
+- Sunrise and sunset are the location's local clock times, from the same time zone Open-Meteo resolves for the coordinates.
+
+---
+
+## Claude Code agent: `weather-history`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/weather-history.md`. It calls no API itself — it shells out to [`weather_history.py`](#weather_historypy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer requests like "what was the weather in London on 1 January 2020?", "how much did it rain in Singapore last week?", "how hot was Tokyo last August?" or "was it snowing in New York on Christmas Day 2010?" from Open-Meteo's archive, instead of guessing.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for weather, temperature, rainfall, snowfall or sunrise/sunset questions about a past date or period at a named place, based on the `description` field in its frontmatter. Current conditions go to [`weather`](#claude-code-agent-weather) and upcoming days to [`weather-forecast`](#claude-code-agent-weather-forecast).
+- **Explicitly** — via the `Agent` tool with `subagent_type: "weather-history"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Passes the location through mostly as the user wrote it, keeping accents, and adds a country/state qualifier only for an ambiguous name.
+2. Turns the user's wording into `--date` or `--start`/`--end` relative to today; for a span over 366 days it runs the tool once per year and combines the results, saying so.
+3. Runs `python3 weather_history.py "LOCATION" (--date … | --start … [--end …]) [--unit …] --json` from the repo root.
+4. Leads with the single day's condition and high/low, or with the range summary (average high/low, warmest and coldest days, total precipitation, wet days) and a compact day table for up to about two weeks. It notes that the figures are gridded model data rather than a station record and that today's are partial. An exit code 2 means it fixes the dates rather than retrying; a "no location found" result is reported as-is; a network-looking failure is retried at most once.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`weather_history.py`](#weather_historypy) |
+
+### Notes / limitations
+
+- Requires `weather_history.py`, its `weather.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
+- Inherits all the limitations of [`weather_history.py`](#weather_historypy): gridded reanalysis rather than station data, provisional recent days, a 366-day range limit, top-match geocoding.
 
 ---
 

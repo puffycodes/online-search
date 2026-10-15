@@ -20,6 +20,7 @@ from cli_utils import die
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 REQUEST_TIMEOUT = 10
+SECONDS_PER_DAY = 86400
 
 # WMO weather interpretation codes -> short description.
 # https://open-meteo.com/en/docs#weathervariables
@@ -57,8 +58,68 @@ WEATHER_CODES = {
 
 def fetch_json(url, params):
     response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+    if not response.ok:
+        # Open-Meteo explains a rejected request as {"error": true, "reason": "..."};
+        # surface that rather than a bare "400 Client Error".
+        try:
+            reason = response.json().get("reason")
+        except (ValueError, AttributeError):
+            reason = None
+        if reason:
+            raise requests.HTTPError(f"{response.status_code}: {reason}", response=response)
     response.raise_for_status()
     return response.json()
+
+
+def daily_value(daily, key, i):
+    """Day ``i`` of an Open-Meteo ``daily`` block's ``key`` series, or None."""
+    values = daily.get(key) or []
+    return values[i] if i < len(values) else None
+
+
+def sun_fields(daily, i):
+    """Sunrise, sunset and daylight for day ``i`` of an Open-Meteo ``daily``
+    block requested with sunrise, sunset and daylight_duration. Times are
+    the location's local "HH:MM" (the API is called with timezone=auto);
+    daylight is in hours. Shared by weather_forecast.py and weather_history.py.
+
+    In polar night (0 h of daylight) and midnight sun (24 h) Open-Meteo
+    reports sunrise and sunset as midnight placeholders, so both become None
+    and ``polar`` says which it is ("night" / "day"; None otherwise).
+    """
+    def clock(value):
+        return value.split("T", 1)[1] if value and "T" in value else None
+
+    seconds = daily_value(daily, "daylight_duration", i)
+    polar = None
+    if seconds is not None and seconds <= 0:
+        polar = "night"
+    elif seconds is not None and seconds >= SECONDS_PER_DAY:
+        polar = "day"
+    return {
+        "sunrise": None if polar else clock(daily_value(daily, "sunrise", i)),
+        "sunset": None if polar else clock(daily_value(daily, "sunset", i)),
+        "daylight_hours": None if seconds is None else round(seconds / 3600, 2),
+        "polar": polar,
+    }
+
+
+def format_sun(day):
+    """(sunrise, sunset) display strings for a record carrying sun_fields():
+    "HH:MM", "polar night" / "midnight sun" (sunset left blank), or "-"."""
+    if day.get("polar") == "night":
+        return "polar night", ""
+    if day.get("polar") == "day":
+        return "midnight sun", ""
+    return day.get("sunrise") or "-", day.get("sunset") or "-"
+
+
+def format_daylight(hours):
+    """Daylight hours as "12h05m", or "-" when missing."""
+    if hours is None:
+        return "-"
+    minutes = round(hours * 60)
+    return f"{minutes // 60}h{minutes % 60:02d}m"
 
 
 def geocode(location):
@@ -83,8 +144,9 @@ def fetch_current_weather(latitude, longitude, unit="celsius"):
 def place_fields(place):
     """The location fields every record built from a geocode() match starts
     with: location, admin1, country, latitude, longitude. Shared by
-    get_weather() here, get_forecast() in weather_forecast.py and
-    get_air_quality() in air_quality.py."""
+    get_weather() here, get_forecast() in weather_forecast.py,
+    get_history() in weather_history.py and get_air_quality() in
+    air_quality.py."""
     return {
         "location": place.get("name"),
         "admin1": place.get("admin1"),

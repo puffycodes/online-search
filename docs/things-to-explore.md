@@ -14,9 +14,8 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **Historical weather plus UV and sunrise/sunset**: small additions built on `weather.py`.
-2. **Wayback Machine fallback for `url_availability.py`**: high practical value.
-3. **Hacker News search**: lets the tech-discussion agents answer "what did people
+1. **Wayback Machine fallback for `url_availability.py`**: high practical value.
+2. **Hacker News search**: lets the tech-discussion agents answer "what did people
    say about X?"
 
 ## Weather and environment
@@ -24,10 +23,6 @@ both READMEs in the same change. Then remove the item from this list.
 All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()`,
 `fetch_json()` and `place_fields()`.
 
-- [ ] **Historical weather** (Open-Meteo archive API): weather on a past date or range
-  for a place.
-- [ ] **UV index, sunrise/sunset, daylight hours**: extra fields on the forecast API
-  that `weather_forecast.py` already calls.
 - [ ] **Pollen levels**: part of the Open-Meteo air-quality API (Europe only). Could be
   added to `air_quality.py`.
 - [ ] **Marine forecast** (Open-Meteo marine API): wave height, swell, sea temperature

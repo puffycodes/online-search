@@ -1,4 +1,4 @@
-"""Tests for weather_forecast: _valid_days, forecast assembly, formatting, and main()."""
+"""Tests for weather_forecast: _valid_days, uv_category, forecast assembly, formatting, and main()."""
 
 import argparse
 import json
@@ -7,6 +7,16 @@ import pytest
 import requests
 
 import weather_forecast as wf
+
+
+def _day(**overrides):
+    """A get_forecast() day record, with the UV and sun fields filled in."""
+    day = {"date": "2024-01-01", "condition": "Clear sky", "temp_max": 5, "temp_min": 1,
+           "precipitation_sum": 0, "precipitation_probability_max": 10, "windspeed_max": 12,
+           "uv_index_max": 6.4, "uv_category": "High", "sunrise": "07:58",
+           "sunset": "16:02", "daylight_hours": 8.07, "polar": None}
+    day.update(overrides)
+    return day
 
 
 class TestValidDays:
@@ -22,6 +32,18 @@ class TestValidDays:
     def test_non_integer(self):
         with pytest.raises(argparse.ArgumentTypeError, match="must be an integer"):
             wf._valid_days("abc")
+
+
+class TestUvCategory:
+    @pytest.mark.parametrize("uv,expected", [
+        (0, "Low"), (2.4, "Low"), (2.5, "Moderate"), (5.4, "Moderate"), (6, "High"),
+        (7.4, "High"), (8, "Very high"), (10.4, "Very high"), (10.6, "Extreme"), (13, "Extreme"),
+    ])
+    def test_who_bands(self, uv, expected):
+        assert wf.uv_category(uv) == expected
+
+    def test_missing(self):
+        assert wf.uv_category(None) is None
 
 
 class TestGetForecast:
@@ -46,6 +68,10 @@ class TestGetForecast:
             "precipitation_sum": [0, 3],
             "precipitation_probability_max": [10, 80],
             "windspeed_10m_max": [12, 20],
+            "uv_index_max": [2.1, 8.3],
+            "sunrise": ["2024-01-01T07:58", "2024-01-02T07:58"],
+            "sunset": ["2024-01-01T16:02", "2024-01-02T16:03"],
+            "daylight_duration": [29052.0, 29124.0],
         }
         monkeypatch.setattr(wf, "fetch_daily_forecast", lambda *a, **k: daily)
         row = wf.get_forecast("X", days=2, unit="fahrenheit")
@@ -54,33 +80,53 @@ class TestGetForecast:
         assert row["days"][0]["condition"] == "Clear sky"
         assert row["days"][1]["condition"] == "Slight rain"
         assert row["days"][1]["temp_max"] == 6
+        assert (row["days"][1]["uv_index_max"], row["days"][1]["uv_category"]) == (8.3, "Very high")
+        assert (row["days"][0]["sunrise"], row["days"][0]["sunset"]) == ("07:58", "16:02")
+        assert row["days"][0]["daylight_hours"] == 8.07
+
+    def test_missing_uv_and_sun_series_give_none(self, monkeypatch):
+        monkeypatch.setattr(wf, "geocode", lambda loc: {"name": "X", "latitude": 1, "longitude": 2})
+        daily = {"time": ["2024-01-01"], "weathercode": [0], "temperature_2m_max": [5],
+                 "temperature_2m_min": [1], "precipitation_sum": [0],
+                 "precipitation_probability_max": [10], "windspeed_10m_max": [12]}
+        monkeypatch.setattr(wf, "fetch_daily_forecast", lambda *a, **k: daily)
+        day = wf.get_forecast("X")["days"][0]
+        assert day["uv_index_max"] is None and day["uv_category"] is None
+        assert day["sunrise"] is None and day["daylight_hours"] is None
+
+    def test_requests_uv_and_sun_fields(self):
+        for field in ("uv_index_max", "sunrise", "sunset", "daylight_duration"):
+            assert field in wf.DAILY_FIELDS.split(",")
 
 
 class TestFormatForecast:
     def test_header_and_rows(self):
-        row = {
-            "location": "X", "admin1": None, "country": None, "unit": "°C",
-            "days": [
-                {"date": "2024-01-01", "condition": "Clear sky", "temp_max": 5, "temp_min": 1,
-                 "precipitation_sum": 0, "precipitation_probability_max": 10, "windspeed_max": 12},
-            ],
-        }
+        row = {"location": "X", "admin1": None, "country": None, "unit": "°C", "days": [_day()]}
         out = wf.format_forecast(row)
         assert out.splitlines()[0] == "1-day forecast for X"
         assert "Clear sky" in out
         assert "2024-01-01" in out
 
     def test_shows_precipitation_amount_and_chance(self):
-        row = {
-            "location": "X", "admin1": None, "country": None, "unit": "°C",
-            "days": [
-                {"date": "2024-01-01", "condition": "Slight rain", "temp_max": 5, "temp_min": 1,
-                 "precipitation_sum": 3.4, "precipitation_probability_max": 72, "windspeed_max": 12},
-            ],
-        }
+        row = {"location": "X", "admin1": None, "country": None, "unit": "°C",
+               "days": [_day(condition="Slight rain", precipitation_sum=3.4,
+                             precipitation_probability_max=72)]}
         lines = wf.format_forecast(row).splitlines()
         assert "Precip mm" in lines[2] and "Precip %" in lines[2]
         assert "3.4" in lines[4] and "72" in lines[4]
+
+    def test_sun_and_uv_table(self):
+        row = {"location": "X", "admin1": None, "country": None, "unit": "°C", "days": [_day()]}
+        lines = wf.format_forecast(row).splitlines()
+        assert "UV max" in lines[6] and "Sunrise" in lines[6] and "Daylight" in lines[6]
+        assert lines[8].split() == ["2024-01-01", "6.4", "High", "07:58", "16:02", "8h04m"]
+
+    def test_polar_and_missing_values(self):
+        row = {"location": "X", "admin1": None, "country": None, "unit": "°C",
+               "days": [_day(uv_index_max=None, uv_category=None, sunrise=None, sunset=None,
+                             daylight_hours=0.0, polar="night")]}
+        last = wf.format_forecast(row).splitlines()[-1]
+        assert last.split() == ["2024-01-01", "-", "-", "polar", "night", "0h00m"]
 
 
 class TestMain:
