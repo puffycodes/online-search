@@ -44,7 +44,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — the hottest Hacker News discussions (top 10 by default, `--limit N` for more)
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`hn_search.py`](#hn_searchpy) — searches past Hacker News stories and comments for a query, by relevance or date, with date, score and author filters, via the Algolia HN Search API (no API key)
-- [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` to find HN threads about a topic or summarize what people said about it
+- [`hn_thread.py`](#hn_threadpy) — reads one Hacker News thread: the story and its top comments in HN's ranked order, with a few replies under each, trimmed to a set size (no API key)
+- [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` and `hn_thread.py` to find HN threads about a topic, read them, and summarize what people said
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`app/hottest_discussions/`](#apphottest_discussions) — small local web app for `hottest_tech_discussions.py`: a page with a "Show" drop-down and Refresh button that runs the script through a local server
 - [`.claude/agents/hottest-tech-discussion-summary.md`](#claude-code-agent-hottest-tech-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions with cited sources
@@ -2308,7 +2309,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices (e.g. why the candidate pool is 4× the limit).
 - `fetch_json(url)` — GETs a URL and returns parsed JSON, raising on HTTP errors.
-- `fetch_story(item_id)` — Fetches a single HN item by ID; returns `None` on any request or parsing failure instead of raising (so one bad story doesn't kill the whole batch).
+- `fetch_story(item_id)` — Fetches a single HN item by ID; returns `None` on any request or parsing failure instead of raising (so one bad story doesn't kill the whole batch). Also used by [`hn_thread.py`](#hn_threadpy) to fetch HN's ranked comment order.
 - `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of raw HN story dicts.
 - `discussion_url(story)` / `posted_at(story)` — Small helpers: the `news.ycombinator.com/item?id=…` comments URL, and the submission time as a `YYYY-MM-DD HH:MM UTC` string. Also reused by [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) and [`hn_search.py`](#hn_searchpy).
 - `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url}` record used for **both** output modes.
@@ -2501,10 +2502,10 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ### API reference
 
-- `fetch_json(url, params)` — GETs the URL and returns parsed JSON. When Algolia rejects a request it explains why (`{"message": ...}`), and that message becomes the `requests.HTTPError`.
+- `fetch_json(url, params=None, timeout=REQUEST_TIMEOUT)` — GETs the URL and returns parsed JSON. When Algolia rejects a request it explains why (`{"message": ...}`), and that message becomes the `requests.HTTPError`. Also used by [`hn_thread.py`](#hn_threadpy), with a longer timeout.
 - `build_params(query, kind="story", since=None, until=None, min_points=None, author=None, limit=10)` — The Algolia query parameters for a search.
 - `search(query, kind="story", sort="relevance", since=None, until=None, min_points=None, author=None, limit=10)` — Runs a search; returns `(hits, total_matches)`.
-- `clean_text(raw, max_chars=600)` — Plain text from an HN HTML body, cut to `max_chars` (0 = no limit), or `None` if empty.
+- `clean_text(raw, max_chars=600)` — Plain text from an HN HTML body, cut to `max_chars` (0 = no limit), or `None` if empty. Also used by [`hn_thread.py`](#hn_threadpy).
 - `hit_to_dict(rank, hit, max_chars=600)` — Flattens an Algolia hit into the `{rank, type, title, author, posted, score, comments, url, discussion_url, text}` record used for **both** output modes.
 - `format_hit(row)` — Renders a `hit_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses and validates the CLI arguments (exit 2 on invalid ones).
@@ -2528,17 +2529,179 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
+## hn_thread.py
+
+Reads one [Hacker News](https://news.ycombinator.com/) thread — a story (or a comment) and its comments — in the order HN itself ranks them, trimmed to a readable size: the top N top-level comments, a few replies under each, down to a set depth. Built for summarizing a big discussion found with [`hn_search.py`](#hn_searchpy). Uses the [Algolia HN API](https://hn.algolia.com/api) for the comment tree and the official [Hacker News API](https://github.com/HackerNews/API) for the ranking. No API key or authentication required.
+
+Requires `hn_search.py` and `hottest_tech_discussions.py` to be present in the same directory — it imports `fetch_json`, `clean_text` and `TEXT_CHARS` from the first and `fetch_story`, `discussion_url` and `posted_at` from the second. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `hn_search.py`, `hottest_tech_discussions.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+### Usage
+
+```bash
+python3 hn_thread.py ITEM [--top N] [--replies N] [--depth N] [--max-chars N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `ITEM` (positional) | — | An HN item id (`48843352`) or link (`https://news.ycombinator.com/item?id=48843352`). Usually a story; a comment id reads that comment and its replies |
+| `--top N` | 20 | Top-level comments to show, 1-200 |
+| `--replies N` | 3 | Replies to show under each shown comment (0 for none) |
+| `--depth N` | 2 | Comment levels to show: 1 = top-level only, 2 = plus replies, … up to 10 |
+| `--max-chars N` | 600 | Cut each comment to `N` characters (with `...`); `0` keeps them whole |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
+
+With the defaults that's at most 20 + 20 × 3 = 80 comments; `--depth 3` adds up to 3 replies under each of those replies.
+
+#### Example output
+
+```bash
+python3 hn_thread.py https://news.ycombinator.com/item?id=48843352 --top 2 --replies 1 --max-chars 160
+```
+
+```
+Reading Hacker News thread 48843352...
+
+My thoughts on the Bun Rust rewrite
+   Score: 817  |  Comments: 683  |  Posted: 2026-07-09 09:47 UTC  |  By: kristoff_it
+   Link: https://andrewkelley.me/post/my-thoughts-bun-rust-rewrite.html
+   Discussion: https://news.ycombinator.com/item?id=48843352
+
+Showing 4 of 683 comments (96 top-level), in HN's ranked order.
+
+   1. tuckwat | 2026-07-09 11:48 UTC | https://news.ycombinator.com/item?id=48844355
+      This is unprofessional and embarrassing for Zig.
+
+      I know very little about Jared but his article yesterday, which I read, seemed appreciative of Zig. I now lear...
+
+      1.1. 0xpgm | 2026-07-09 12:30 UTC | https://news.ycombinator.com/item?id=48844834
+         How is it unprofessional when it is simply someone giving their honest personal opinion on an issue that involves something that is valuable to them, on their p...
+         (+6 more replies, 48 comments below this one in all)
+      (+26 more replies, 244 comments below this one in all)
+
+   2. Jarred | 2026-07-09 13:38 UTC | https://news.ycombinator.com/item?id=48845652
+      I have learned so much reading Andrew’s code and as I said in the original post: Bun would never have  happened without Zig.
+      ...
+```
+
+The `(+N more replies, M comments below this one in all)` lines say what was left out under a comment.
+
+#### Tool usage (`--json`)
+
+```bash
+python3 hn_thread.py 48843352 --top 1 --replies 0 --max-chars 50 --json
+```
+
+```json
+{
+  "id": 48843352,
+  "type": "story",
+  "title": "My thoughts on the Bun Rust rewrite",
+  "author": "kristoff_it",
+  "posted": "2026-07-09 09:47 UTC",
+  "score": 817,
+  "url": "https://andrewkelley.me/post/my-thoughts-bun-rust-rewrite.html",
+  "discussion_url": "https://news.ycombinator.com/item?id=48843352",
+  "story_url": "https://news.ycombinator.com/item?id=48843352",
+  "text": null,
+  "total_comments": 683,
+  "top_level_comments": 96,
+  "shown_comments": 1,
+  "ranked": true,
+  "comments": [
+    {
+      "id": 48844355,
+      "author": "tuckwat",
+      "posted": "2026-07-09 11:48 UTC",
+      "depth": 1,
+      "url": "https://news.ycombinator.com/item?id=48844355",
+      "text": "This is unprofessional and embarrassing for Zig....",
+      "reply_count": 27,
+      "total_replies": 244,
+      "replies": []
+    }
+  ]
+}
+```
+
+- `comments` is a tree: each comment's `replies` holds the replies shown under it, with the same keys. `reply_count` is how many direct replies it has and `total_replies` how many comments sit below it at any depth, so the caller can tell what was trimmed.
+- `ranked` is `false` if HN's ranked order couldn't be fetched for some comment, whose replies are then oldest first.
+- `url` is the story's article (or the HN page for a self-post or comment); `story_url` is the story's HN thread, which differs from `discussion_url` when `ITEM` is a comment. `text` is a self-post's or root comment's body, else `null`. For a comment, `title` and `score` are `null`.
+- A deleted comment that still has replies is shown with author and text `[deleted]`; one with no replies is left out.
+
+With `--json`, the leading progress line is suppressed. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Parse the item** — Accepts a numeric id or a `news.ycombinator.com/item?id=N` link; anything else exits 2.
+2. **Fetch the tree** — One request to `hn.algolia.com/api/v1/items/<id>` returns the item with its whole comment tree under `children` (around 500 KB and 2-3 s for a 1,000-comment thread, hence a 30-second timeout). A `404` means there is no such item.
+3. **Rank** — Algolia lists replies oldest first, but HN ranks them. The official API's `kids` list for an item is in HN's ranked display order, so `select_comments()` fetches it (via `hottest_tech_discussions.fetch_story()`, 10 at a time) for the root and then, level by level, for each shown comment that has replies. Only those items are fetched, not the whole thread. If one fails, that comment's replies stay oldest first and `ranked` becomes `false`. Comments Algolia has but `kids` doesn't (e.g. just posted) go last.
+4. **Trim** — Keeps the first `--top` top-level comments, then the first `--replies` replies under each, down to `--depth` levels. Deleted or dead comments with no replies are dropped.
+5. **Shape** — Converts each comment's HTML to plain text with `hn_search.clean_text()`, cut to `--max-chars`, and counts what was left out.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `ITEM_URL` | `https://hn.algolia.com/api/v1/items/{item_id}` | Algolia item endpoint (the comment tree) |
+| `ITEM_TIMEOUT` | 30 | Timeout in seconds for the tree request |
+| `TOP_COMMENTS` | 20 | Default for `--top` |
+| `REPLIES_PER_COMMENT` | 3 | Default for `--replies` |
+| `DEPTH` | 2 | Default for `--depth` |
+| `MAX_TOP_COMMENTS` | 200 | Upper bound for `--top` |
+| `MAX_DEPTH` | 10 | Upper bound for `--depth` |
+
+The ranking requests use `hottest_tech_discussions.py`'s 10-second `REQUEST_TIMEOUT`.
+
+### API reference
+
+- `parse_item_id(value)` — The item id from a number or an HN item link; raises `ValueError` otherwise.
+- `fetch_tree(item_id)` — The item and its comment tree from Algolia, or `None` for a `404`.
+- `count_comments(node)` — Comments below a node, at any depth.
+- `is_empty(node)` — True for a deleted or dead comment with no replies.
+- `ranked_children(node, kids)` — A node's non-empty children in the order of `kids` (HN's ranked list), or oldest first if `kids` is `None`.
+- `fetch_kids(item_ids)` — `{id: ranked kids list, or None if the item couldn't be fetched}`, 10 requests at a time.
+- `select_comments(root, top=20, replies=3, depth=2)` — Picks the comments to show; returns `(trees, ranked)` with `trees` as `(node, level, shown_children)` tuples.
+- `comment_to_dict(tree, max_chars=600)` / `thread_to_dict(root, comments, ranked, max_chars=600)` — The records used for **both** output modes.
+- `format_comment(row, number)` / `format_thread(thread)` — Render the human-readable report, numbering replies `1.1.`, `1.2.` and so on.
+- `parse_args(argv=None)` — Parses and validates the CLI arguments (exit 2 on invalid ones).
+- `main(argv=None)` — Entry point; fetches, ranks, trims, handles errors, and prints the thread.
+
+### Error handling
+
+- An `ITEM` that isn't an id or HN item link, or an out-of-range `--top` / `--replies` / `--depth` / `--max-chars`, is rejected by argument parsing (exit code 2) before any request.
+- No such item: exits 1 with `No Hacker News item with id <ID>.`
+- If the tree request fails (network error, timeout, other error status, non-JSON body), the script exits 1 with the error on stderr (`{"error": "..."}` with `--json`).
+- A failed ranking request doesn't fail the script; it only sets `ranked` to `false` (see How it works, step 3).
+
+### Notes / limitations
+
+- **"Top" means HN's ranking**, which weighs votes, age and moderation — the order you see on the site. Comment scores aren't public, so there's no "most upvoted" sort.
+- **A sample of a big thread.** With the defaults, a 700-comment thread is read as at most 80 comments, the highest-ranked ones; the trimmed-comment counts show how much was skipped. Raise `--top`, `--replies` or `--depth` for more, at the cost of more ranking requests (one per shown comment with replies).
+- `total_comments` counts the comments in Algolia's tree, which can be a little lower than HN's own count (HN includes some deleted and dead comments).
+- Links inside a comment keep their visible text only, which HN shortens for long URLs.
+- On Windows, the human-readable report can garble non-ASCII characters when piped (see the note under [`weather.py`](#weatherpy)); `--json` output is unaffected.
+
+---
+
 ## Claude Code agent: `hn-search`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hn-search.md`. It calls no API itself — it shells out to [`hn_search.py`](#hn_searchpy) via the `Bash` tool and reports the result conversationally.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hn-search.md`. It calls no API itself — it shells out to [`hn_search.py`](#hn_searchpy) and [`hn_thread.py`](#hn_threadpy) via the `Bash` tool and reports the result conversationally.
 
 ### Purpose
 
-Lets Claude Code answer questions like "what does HN think of Bun?", "find HN threads about the CrowdStrike outage", "what did people on Hacker News say about Rust async last year?" or "find Show HN posts about local LLMs" from the HN archive, instead of guessing.
+Lets Claude Code answer questions like "what does HN think of Bun?", "find HN threads about the CrowdStrike outage", "what did people on Hacker News say about Rust async last year?", "find Show HN posts about local LLMs" or "summarize the comments on this HN thread" from the HN archive, instead of guessing.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own when the user asks what Hacker News has said or posted about a topic, person or product over time, based on the `description` field in its frontmatter. What's trending on HN right now goes to [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions).
+- **Automatically** — Claude Code selects this subagent on its own when the user asks what Hacker News has said or posted about a topic, person or product over time, or what people said in a particular HN thread, based on the `description` field in its frontmatter. What's trending on HN right now goes to [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions).
 - **Explicitly** — via the `Agent` tool with `subagent_type: "hn-search"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -2546,20 +2709,21 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### What it does
 
 1. Reduces the question to a few distinctive keywords (in the form people write them, since words match whole), and picks `--type` (stories for threads, comments for opinions, Ask/Show HN when asked), `--sort` (relevance for the big threads, date for "lately"), and any date window, minimum score or author from the user's wording.
-2. Runs `python3 hn_search.py "QUERY" [...] --json` from the repo root — for "what does HN think of X?", both a story search and a comment search.
-3. Reports threads as a compact list (title, score, comments, date, links), or summarizes the views in the comments it retrieved, grouping similar opinions, noting disagreement, linking its sources and saying how many comments it read — a sample, not a consensus. An exit code 2 means it fixes the arguments rather than retrying; a network-looking failure is retried at most once; an empty result is reported as such, with a broader search suggested or run.
+2. Runs `python3 hn_search.py "QUERY" [...] --json` from the repo root — for "what does HN think of X?", a story search to find the biggest threads and a comment search for recent views.
+3. Reads a thread the user linked, or the biggest one or two a search found, with `python3 hn_thread.py ITEM [...] --json`: the top comments in HN's ranked order with a few replies each, more for a very large thread.
+4. Reports threads as a compact list (title, score, comments, date, links), or summarizes the views in the comments it retrieved — for a thread, saying how many of its highest-ranked comments it read — grouping similar opinions, noting disagreement, linking its sources and saying how many comments it read — a sample, not a consensus. An exit code 2 means it fixes the arguments rather than retrying; a network-looking failure is retried at most once; an empty result is reported as such, with a broader search suggested or run.
 
 ### Configuration
 
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
-| Underlying script | [`hn_search.py`](#hn_searchpy) |
+| Underlying scripts | [`hn_search.py`](#hn_searchpy), [`hn_thread.py`](#hn_threadpy) |
 
 ### Notes / limitations
 
-- Requires `hn_search.py`, its `hottest_tech_discussions.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
-- Inherits all the limitations of [`hn_search.py`](#hn_searchpy): whole-word matching, text-first relevance ranking, no comment scores, 100 results per search.
+- Requires `hn_search.py`, `hn_thread.py`, their `hottest_tech_discussions.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
+- Inherits the limitations of [`hn_search.py`](#hn_searchpy) (whole-word matching, text-first relevance ranking, no comment scores, 100 results per search) and [`hn_thread.py`](#hn_threadpy) (a big thread is read as a sample of its highest-ranked comments).
 - A summary of "what HN thinks" is only as representative as the handful of comments retrieved.
 
 ---

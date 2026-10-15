@@ -44,8 +44,8 @@ TYPE_TAGS = {
 }
 
 
-def fetch_json(url, params):
-    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+def fetch_json(url, params=None, timeout=REQUEST_TIMEOUT):
+    response = requests.get(url, params=params, timeout=timeout)
     if not response.ok:
         # Algolia explains a rejected request as {"message": "...", "status": 400};
         # surface that rather than a bare "400 Client Error".

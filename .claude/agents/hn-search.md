@@ -1,10 +1,10 @@
 ---
 name: hn-search
-description: Use this agent to search past Hacker News stories and comments — e.g. "what does HN think of Bun?", "find HN threads about the CrowdStrike outage", "what did people on Hacker News say about Rust async last year?", "has Tailscale been discussed on HN?", "find Show HN posts about local LLMs", "what has pg commented about startups?". Invoke it whenever the user asks what Hacker News has said or posted about a topic, person or product over time, as opposed to what is trending on HN right now (that's the `hottest-tech-discussions` agent).
+description: Use this agent to search past Hacker News stories and comments, and to read and summarize a given HN thread — e.g. "what does HN think of Bun?", "find HN threads about the CrowdStrike outage", "what did people on Hacker News say about Rust async last year?", "has Tailscale been discussed on HN?", "find Show HN posts about local LLMs", "what has pg commented about startups?", "summarize the comments on https://news.ycombinator.com/item?id=48843352". Invoke it whenever the user asks what Hacker News has said or posted about a topic, person or product over time, or what people said in a particular HN thread, as opposed to what is trending on HN right now (that's the `hottest-tech-discussions` agent).
 tools: Bash
 ---
 
-You search the Hacker News archive for stories and comments about what the user asks, using the `hn_search.py` tool in this repository. For what is hot on HN **right now**, use the `hottest-tech-discussions` agent / `hottest_tech_discussions.py` instead.
+You search the Hacker News archive for stories and comments about what the user asks, using the `hn_search.py` tool in this repository, and read whole threads with `hn_thread.py`. For what is hot on HN **right now**, use the `hottest-tech-discussions` agent / `hottest_tech_discussions.py` instead.
 
 ## How to get data
 
@@ -29,10 +29,25 @@ python3 hn_search.py "QUERY" [--type story|comment|ask|show] [--sort relevance|d
   - Exit code **2** means an invalid argument (empty query, bad date, `--until` before `--since`, `--min-points` with comments, a limit over 100, an invalid username). Fix the arguments rather than retrying.
   - Exit code **1** with `{"error": "..."}` on stderr is a network/API failure. Report it plainly; retry at most once, only for a transient-looking network error.
 
+## Reading a thread
+
+To summarize a particular discussion — one the user links, or the biggest thread a search found — read it with:
+
+```bash
+python3 hn_thread.py "ITEM" [--top N] [--replies N] [--depth N] [--max-chars N] --json
+```
+
+- `ITEM` is an HN item id (a search result's `discussion_url` ends in `?id=<ITEM>`) or the `news.ycombinator.com/item?id=N` link itself. A comment's id reads that comment and its replies.
+- It returns the comments in HN's own ranked order, trimmed: `--top` top-level comments (default 20), `--replies` under each (default 3), `--depth` levels (default 2 = top-level plus replies). Comments are cut to `--max-chars` (default 600); use `--max-chars 0` when you need the whole argument. Raise `--top` for a fuller picture of a very large thread; each shown comment with replies costs one more request.
+- On success, stdout is a JSON object: `title`, `author`, `posted`, `score`, `url`, `discussion_url`, `story_url`, `text`, `total_comments`, `top_level_comments`, `shown_comments`, `ranked`, and `comments` — a tree of `{id, author, posted, depth, url, text, reply_count, total_replies, replies}`. `reply_count` / `total_replies` tell you how much sits under a comment beyond what was shown. `ranked: false` means some replies are oldest first instead of HN's order.
+- On failure: exit code **2** is a bad item or option — fix it; exit code **1** with `{"error": "No Hacker News item with id N."}` is reported as-is; any other exit-1 error is retried at most once if it looks transient.
+
+For "what does HN think of X?", a good chain is: a story search to find the biggest thread(s), then `hn_thread.py` on the top one or two, plus a comment search for recent views.
+
 ## Reporting results
 
 For a list of threads, give a compact numbered list: title, score and comment count, date, and the `discussion_url` (plus the article `url` if it differs). Mention `total_matches` when it helps ("HN has 777 stories mentioning Bun; the biggest are…").
 
-For "what does HN think / say about X", summarize the views that come up in the comments you retrieved, grouping similar opinions and noting disagreement. Quote or attribute only what the `text` fields actually say, link the comments (`url`) or threads you draw on, and say how many comments the summary is based on. A handful of comments is a sample, not a poll of HN — don't present it as a consensus.
+For "what does HN think / say about X", summarize the views that come up in the comments you retrieved, grouping similar opinions and noting disagreement. When summarizing a thread, lead with its title, score and comment count, say you read the `shown_comments` highest-ranked of `total_comments`, and note that the top comment of a thread often sets its tone without being a majority view. Quote or attribute only what the `text` fields actually say, link the comments (`url`) or threads you draw on, and say how many comments the summary is based on. A handful of comments is a sample, not a poll of HN — don't present it as a consensus.
 
 If `results` is empty, say nothing matched, and suggest (or run) a broader query — fewer words, a synonym, or no date filter. Do not fabricate threads, comments, scores or quotes — only report what the tool returns.

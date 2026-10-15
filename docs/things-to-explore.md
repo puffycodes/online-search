@@ -58,11 +58,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### Extending `hn_search.py`
 
-- [ ] **Read one HN thread** (Algolia `items/<id>` endpoint, no key): returns a story
-  with its whole comment tree under `children`, so an agent can summarize a big thread
-  (e.g. 700 comments on the Bun Rust rewrite) instead of only the latest matching
-  comments. Would need a cap on comments and depth, and ordering, since the tree can
-  be large. Endpoint checked once (returns `title`, `text`, `points`, `children`).
 - [ ] **Search comments within one thread**: a `--story ID` option adding the
   `story_<id>` tag, for "what did people in that thread say about X?".
 - [ ] **Less noise in comment searches**: a bare `"bun"` comment search also finds

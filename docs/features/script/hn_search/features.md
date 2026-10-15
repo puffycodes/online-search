@@ -5,6 +5,7 @@
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Algolia Hacker News Search API (no API key).
 - Use hottest_tech_discussions.py's discussion_url() and posted_at(), so links and times look the same in both scripts.
+- Keep fetch_json() (with a timeout option) and clean_text() importable, for hn_thread.py.
 
 ## Actions
 
