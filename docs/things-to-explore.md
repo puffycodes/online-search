@@ -12,11 +12,6 @@ When one of these is implemented, follow the usual repo conventions: script + te
 + agent + feature specs (`docs/features/script/...`, `docs/features/agent/...`) +
 both READMEs in the same change. Then remove the item from this list.
 
-## Top picks
-
-1. **Hacker News search**: lets the tech-discussion agents answer "what did people
-   say about X?"
-
 ## Weather and environment
 
 All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()`,
@@ -61,8 +56,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ## Tech and news
 
-- [ ] **Hacker News search** (Algolia HN API, no key): search past stories and
-  comments, not just the current front page.
 - [ ] **GitHub "trending"**: GitHub search API, e.g. repos created in the last 7 days
   sorted by stars. There is no official trending endpoint, and unauthenticated
   requests are rate-limited.

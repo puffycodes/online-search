@@ -56,6 +56,7 @@ tests/
   test_weather_history.py
   test_air_quality.py
   test_hottest_tech_discussions.py
+  test_hn_search.py
   test_market_top_volume.py
   test_stock_price_history.py
   test_stock_candlestick_chart.py
@@ -149,6 +150,7 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_weather_history.py` | `weather_history` | `resolve_window` via `parse_args` (single date, range, end defaults to today, 1940-01-01 / today / 366-day edges allowed, exit-2 matrix: no date, `--end` alone, `--date` with `--start`, reversed, pre-1940, future, over 366 days, bad format); `get_history` day records (all fields, unit, not found, missing values); `fetch_daily_history` params; `summarize` (aggregates, single day, missing values left out, no data); `format_history` (range table and summary, single-day title, polar night and no-data note); `main` (request error and not-found exit 1, JSON output and arguments passed, text progress line, bad window exits 2 before any fetch) |
 | `test_air_quality.py` | `air_quality` | `us_aqi_category` band boundaries + `None`; `get_air_quality` record assembly + missing-`us_aqi` case; `format_air_quality`; `parse_args`; `main` (request error, not found, JSON/text output) |
 | `test_hottest_tech_discussions.py` | `hottest_tech_discussions` | `discussion_url`/`posted_at`/`story_to_dict`; `fetch_story` error-swallowing; `get_hottest_tech_discussions` type filter / score sort / limit / candidate-pool slice / pool scales with limit (4×); `main` (incl. invalid `--limit` exits 2 before any fetch) |
+| `test_hn_search.py` | `hn_search` | `build_params` (defaults incl. whole-word matching, `--type` tags, author tag, inclusive UTC date window, min points, limit); `fetch_json` (Algolia `message` surfaced, fallback to `raise_for_status`); `search` (relevance vs date endpoint, missing fields); `clean_text` (empty, paragraphs/tags/entities, truncation, no limit); `hit_to_dict` (story, self-post, comment, `max_chars`, missing fields); `format_hit` (story, indented text, comment, no story); `parse_args` defaults, flags and exit-2 matrix; `main` (JSON/text output, `--max-chars`, no results, request and non-JSON errors exit 1) |
 | `test_market_top_volume.py` | `market_top_volume` | `METRICS`/`MARKETS` structural consistency; `quote_to_dict`; `format_quote` ordering; `get_movers` predefined vs region path, filters, sort; `fetch_region_quotes` crumb/error/success; `main` (invalid `--limit` exits 2 before any fetch, valid limit passed through) |
 | `test_stock_price_history.py` | `stock_price_history` | `extract_rows` rounding / unsettled-bar skip / gmtoffset date shift / None-safety; `main` `--last` trim, JSON shape, adj-close column, fetch-error exit, invalid `--start` date exit |
 | `test_stock_candlestick_chart.py` | `stock_candlestick_chart` | `_parse_ma_arg` / `_parse_flip_ma_arg` full matrices; `extract_rows` skips bars with missing OHLC, date is `datetime`; `main` invalid `--start` date exit |

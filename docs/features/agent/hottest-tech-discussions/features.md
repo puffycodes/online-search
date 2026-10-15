@@ -4,6 +4,7 @@
 
 - Use the scripts or agents in this project as much as possible.
     - Use the hottest_tech_discussions.py script to retrieve the top discussions.
+    - To search past HN discussions about a topic, use the hn-search agent instead.
 
 ## Actions
 

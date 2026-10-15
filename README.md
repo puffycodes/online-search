@@ -43,6 +43,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 **[Tech News & Discussions](#tech-news--discussions)**
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — the hottest Hacker News discussions (top 10 by default, `--limit N` for more)
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
+- [`hn_search.py`](#hn_searchpy) — searches past Hacker News stories and comments for a query, by relevance or date, with date, score and author filters, via the Algolia HN Search API (no API key)
+- [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` to find HN threads about a topic or summarize what people said about it
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`app/hottest_discussions/`](#apphottest_discussions) — small local web app for `hottest_tech_discussions.py`: a page with a "Show" drop-down and Refresh button that runs the script through a local server
 - [`.claude/agents/hottest-tech-discussion-summary.md`](#claude-code-agent-hottest-tech-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions with cited sources
@@ -2308,7 +2310,7 @@ These are set as constants near the top of the file — edit them directly to ch
 - `fetch_json(url)` — GETs a URL and returns parsed JSON, raising on HTTP errors.
 - `fetch_story(item_id)` — Fetches a single HN item by ID; returns `None` on any request or parsing failure instead of raising (so one bad story doesn't kill the whole batch).
 - `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of raw HN story dicts.
-- `discussion_url(story)` / `posted_at(story)` — Small helpers: the `news.ycombinator.com/item?id=…` comments URL, and the submission time as a `YYYY-MM-DD HH:MM UTC` string. Also reused by [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy).
+- `discussion_url(story)` / `posted_at(story)` — Small helpers: the `news.ycombinator.com/item?id=…` comments URL, and the submission time as a `YYYY-MM-DD HH:MM UTC` string. Also reused by [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) and [`hn_search.py`](#hn_searchpy).
 - `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url}` record used for **both** output modes.
 - `format_story(row)` — Renders a `story_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses `--limit` and `--json` CLI flags.
@@ -2339,7 +2341,7 @@ Lets Claude Code answer questions like "what's trending in tech today?" or "top 
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for tech-news/trends questions, based on the `description` field in its frontmatter.
+- **Automatically** — Claude Code selects this subagent on its own for tech-news/trends questions, based on the `description` field in its frontmatter. Questions about what HN has said about a topic over time go to [`hn-search`](#claude-code-agent-hn-search).
 - **Explicitly** — via the `Agent` tool with `subagent_type: "hottest-tech-discussions"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -2363,6 +2365,202 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 - Requires `hottest_tech_discussions.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Inherits all the limitations of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) itself (score-based "hottest" definition, no tech-specific keyword filtering, live-snapshot results).
+
+---
+
+## hn_search.py
+
+Searches past [Hacker News](https://news.ycombinator.com/) stories and comments for a query, using the [Algolia HN Search API](https://hn.algolia.com/api) — the same index behind the search box on HN. Where [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) only sees the current front page, this searches the whole archive: stories (or just Ask HN / Show HN posts) or comments, ranked by relevance or newest first, optionally limited to a date window, a minimum score or one author. No API key or authentication required.
+
+Requires `hottest_tech_discussions.py` to be present in the same directory — it imports `discussion_url` and `posted_at` from it so links and times look the same in both scripts. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `hottest_tech_discussions.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+### Usage
+
+```bash
+python3 hn_search.py QUERY [--type {story,comment,ask,show}] [--sort {relevance,date}] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--min-points N] [--author USERNAME] [--limit N] [--max-chars N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `QUERY` (positional) | — | Words to search for, e.g. `"crowdstrike outage"`. Every word must match, as a whole word (see Notes / limitations below) |
+| `--type` | `story` | `story`, `comment`, `ask` (Ask HN posts) or `show` (Show HN posts) |
+| `--sort` | `relevance` | `relevance` (best match, then score) or `date` (newest first) |
+| `--since` | — | Only items posted on or after this UTC date |
+| `--until` | — | Only items posted on or before this UTC date |
+| `--min-points N` | — | Only stories with a score of at least `N`. Not allowed with `--type comment` (comments have no public score) |
+| `--author USERNAME` | — | Only items posted by this HN user |
+| `--limit N` | 10 | Number of results, 1-100 |
+| `--max-chars N` | 600 | Cut comment / self-post text to `N` characters (with `...`); `0` keeps it whole |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
+
+#### Example output
+
+```bash
+python3 hn_search.py "bun" --limit 2
+```
+
+```
+Searching Hacker News for 'bun'...
+
+777 matching stories; showing 2, by relevance.
+
+1. Anthropic acquires Bun
+   Score: 2192  |  Comments: 1072  |  Posted: 2025-12-02 18:05 UTC  |  By: ryanvogel
+   Link: https://bun.com/blog/bun-joins-anthropic
+   Discussion: https://news.ycombinator.com/item?id=46124267
+
+2. Bun: Fast JavaScript runtime, transpiler, and NPM client written in Zig
+   Score: 1431  |  Comments: 314  |  Posted: 2022-07-05 20:41 UTC  |  By: firloop
+   Link: https://bun.sh/?launch
+   Discussion: https://news.ycombinator.com/item?id=31993429
+```
+
+A comment search shows who said what, on which story:
+
+```bash
+python3 hn_search.py "crowdstrike outage" --type comment --since 2024-07-19 --until 2024-07-20 --limit 1 --max-chars 200
+```
+
+```
+Searching Hacker News for 'crowdstrike outage'...
+
+53 matching comments; showing 1, by relevance.
+
+1. Comment by jeroenhd on "Microsoft's global sprawl under fire from regulators after Windows outage"
+   Posted: 2024-07-20 21:46 UTC
+   Comment: https://news.ycombinator.com/item?id=41020260
+   Discussion: https://news.ycombinator.com/item?id=41019478
+
+   Part of Microsoft's problem is that right before the CrowdStrike outage, there was an outage of some large Microsoft services, making the two look connected. It didn't help that a lot of Microsoft sup...
+```
+
+#### Tool usage (`--json`)
+
+```bash
+python3 hn_search.py "rust" --type show --sort date --min-points 100 --limit 1 --json
+```
+
+```json
+{
+  "query": "rust",
+  "type": "show",
+  "sort": "date",
+  "since": null,
+  "until": null,
+  "total_matches": 233,
+  "results": [
+    {
+      "rank": 1,
+      "type": "story",
+      "title": "Show HN: SolidCraft – Open-Source Parametric CAD in Rust (With MCP Support)",
+      "author": "bherbruck",
+      "posted": "2026-10-13 00:11 UTC",
+      "score": 140,
+      "comments": 51,
+      "url": "https://github.com/bherbruck/solidcraft",
+      "discussion_url": "https://news.ycombinator.com/item?id=50064840",
+      "text": null
+    }
+  ]
+}
+```
+
+`total_matches` counts every match, not just the results returned. Each result has the same keys:
+
+- **Stories** — `url` is the linked article, or the HN thread for a self-post (Ask HN, most Show HN); `text` is a self-post's body, or `null`.
+- **Comments** — `type` is `"comment"`, `title` is the story the comment is on, `url` is the comment's own HN page, `discussion_url` the story's thread, `score` and `comments` are `null`, and `text` is the comment.
+
+With `--json`, the leading progress line is suppressed. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Validate** — Rejects an empty query, a bad date, `--until` before `--since`, `--min-points` with `--type comment`, a `--limit` outside 1-100, or an invalid username, before any request.
+2. **Build the query** — `build_params()` maps `--type` to an Algolia tag (`story`, `comment`, `ask_hn`, `show_hn`), adds `author_<USERNAME>` for `--author`, turns `--since` / `--until` into `created_at_i` bounds (00:00 UTC on `--since` up to, but not including, 00:00 UTC the day after `--until`) and `--min-points` into `points>=N`, and sets `typoTolerance=false` and `queryType=prefixNone` so words match whole.
+3. **Fetch** — GETs `hn.algolia.com/api/v1/search` (relevance) or `/search_by_date` (newest first) with `hitsPerPage` = `--limit`.
+4. **Shape** — `hit_to_dict()` turns each hit into a story or comment record; `clean_text()` converts the comment / self-post HTML to plain text (paragraphs to blank lines, tags dropped, entities decoded) and cuts it to `--max-chars`.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `SEARCH_URL` | `https://hn.algolia.com/api/v1/search` | Endpoint for `--sort relevance` |
+| `SEARCH_BY_DATE_URL` | `https://hn.algolia.com/api/v1/search_by_date` | Endpoint for `--sort date` |
+| `REQUEST_TIMEOUT` | 10 | Request timeout in seconds |
+| `RESULTS_TO_SHOW` | 10 | Default for `--limit` |
+| `MAX_RESULTS` | 100 | Upper bound accepted for `--limit` |
+| `TEXT_CHARS` | 600 | Default for `--max-chars` |
+| `TYPE_TAGS` | `story`/`comment`/`ask`/`show` → Algolia tag | `--type` choices and the tags they search |
+
+### API reference
+
+- `fetch_json(url, params)` — GETs the URL and returns parsed JSON. When Algolia rejects a request it explains why (`{"message": ...}`), and that message becomes the `requests.HTTPError`.
+- `build_params(query, kind="story", since=None, until=None, min_points=None, author=None, limit=10)` — The Algolia query parameters for a search.
+- `search(query, kind="story", sort="relevance", since=None, until=None, min_points=None, author=None, limit=10)` — Runs a search; returns `(hits, total_matches)`.
+- `clean_text(raw, max_chars=600)` — Plain text from an HN HTML body, cut to `max_chars` (0 = no limit), or `None` if empty.
+- `hit_to_dict(rank, hit, max_chars=600)` — Flattens an Algolia hit into the `{rank, type, title, author, posted, score, comments, url, discussion_url, text}` record used for **both** output modes.
+- `format_hit(row)` — Renders a `hit_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses and validates the CLI arguments (exit 2 on invalid ones).
+- `main(argv=None)` — Entry point; searches, handles top-level errors, and prints the results (human-readable or JSON).
+
+### Error handling
+
+- Invalid arguments — see step 1 of How it works above — are rejected by argument parsing (exit code 2), before any request.
+- If the request fails (network error, timeout, non-2xx response, non-JSON body), the script exits 1 with the error on stderr (`{"error": "..."}` with `--json`). When Algolia rejects a request, its own message is the error.
+- No matches is not an error: the script prints `No results found.` (or an empty `results` list with `--json`) and exits 0.
+
+### Notes / limitations
+
+- **Whole-word matching.** Typo tolerance and prefix matching are turned off, so `"bun"` doesn't also match "Bunch", "bundle" or "build" (with Algolia's defaults it does — 196,449 story matches for "bun" against 777). The flip side: `"kubernetes"` won't find "k8s", and a plural or other word form may need its own search. Every query word must match (in the title, URL, text or author).
+- **"Relevance" ranks by text match first, then points.** A single-word query tends to put the biggest threads first; a multi-word query can rank a small story that matches all the words closely above a popular one. Use `--sort date` with `--min-points` for "the latest notable threads".
+- Comments have no public score in the API, hence no `--min-points` for them; comment results can't be ranked by popularity.
+- Story scores and comment counts are as of Algolia's last update of that item, which can lag HN slightly for recent stories.
+- Algolia returns at most 1,000 hits per request; this script caps `--limit` at 100 and doesn't page.
+- Links inside a comment keep their visible text only, which HN itself shortens for long URLs.
+- On Windows, the human-readable report can garble non-ASCII characters in titles and comments when piped (see the note under [`weather.py`](#weatherpy)); `--json` output escapes them and is unaffected.
+
+---
+
+## Claude Code agent: `hn-search`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/hn-search.md`. It calls no API itself — it shells out to [`hn_search.py`](#hn_searchpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what does HN think of Bun?", "find HN threads about the CrowdStrike outage", "what did people on Hacker News say about Rust async last year?" or "find Show HN posts about local LLMs" from the HN archive, instead of guessing.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own when the user asks what Hacker News has said or posted about a topic, person or product over time, based on the `description` field in its frontmatter. What's trending on HN right now goes to [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions).
+- **Explicitly** — via the `Agent` tool with `subagent_type: "hn-search"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Reduces the question to a few distinctive keywords (in the form people write them, since words match whole), and picks `--type` (stories for threads, comments for opinions, Ask/Show HN when asked), `--sort` (relevance for the big threads, date for "lately"), and any date window, minimum score or author from the user's wording.
+2. Runs `python3 hn_search.py "QUERY" [...] --json` from the repo root — for "what does HN think of X?", both a story search and a comment search.
+3. Reports threads as a compact list (title, score, comments, date, links), or summarizes the views in the comments it retrieved, grouping similar opinions, noting disagreement, linking its sources and saying how many comments it read — a sample, not a consensus. An exit code 2 means it fixes the arguments rather than retrying; a network-looking failure is retried at most once; an empty result is reported as such, with a broader search suggested or run.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`hn_search.py`](#hn_searchpy) |
+
+### Notes / limitations
+
+- Requires `hn_search.py`, its `hottest_tech_discussions.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
+- Inherits all the limitations of [`hn_search.py`](#hn_searchpy): whole-word matching, text-first relevance ranking, no comment scores, 100 results per search.
+- A summary of "what HN thinks" is only as representative as the handful of comments retrieved.
 
 ---
 
