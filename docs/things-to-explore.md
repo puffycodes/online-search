@@ -14,12 +14,11 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **Yahoo for FX, crypto and indices**: possibly no new code at all (see Finance).
-2. **Earnings calendar and analyst targets**: reuses the crumb handshake and fills
+1. **Earnings calendar and analyst targets**: reuses the crumb handshake and fills
    the gap next to fundamentals and intrinsic value.
-3. **Historical weather plus UV and sunrise/sunset**: small additions built on `weather.py`.
-4. **Wayback Machine fallback for `url_availability.py`**: high practical value.
-5. **Hacker News search**: lets the tech-discussion agents answer "what did people
+2. **Historical weather plus UV and sunrise/sunset**: small additions built on `weather.py`.
+3. **Wayback Machine fallback for `url_availability.py`**: high practical value.
+4. **Hacker News search**: lets the tech-discussion agents answer "what did people
    say about X?"
 
 ## Weather and environment
@@ -40,17 +39,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   magnitude and distance from the coordinates `geocode()` returns.
 
 ## Finance
-
-### Yahoo chart endpoint: other asset classes (possibly zero new code)
-
-The chart endpoint also serves these symbols. `stock_price_history.py`,
-`stock_candlestick_chart.py` and `stock_rebased_chart.py` probably already work with
-them. Verify that, then mainly update the agent descriptions.
-
-- [ ] Currencies: `EURUSD=X`, `USDSGD=X`
-- [ ] Crypto: `BTC-USD`, `ETH-USD`
-- [ ] Indices: `^GSPC`, `^IXIC`, `^STI`, `^FTSE`
-- [ ] Futures/commodities: `GC=F` (gold), `CL=F` (crude oil)
 
 ### Yahoo `quoteSummary`: more modules (reuse `yahoo_finance.crumb_session()`)
 
