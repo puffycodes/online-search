@@ -26,8 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from cli_utils import die, positive_int
-from hn_search import TEXT_CHARS, clean_text, fetch_json
-from hottest_tech_discussions import discussion_url, fetch_story, posted_at
+from hn import TEXT_CHARS, clean_text, discussion_url, fetch_json, fetch_story, posted_at
 
 ITEM_URL = "https://hn.algolia.com/api/v1/items/{item_id}"
 # A big thread is ~500 KB from Algolia and takes a few seconds.

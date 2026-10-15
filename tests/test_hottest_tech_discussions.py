@@ -1,4 +1,4 @@
-"""Tests for hottest_tech_discussions: story helpers, fetch_story, ranking, and main()."""
+"""Tests for hottest_tech_discussions: story records, ranking, and main()."""
 
 import json
 
@@ -8,16 +8,7 @@ import requests
 import hottest_tech_discussions as hn
 
 
-class TestSmallHelpers:
-    def test_discussion_url(self):
-        assert hn.discussion_url({"id": 42}) == "https://news.ycombinator.com/item?id=42"
-
-    def test_posted_at_fixed_timestamp(self):
-        assert hn.posted_at({"time": 1704067200}) == "2024-01-01 00:00 UTC"
-
-    def test_posted_at_missing_time(self):
-        assert hn.posted_at({}) == "1970-01-01 00:00 UTC"
-
+class TestStoryToDict:
     def test_story_to_dict_full(self):
         story = {"title": "T", "score": 5, "descendants": 3, "time": 1704067200,
                  "url": "http://x", "id": 9}
@@ -33,26 +24,6 @@ class TestSmallHelpers:
         assert row["score"] == 0
         assert row["comments"] == 0
         assert row["url"] == row["discussion_url"] == "https://news.ycombinator.com/item?id=7"
-
-
-class TestFetchStory:
-    def test_swallows_request_error(self, monkeypatch):
-        def boom(url):
-            raise requests.RequestException("x")
-
-        monkeypatch.setattr(hn, "fetch_json", boom)
-        assert hn.fetch_story(1) is None
-
-    def test_swallows_value_error(self, monkeypatch):
-        def boom(url):
-            raise ValueError("bad json")
-
-        monkeypatch.setattr(hn, "fetch_json", boom)
-        assert hn.fetch_story(1) is None
-
-    def test_returns_payload(self, monkeypatch):
-        monkeypatch.setattr(hn, "fetch_json", lambda url: {"id": 1, "type": "story"})
-        assert hn.fetch_story(1) == {"id": 1, "type": "story"}
 
 
 class TestGetHottest:

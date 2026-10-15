@@ -41,6 +41,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail; plus a feature spec (`features.md`) for every [script](docs/features/script/) and [agent](docs/features/agent/)
 
 **[Tech News & Discussions](#tech-news--discussions)**
+- [`hn.py`](#hnpy) — shared helper module for the Hacker News scripts: JSON fetching, one-item fetch from the official HN API, HN page links, posting times, and HTML-to-text cleanup, used by `hottest_tech_discussions.py`, `hn_search.py` and `hn_thread.py`
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — the hottest Hacker News discussions (top 10 by default, `--limit N` for more)
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`hn_search.py`](#hn_searchpy) — searches past Hacker News stories and comments for a query, by relevance or date, with date, score and author filters, via the Algolia HN Search API (no API key)
@@ -2214,6 +2215,40 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ---
 
+## hn.py
+
+Shared helper module for the Hacker News scripts: [`hottest_tech_discussions.py`](#hottest_tech_discussionspy), [`hn_search.py`](#hn_searchpy) and [`hn_thread.py`](#hn_threadpy). It holds what they have in common — JSON fetching, fetching one item from the official [Hacker News API](https://github.com/HackerNews/API), the item's HN page link, its posting time, and converting HN's HTML comment and self-post text to plain text — so links, times and text look the same in all three. Each script keeps its own endpoints, record shaping and output stage. Not a CLI — it is imported, not run.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+
+### Configuration
+
+| Constant | Default | Description |
+|---|---|---|
+| `HN_API_BASE` | `https://hacker-news.firebaseio.com/v0` | Official Hacker News API base URL (`hottest_tech_discussions.py` builds `topstories.json` from it) |
+| `HN_ITEM_URL` | `{HN_API_BASE}/item/{item_id}.json` | One item from the official API, used by `fetch_story()` |
+| `REQUEST_TIMEOUT` | 10 | Default request timeout in seconds for `fetch_json()` |
+| `TEXT_CHARS` | 600 | Default length `clean_text()` cuts text to; also the default for `--max-chars` in `hn_search.py` and `hn_thread.py` |
+
+### API reference
+
+- `fetch_json(url, params=None, timeout=REQUEST_TIMEOUT)` — GETs the URL and returns parsed JSON. On an error status it raises `requests.HTTPError`; when the Algolia API explains a rejected request (`{"message": ...}`), the error is `"<status>: <message>"` rather than a bare status line. Used by all three scripts (`hn_thread.py` passes a 30-second timeout for big comment trees).
+- `fetch_story(item_id)` — One item from the official HN API, or `None` if the request or JSON parsing fails (so one bad item doesn't sink a batch) or the item doesn't exist. Used by `hottest_tech_discussions.py` for story details and by `hn_thread.py` for HN's ranked comment order (an item's `kids`).
+- `discussion_url(story)` — The `https://news.ycombinator.com/item?id=<id>` page for an item (any dict with an `id`).
+- `posted_at(story)` — An item's `time` (Unix seconds) as `YYYY-MM-DD HH:MM UTC`; a missing time gives the Unix epoch.
+- `clean_text(raw, max_chars=TEXT_CHARS)` — Plain text from HN's HTML: `<p>` becomes a blank line, other tags are dropped (a link keeps its visible text), entities are decoded, extra blank lines are collapsed, and the result is cut to `max_chars` with `...` (0 = no limit). Returns `None` for empty input.
+
+### Notes / limitations
+
+- `fetch_story()` hides *why* an item couldn't be fetched; callers that need to tell failure from a missing item should use `fetch_json()` directly.
+- `clean_text()` is a regex-based cleanup for HN's small HTML subset (`<p>`, `<i>`, `<a>`, `<pre><code>`), not a general HTML parser. Code blocks lose their `<pre>` formatting but keep their line breaks.
+- Changing a helper here changes the output of all three scripts.
+
+---
+
 ## hottest_tech_discussions.py
 
 Prints the hottest technology discussions (10 by default, set with `--limit`) currently on [Hacker News](https://news.ycombinator.com/), using the public [Hacker News API](https://github.com/HackerNews/API). No API key or authentication required.
@@ -2222,7 +2257,7 @@ Prints the hottest technology discussions (10 by default, set with `--limit`) cu
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- the repo's own `hn.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests
@@ -2303,15 +2338,14 @@ These are set as constants near the top of the file — edit them directly to ch
 |---|---|---|
 | `CANDIDATE_POOL_FACTOR` | 4 | Top stories to fetch details for, per requested result, before ranking (pool = `limit × 4`) |
 | `RESULTS_TO_SHOW` | 10 | Default for `--limit` (number of stories to display) |
-| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+
+The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the API base URL live in [`hn.py`](#hnpy).
 
 ### API reference
 
 - Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices (e.g. why the candidate pool is 4× the limit).
-- `fetch_json(url)` — GETs a URL and returns parsed JSON, raising on HTTP errors.
-- `fetch_story(item_id)` — Fetches a single HN item by ID; returns `None` on any request or parsing failure instead of raising (so one bad story doesn't kill the whole batch). Also used by [`hn_thread.py`](#hn_threadpy) to fetch HN's ranked comment order.
 - `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of raw HN story dicts.
-- `discussion_url(story)` / `posted_at(story)` — Small helpers: the `news.ycombinator.com/item?id=…` comments URL, and the submission time as a `YYYY-MM-DD HH:MM UTC` string. Also reused by [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) and [`hn_search.py`](#hn_searchpy).
+- `fetch_json`, `fetch_story`, `discussion_url` and `posted_at` come from [`hn.py`](#hnpy); `fetch_story()` returns `None` for a story that fails to fetch, so one bad story doesn't kill the whole batch. [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) uses `discussion_url` through this module.
 - `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url}` record used for **both** output modes.
 - `format_story(row)` — Renders a `story_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses `--limit` and `--json` CLI flags.
@@ -2373,13 +2407,13 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 Searches past [Hacker News](https://news.ycombinator.com/) stories and comments for a query, using the [Algolia HN Search API](https://hn.algolia.com/api) — the same index behind the search box on HN. Where [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) only sees the current front page, this searches the whole archive: stories (or just Ask HN / Show HN posts) or comments, ranked by relevance or newest first, optionally limited to a date window, a minimum score or one author. No API key or authentication required.
 
-Requires `hottest_tech_discussions.py` to be present in the same directory — it imports `discussion_url` and `posted_at` from it so links and times look the same in both scripts. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
+Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it, so links, times and text look the same as in the other HN scripts. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `hottest_tech_discussions.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+- the repo's own `hn.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ### Usage
 
@@ -2484,7 +2518,7 @@ With `--json`, the leading progress line is suppressed. On failure, an exit code
 1. **Validate** — Rejects an empty query, a bad date, `--until` before `--since`, `--min-points` with `--type comment`, a `--limit` outside 1-100, or an invalid username, before any request.
 2. **Build the query** — `build_params()` maps `--type` to an Algolia tag (`story`, `comment`, `ask_hn`, `show_hn`), adds `author_<USERNAME>` for `--author`, turns `--since` / `--until` into `created_at_i` bounds (00:00 UTC on `--since` up to, but not including, 00:00 UTC the day after `--until`) and `--min-points` into `points>=N`, and sets `typoTolerance=false` and `queryType=prefixNone` so words match whole.
 3. **Fetch** — GETs `hn.algolia.com/api/v1/search` (relevance) or `/search_by_date` (newest first) with `hitsPerPage` = `--limit`.
-4. **Shape** — `hit_to_dict()` turns each hit into a story or comment record; `clean_text()` converts the comment / self-post HTML to plain text (paragraphs to blank lines, tags dropped, entities decoded) and cuts it to `--max-chars`.
+4. **Shape** — `hit_to_dict()` turns each hit into a story or comment record; `hn.clean_text()` converts the comment / self-post HTML to plain text (paragraphs to blank lines, tags dropped, entities decoded) and cuts it to `--max-chars`.
 
 ### Configuration
 
@@ -2494,18 +2528,17 @@ These are set as constants near the top of the file — edit them directly to ch
 |---|---|---|
 | `SEARCH_URL` | `https://hn.algolia.com/api/v1/search` | Endpoint for `--sort relevance` |
 | `SEARCH_BY_DATE_URL` | `https://hn.algolia.com/api/v1/search_by_date` | Endpoint for `--sort date` |
-| `REQUEST_TIMEOUT` | 10 | Request timeout in seconds |
 | `RESULTS_TO_SHOW` | 10 | Default for `--limit` |
 | `MAX_RESULTS` | 100 | Upper bound accepted for `--limit` |
-| `TEXT_CHARS` | 600 | Default for `--max-chars` |
 | `TYPE_TAGS` | `story`/`comment`/`ask`/`show` → Algolia tag | `--type` choices and the tags they search |
+
+The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` default (`TEXT_CHARS`, 600) live in [`hn.py`](#hnpy).
 
 ### API reference
 
-- `fetch_json(url, params=None, timeout=REQUEST_TIMEOUT)` — GETs the URL and returns parsed JSON. When Algolia rejects a request it explains why (`{"message": ...}`), and that message becomes the `requests.HTTPError`. Also used by [`hn_thread.py`](#hn_threadpy), with a longer timeout.
 - `build_params(query, kind="story", since=None, until=None, min_points=None, author=None, limit=10)` — The Algolia query parameters for a search.
 - `search(query, kind="story", sort="relevance", since=None, until=None, min_points=None, author=None, limit=10)` — Runs a search; returns `(hits, total_matches)`.
-- `clean_text(raw, max_chars=600)` — Plain text from an HN HTML body, cut to `max_chars` (0 = no limit), or `None` if empty. Also used by [`hn_thread.py`](#hn_threadpy).
+- `fetch_json` (which surfaces Algolia's own error message) and `clean_text` come from [`hn.py`](#hnpy).
 - `hit_to_dict(rank, hit, max_chars=600)` — Flattens an Algolia hit into the `{rank, type, title, author, posted, score, comments, url, discussion_url, text}` record used for **both** output modes.
 - `format_hit(row)` — Renders a `hit_to_dict()` record as a multi-line human-readable string.
 - `parse_args(argv=None)` — Parses and validates the CLI arguments (exit 2 on invalid ones).
@@ -2533,13 +2566,13 @@ These are set as constants near the top of the file — edit them directly to ch
 
 Reads one [Hacker News](https://news.ycombinator.com/) thread — a story (or a comment) and its comments — in the order HN itself ranks them, trimmed to a readable size: the top N top-level comments, a few replies under each, down to a set depth. Built for summarizing a big discussion found with [`hn_search.py`](#hn_searchpy). Uses the [Algolia HN API](https://hn.algolia.com/api) for the comment tree and the official [Hacker News API](https://github.com/HackerNews/API) for the ranking. No API key or authentication required.
 
-Requires `hn_search.py` and `hottest_tech_discussions.py` to be present in the same directory — it imports `fetch_json`, `clean_text` and `TEXT_CHARS` from the first and `fetch_story`, `discussion_url` and `posted_at` from the second. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
+Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `fetch_story`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `hn_search.py`, `hottest_tech_discussions.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+- the repo's own `hn.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ### Usage
 
@@ -2640,9 +2673,9 @@ With `--json`, the leading progress line is suppressed. On failure, an exit code
 
 1. **Parse the item** — Accepts a numeric id or a `news.ycombinator.com/item?id=N` link; anything else exits 2.
 2. **Fetch the tree** — One request to `hn.algolia.com/api/v1/items/<id>` returns the item with its whole comment tree under `children` (around 500 KB and 2-3 s for a 1,000-comment thread, hence a 30-second timeout). A `404` means there is no such item.
-3. **Rank** — Algolia lists replies oldest first, but HN ranks them. The official API's `kids` list for an item is in HN's ranked display order, so `select_comments()` fetches it (via `hottest_tech_discussions.fetch_story()`, 10 at a time) for the root and then, level by level, for each shown comment that has replies. Only those items are fetched, not the whole thread. If one fails, that comment's replies stay oldest first and `ranked` becomes `false`. Comments Algolia has but `kids` doesn't (e.g. just posted) go last.
+3. **Rank** — Algolia lists replies oldest first, but HN ranks them. The official API's `kids` list for an item is in HN's ranked display order, so `select_comments()` fetches it (via `hn.fetch_story()`, 10 at a time) for the root and then, level by level, for each shown comment that has replies. Only those items are fetched, not the whole thread. If one fails, that comment's replies stay oldest first and `ranked` becomes `false`. Comments Algolia has but `kids` doesn't (e.g. just posted) go last.
 4. **Trim** — Keeps the first `--top` top-level comments, then the first `--replies` replies under each, down to `--depth` levels. Deleted or dead comments with no replies are dropped.
-5. **Shape** — Converts each comment's HTML to plain text with `hn_search.clean_text()`, cut to `--max-chars`, and counts what was left out.
+5. **Shape** — Converts each comment's HTML to plain text with `hn.clean_text()`, cut to `--max-chars`, and counts what was left out.
 
 ### Configuration
 
@@ -2658,7 +2691,7 @@ These are set as constants near the top of the file — edit them directly to ch
 | `MAX_TOP_COMMENTS` | 200 | Upper bound for `--top` |
 | `MAX_DEPTH` | 10 | Upper bound for `--depth` |
 
-The ranking requests use `hottest_tech_discussions.py`'s 10-second `REQUEST_TIMEOUT`.
+The ranking requests use [`hn.py`](#hnpy)'s 10-second `REQUEST_TIMEOUT`, and the `--max-chars` default is its `TEXT_CHARS`.
 
 ### API reference
 
@@ -2722,7 +2755,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Notes / limitations
 
-- Requires `hn_search.py`, `hn_thread.py`, their `hottest_tech_discussions.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
+- Requires `hn_search.py`, `hn_thread.py`, their `hn.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
 - Inherits the limitations of [`hn_search.py`](#hn_searchpy) (whole-word matching, text-first relevance ranking, no comment scores, 100 results per search) and [`hn_thread.py`](#hn_threadpy) (a big thread is read as a sample of its highest-ranked comments).
 - A summary of "what HN thinks" is only as representative as the handful of comments retrieved.
 
@@ -2831,7 +2864,7 @@ These are set as constants near the top of the file — edit them directly to ch
 - `normalize_company_name(name)` — Strips a trailing legal-entity suffix from a company name.
 - `stock_mentions_in_title(quote, title)` — Returns `True` if a quote's ticker symbol or normalized company name appears in a discussion title.
 - `find_stock_buzz(limit_per_exchange=10, discussion_limit=50)` — Orchestrates fetching both data sources and matching; returns `(results, stocks, discussions)`.
-- `result_to_dict(result)` — Flattens one `{stock, discussions}` match into the record used for **both** output modes (nested discussion URLs come from `hottest_tech_discussions.discussion_url`).
+- `result_to_dict(result)` — Flattens one `{stock, discussions}` match into the record used for **both** output modes (nested discussion URLs come from [`hn.py`](#hnpy)'s `discussion_url`, reached through `hottest_tech_discussions`).
 - `format_result(rank, row)` — Renders a `result_to_dict()` record as a text block: symbol, name and exchange; volume, price and % change; then each matching discussion's title, score, comment count and link.
 - `parse_args(argv=None)` — Parses `--stock-limit`, `--discussion-limit`, and `--json` CLI flags.
 - `main(argv=None)` — Entry point; fetches, handles top-level network errors, and prints results.

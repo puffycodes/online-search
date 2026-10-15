@@ -4,7 +4,8 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Hacker News API (no API key).
-- Keep get_hottest_tech_discussions() and story_to_dict() importable, for stock_tech_buzz_agent.py and the hottest discussions web app, and discussion_url() and posted_at(), for hn_search.py and hn_thread.py, and fetch_story(), for hn_thread.py.
+- Use hn.py's fetch_json(), fetch_story(), discussion_url() and posted_at().
+- Keep get_hottest_tech_discussions() and story_to_dict() importable, for stock_tech_buzz_agent.py and the hottest discussions web app.
 
 ## Actions
 

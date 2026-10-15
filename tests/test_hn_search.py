@@ -1,4 +1,4 @@
-"""Tests for hn_search: query params, Algolia fetch, hit records, text cleanup, and main()."""
+"""Tests for hn_search: query params, search endpoints, hit records, and main()."""
 
 import datetime as dt
 import json
@@ -7,7 +7,6 @@ import pytest
 import requests
 
 import hn_search as hs
-from helpers import FakeResponse
 
 STORY_HIT = {
     "_tags": ["story", "author_alice", "story_101"],
@@ -75,36 +74,6 @@ class TestBuildParams:
         assert hs.build_params("x", limit=25)["hitsPerPage"] == 25
 
 
-class TestFetchJson:
-    def test_success(self, monkeypatch):
-        captured = {}
-
-        def fake_get(url, params, timeout):
-            captured.update(url=url, params=params, timeout=timeout)
-            return FakeResponse(json_data={"hits": []})
-
-        monkeypatch.setattr(hs.requests, "get", fake_get)
-        assert hs.fetch_json("https://u", {"a": 1}) == {"hits": []}
-        assert captured == {"url": "https://u", "params": {"a": 1}, "timeout": hs.REQUEST_TIMEOUT}
-
-    def test_algolia_message_surfaced(self, monkeypatch):
-        response = FakeResponse(
-            status_code=400,
-            json_data={"message": "Invalid syntax for numeric condition:x", "status": 400},
-        )
-        monkeypatch.setattr(hs.requests, "get", lambda url, params, timeout: response)
-        with pytest.raises(requests.HTTPError, match="400: Invalid syntax"):
-            hs.fetch_json("https://u", {})
-
-    def test_error_without_message_uses_raise_for_status(self, monkeypatch):
-        response = FakeResponse(
-            status_code=503, raise_for_status=requests.HTTPError("503 Server Error")
-        )
-        monkeypatch.setattr(hs.requests, "get", lambda url, params, timeout: response)
-        with pytest.raises(requests.HTTPError, match="503 Server Error"):
-            hs.fetch_json("https://u", {})
-
-
 class TestSearch:
     def test_relevance_endpoint(self, monkeypatch):
         captured = {}
@@ -134,23 +103,6 @@ class TestSearch:
     def test_missing_fields(self, monkeypatch):
         monkeypatch.setattr(hs, "fetch_json", lambda url, params: {})
         assert hs.search("bun") == ([], 0)
-
-
-class TestCleanText:
-    def test_empty(self):
-        assert hs.clean_text(None) is None
-        assert hs.clean_text("") is None
-        assert hs.clean_text("<p>") is None
-
-    def test_paragraphs_tags_and_entities(self):
-        text = hs.clean_text("It&#x27;s <i>fast</i>.<p>See <a href=\"u\">link</a> &amp; more")
-        assert text == "It's fast.\n\nSee link & more"
-
-    def test_truncated(self):
-        assert hs.clean_text("abcdefghij", max_chars=4) == "abcd..."
-
-    def test_no_limit(self):
-        assert hs.clean_text("a" * 1000, max_chars=0) == "a" * 1000
 
 
 class TestHitToDict:

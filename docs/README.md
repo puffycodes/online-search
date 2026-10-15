@@ -39,6 +39,6 @@ the repo root, in a folder named after the script without `.py` (e.g.
 [`features/script/weather/features.md`](features/script/weather/features.md) for
 `weather.py`). Each spec states which data source and shared modules the script uses,
 its inputs and defaults, what it outputs (including the `--json` shape), and how it
-fails. The four helper modules with no command line (`cli_utils.py`, `indicators.py`,
-`valuation.py`, `yahoo_finance.py`) have no spec here; `indicators.py` and
+fails. The five helper modules with no command line (`cli_utils.py`, `hn.py`,
+`indicators.py`, `valuation.py`, `yahoo_finance.py`) have no spec here; `indicators.py` and
 `valuation.py` are explained in the pages above.

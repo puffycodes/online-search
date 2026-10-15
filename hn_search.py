@@ -19,21 +19,18 @@ readable report.
 
 import argparse
 import datetime as dt
-import html
 import json
 import re
 
 import requests
 
 from cli_utils import die, positive_int
-from hottest_tech_discussions import discussion_url, posted_at
+from hn import TEXT_CHARS, clean_text, discussion_url, fetch_json, posted_at
 
 SEARCH_URL = "https://hn.algolia.com/api/v1/search"
 SEARCH_BY_DATE_URL = "https://hn.algolia.com/api/v1/search_by_date"
-REQUEST_TIMEOUT = 10
 RESULTS_TO_SHOW = 10
 MAX_RESULTS = 100
-TEXT_CHARS = 600
 
 # --type choice -> Algolia tag. Ask HN and Show HN posts are also stories.
 TYPE_TAGS = {
@@ -42,21 +39,6 @@ TYPE_TAGS = {
     "ask": "ask_hn",
     "show": "show_hn",
 }
-
-
-def fetch_json(url, params=None, timeout=REQUEST_TIMEOUT):
-    response = requests.get(url, params=params, timeout=timeout)
-    if not response.ok:
-        # Algolia explains a rejected request as {"message": "...", "status": 400};
-        # surface that rather than a bare "400 Client Error".
-        try:
-            message = response.json().get("message")
-        except (ValueError, AttributeError):
-            message = None
-        if message:
-            raise requests.HTTPError(f"{response.status_code}: {message}", response=response)
-    response.raise_for_status()
-    return response.json()
 
 
 def _day_start(day):
@@ -100,26 +82,6 @@ def search(query, kind="story", sort="relevance", since=None, until=None,
     url = SEARCH_BY_DATE_URL if sort == "date" else SEARCH_URL
     data = fetch_json(url, build_params(query, kind, since, until, min_points, author, limit))
     return data.get("hits") or [], data.get("nbHits", 0)
-
-
-def clean_text(raw, max_chars=TEXT_CHARS):
-    """Plain text from an HN comment / self-post body (HTML), or None if empty.
-
-    Paragraph tags become blank lines, other tags are dropped (a link keeps
-    its visible text), entities are decoded, and the result is cut to
-    `max_chars` characters with a trailing "..." (0 means no limit).
-    """
-    if not raw:
-        return None
-    text = re.sub(r"<p>", "\n\n", raw)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = html.unescape(text)
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    if not text:
-        return None
-    if max_chars and len(text) > max_chars:
-        text = text[:max_chars].rstrip() + "..."
-    return text
 
 
 def hit_to_dict(rank, hit, max_chars=TEXT_CHARS):

@@ -13,15 +13,13 @@ readable report.
 import argparse
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
 
 import requests
 
 from cli_utils import die, positive_int
+from hn import HN_API_BASE, discussion_url, fetch_json, fetch_story, posted_at
 
-HN_BASE = "https://hacker-news.firebaseio.com/v0"
-TOP_STORIES_URL = f"{HN_BASE}/topstories.json"
-ITEM_URL = f"{HN_BASE}/item/{{item_id}}.json"
+TOP_STORIES_URL = f"{HN_API_BASE}/topstories.json"
 
 # How many of the current top stories to inspect per requested result,
 # before ranking them by score. HN's topstories list is already ranked by
@@ -30,20 +28,6 @@ ITEM_URL = f"{HN_BASE}/item/{{item_id}}.json"
 # the default 10), and it scales so --limit 50 isn't capped at a fixed pool.
 CANDIDATE_POOL_FACTOR = 4
 RESULTS_TO_SHOW = 10
-REQUEST_TIMEOUT = 10
-
-
-def fetch_json(url):
-    response = requests.get(url, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
-    return response.json()
-
-
-def fetch_story(item_id):
-    try:
-        return fetch_json(ITEM_URL.format(item_id=item_id))
-    except (requests.RequestException, ValueError):
-        return None
 
 
 def get_hottest_tech_discussions(limit=RESULTS_TO_SHOW):
@@ -55,18 +39,6 @@ def get_hottest_tech_discussions(limit=RESULTS_TO_SHOW):
     stories = [s for s in stories if s and s.get("type") == "story"]
     stories.sort(key=lambda s: s.get("score", 0), reverse=True)
     return stories[:limit]
-
-
-def discussion_url(story):
-    """The Hacker News comments page for a story/item."""
-    return f"https://news.ycombinator.com/item?id={story['id']}"
-
-
-def posted_at(story):
-    """Story submission time as a 'YYYY-MM-DD HH:MM UTC' string."""
-    return datetime.fromtimestamp(story.get("time", 0), tz=timezone.utc).strftime(
-        "%Y-%m-%d %H:%M UTC"
-    )
 
 
 def story_to_dict(rank, story):
