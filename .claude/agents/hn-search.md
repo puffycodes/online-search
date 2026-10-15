@@ -11,7 +11,7 @@ You search the Hacker News archive for stories and comments about what the user 
 Run the tool with JSON output so you can parse it reliably:
 
 ```bash
-python3 hn_search.py "QUERY" [--type story|comment|ask|show] [--sort relevance|date] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--min-points N] [--author USERNAME] [--limit N] [--max-chars N] --json
+python3 hn_search.py "QUERY" [--type story|comment|ask|show] [--sort relevance|date] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--min-points N] [--author USERNAME] [--story ITEM] [--limit N] [--max-chars N] --json
 ```
 
 - Run from the repository root (where `hn_search.py` lives), or use a full path.
@@ -21,12 +21,13 @@ python3 hn_search.py "QUERY" [--type story|comment|ask|show] [--sort relevance|d
 - `--since` / `--until` — inclusive UTC dates; turn the user's wording into dates relative to today ("last year", "since June", "in 2023").
 - `--min-points N` — only stories with at least N points; useful with `--sort date` to skip noise. Not allowed with `--type comment` (exit 2).
 - `--author` — an HN username, if the user asks about one person's posts or comments.
+- `--story ITEM` — only comments in one thread: the **story's** id or `news.ycombinator.com/item?id=N` link (a comment's id matches nothing). Implies `--type comment`. Use it for "what did people in that thread say about X?" — `hn_thread.py` reads a thread's top comments, this searches all of them.
 - `--limit` — default 10, at most 100. `--max-chars` — comment / self-post text is cut to 600 characters by default; raise it (or `0` for no limit) when you need whole comments to summarize opinions.
-- On success, stdout is a JSON object: `query`, `type`, `sort`, `since`, `until`, `total_matches` (all matches, not just those returned), and `results`, a list of:
+- On success, stdout is a JSON object: `query`, `type`, `sort`, `since`, `until`, `story`, `total_matches` (all matches, not just those returned), and `results`, a list of:
   - stories — `rank`, `type: "story"`, `title`, `author`, `posted` (`YYYY-MM-DD HH:MM UTC`), `score`, `comments`, `url` (the linked article, or the HN thread for a self-post), `discussion_url` (the HN thread), `text` (a self-post's body, else `null`);
   - comments — the same keys, with `title` being the story the comment is on, `url` the comment's own HN page, `discussion_url` the story's thread, `score` / `comments` `null`, and `text` the comment.
 - On failure:
-  - Exit code **2** means an invalid argument (empty query, bad date, `--until` before `--since`, `--min-points` with comments, a limit over 100, an invalid username). Fix the arguments rather than retrying.
+  - Exit code **2** means an invalid argument (empty query, bad date, `--until` before `--since`, `--min-points` with comments, a limit over 100, an invalid username, a bad `--story` or `--story` with a non-comment `--type`). Fix the arguments rather than retrying.
   - Exit code **1** with `{"error": "..."}` on stderr is a network/API failure. Report it plainly; retry at most once, only for a transient-looking network error.
 
 ## Reading a thread
@@ -42,7 +43,7 @@ python3 hn_thread.py "ITEM" [--top N] [--replies N] [--depth N] [--max-chars N] 
 - On success, stdout is a JSON object: `title`, `author`, `posted`, `score`, `url`, `discussion_url`, `story_url`, `text`, `total_comments`, `top_level_comments`, `shown_comments`, `ranked`, and `comments` — a tree of `{id, author, posted, depth, url, text, reply_count, total_replies, replies}`. `reply_count` / `total_replies` tell you how much sits under a comment beyond what was shown. `ranked: false` means some replies are oldest first instead of HN's order.
 - On failure: exit code **2** is a bad item or option — fix it; exit code **1** with `{"error": "No Hacker News item with id N."}` is reported as-is; any other exit-1 error is retried at most once if it looks transient.
 
-For "what does HN think of X?", a good chain is: a story search to find the biggest thread(s), then `hn_thread.py` on the top one or two, plus a comment search for recent views.
+For "what does HN think of X?", a good chain is: a story search to find the biggest thread(s), then `hn_thread.py` on the top one or two, plus a comment search for recent views. To follow one topic inside a big thread, run `hn_search.py "TOPIC" --story ITEM` on it.
 
 ## Reporting results
 

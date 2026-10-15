@@ -2235,6 +2235,7 @@ Shared helper module for the Hacker News scripts: [`hottest_tech_discussions.py`
 
 - `fetch_json(url, params=None, timeout=REQUEST_TIMEOUT)` — GETs the URL and returns parsed JSON. On an error status it raises `requests.HTTPError`; when the Algolia API explains a rejected request (`{"message": ...}`), the error is `"<status>: <message>"` rather than a bare status line. Used by all three scripts (`hn_thread.py` passes a 30-second timeout for big comment trees).
 - `fetch_story(item_id)` — One item from the official HN API, or `None` if the request or JSON parsing fails (so one bad item doesn't sink a batch) or the item doesn't exist. Used by `hottest_tech_discussions.py` for story details and by `hn_thread.py` for HN's ranked comment order (an item's `kids`).
+- `parse_item_id(value)` — An item id from a number (`48843352`) or an HN item link (`https://news.ycombinator.com/item?id=48843352`, other query parameters allowed); raises `ValueError` otherwise. Used by `hn_thread.py`'s `ITEM` and `hn_search.py`'s `--story`.
 - `discussion_url(story)` — The `https://news.ycombinator.com/item?id=<id>` page for an item (any dict with an `id`).
 - `posted_at(story)` — An item's `time` (Unix seconds) as `YYYY-MM-DD HH:MM UTC`; a missing time gives the Unix epoch.
 - `clean_text(raw, max_chars=TEXT_CHARS)` — Plain text from HN's HTML: `<p>` becomes a blank line, other tags are dropped (a link keeps its visible text), entities are decoded, extra blank lines are collapsed, and the result is cut to `max_chars` with `...` (0 = no limit). Returns `None` for empty input.
@@ -2416,7 +2417,7 @@ Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fe
 ### Usage
 
 ```bash
-python3 hn_search.py QUERY [--type {story,comment,ask,show}] [--sort {relevance,date}] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--min-points N] [--author USERNAME] [--limit N] [--max-chars N] [--json]
+python3 hn_search.py QUERY [--type {story,comment,ask,show}] [--sort {relevance,date}] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--min-points N] [--author USERNAME] [--story ITEM] [--limit N] [--max-chars N] [--json]
 ```
 
 | Flag | Default | Description |
@@ -2428,6 +2429,7 @@ python3 hn_search.py QUERY [--type {story,comment,ask,show}] [--sort {relevance,
 | `--until` | — | Only items posted on or before this UTC date |
 | `--min-points N` | — | Only stories with a score of at least `N`. Not allowed with `--type comment` (comments have no public score) |
 | `--author USERNAME` | — | Only items posted by this HN user |
+| `--story ITEM` | — | Only comments in one story's thread: the story's id or HN link. Implies `--type comment` (any other `--type` is an error). Pairs with [`hn_thread.py`](#hn_threadpy), which reads a thread's top comments — this searches all of them |
 | `--limit N` | 10 | Number of results, 1-100 |
 | `--max-chars N` | 600 | Cut comment / self-post text to `N` characters (with `...`); `0` keeps it whole |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
@@ -2486,6 +2488,7 @@ python3 hn_search.py "rust" --type show --sort date --min-points 100 --limit 1 -
   "sort": "date",
   "since": null,
   "until": null,
+  "story": null,
   "total_matches": 233,
   "results": [
     {
@@ -2509,12 +2512,35 @@ python3 hn_search.py "rust" --type show --sort date --min-points 100 --limit 1 -
 - **Stories** — `url` is the linked article, or the HN thread for a self-post (Ask HN, most Show HN); `text` is a self-post's body, or `null`.
 - **Comments** — `type` is `"comment"`, `title` is the story the comment is on, `url` is the comment's own HN page, `discussion_url` the story's thread, `score` and `comments` are `null`, and `text` is the comment.
 
+`story` is the `--story` id, or `null`.
+
+#### Searching one thread (`--story`)
+
+```bash
+python3 hn_search.py fuzzing --story https://news.ycombinator.com/item?id=48843352 --limit 1 --max-chars 200
+```
+
+```
+Searching Hacker News for 'fuzzing'...
+
+23 matching comments in thread 48843352; showing 1, by relevance.
+
+1. Comment by lolinder on "My thoughts on the Bun Rust rewrite"
+   Posted: 2026-07-13 13:56 UTC
+   Comment: https://news.ycombinator.com/item?id=48892765
+   Discussion: https://news.ycombinator.com/item?id=48843352
+
+   If that's what he meant that doesn't speak well for his communication in this post, because "the Bun team told us that they were not fuzzing anything" is a wildly different claim than "the Bun team to...
+```
+
+`--story` must be the **story's** id: Algolia files every comment under its story, so a comment's id matches nothing. When a `--story` search finds nothing, the report says so.
+
 With `--json`, the leading progress line is suppressed. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
 
 ### How it works
 
-1. **Validate** — Rejects an empty query, a bad date, `--until` before `--since`, `--min-points` with `--type comment`, a `--limit` outside 1-100, or an invalid username, before any request.
-2. **Build the query** — `build_params()` maps `--type` to an Algolia tag (`story`, `comment`, `ask_hn`, `show_hn`), adds `author_<USERNAME>` for `--author`, turns `--since` / `--until` into `created_at_i` bounds (00:00 UTC on `--since` up to, but not including, 00:00 UTC the day after `--until`) and `--min-points` into `points>=N`, and sets `typoTolerance=false` and `queryType=prefixNone` so words match whole.
+1. **Validate** — Rejects an empty query, a bad date, `--until` before `--since`, `--min-points` with `--type comment` (or `--story`), a `--story` that isn't an id or HN link or is combined with a `--type` other than `comment`, a `--limit` outside 1-100, or an invalid username, before any request.
+2. **Build the query** — `build_params()` maps `--type` to an Algolia tag (`story`, `comment`, `ask_hn`, `show_hn`), adds `author_<USERNAME>` for `--author` and `story_<ITEM>` for `--story`, turns `--since` / `--until` into `created_at_i` bounds (00:00 UTC on `--since` up to, but not including, 00:00 UTC the day after `--until`) and `--min-points` into `points>=N`, and sets `typoTolerance=false` and `queryType=prefixNone` so words match whole.
 3. **Fetch** — GETs `hn.algolia.com/api/v1/search` (relevance) or `/search_by_date` (newest first) with `hitsPerPage` = `--limit`.
 4. **Shape** — `hit_to_dict()` turns each hit into a story or comment record; `hn.clean_text()` converts the comment / self-post HTML to plain text (paragraphs to blank lines, tags dropped, entities decoded) and cuts it to `--max-chars`.
 
@@ -2534,8 +2560,8 @@ The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` defaul
 
 ### API reference
 
-- `build_params(query, kind="story", since=None, until=None, min_points=None, author=None, limit=10)` — The Algolia query parameters for a search.
-- `search(query, kind="story", sort="relevance", since=None, until=None, min_points=None, author=None, limit=10)` — Runs a search; returns `(hits, total_matches)`.
+- `build_params(query, kind="story", since=None, until=None, min_points=None, author=None, limit=10, story=None)` — The Algolia query parameters for a search.
+- `search(query, kind="story", sort="relevance", since=None, until=None, min_points=None, author=None, limit=10, story=None)` — Runs a search; returns `(hits, total_matches)`.
 - `fetch_json` (which surfaces Algolia's own error message) and `clean_text` come from [`hn.py`](#hnpy).
 - `hit_to_dict(rank, hit, max_chars=600)` — Flattens an Algolia hit into the `{rank, type, title, author, posted, score, comments, url, discussion_url, text}` record used for **both** output modes.
 - `format_hit(row)` — Renders a `hit_to_dict()` record as a multi-line human-readable string.
@@ -2546,7 +2572,7 @@ The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` defaul
 
 - Invalid arguments — see step 1 of How it works above — are rejected by argument parsing (exit code 2), before any request.
 - If the request fails (network error, timeout, non-2xx response, non-JSON body), the script exits 1 with the error on stderr (`{"error": "..."}` with `--json`). When Algolia rejects a request, its own message is the error.
-- No matches is not an error: the script prints `No results found.` (or an empty `results` list with `--json`) and exits 0.
+- No matches is not an error: the script prints `No results found.` (or an empty `results` list with `--json`) and exits 0. With `--story`, the report adds that the id must be a story's, not a comment's.
 
 ### Notes / limitations
 
@@ -2556,6 +2582,7 @@ The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` defaul
 - Story scores and comment counts are as of Algolia's last update of that item, which can lag HN slightly for recent stories.
 - Algolia returns at most 1,000 hits per request; this script caps `--limit` at 100 and doesn't page.
 - Links inside a comment keep their visible text only, which HN itself shortens for long URLs.
+- `--story` can't tell a comment's id from a story with no matching comments — both return nothing.
 
 ---
 
@@ -2563,7 +2590,7 @@ The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` defaul
 
 Reads one [Hacker News](https://news.ycombinator.com/) thread — a story (or a comment) and its comments — in the order HN itself ranks them, trimmed to a readable size: the top N top-level comments, a few replies under each, down to a set depth. Built for summarizing a big discussion found with [`hn_search.py`](#hn_searchpy). Uses the [Algolia HN API](https://hn.algolia.com/api) for the comment tree and the official [Hacker News API](https://github.com/HackerNews/API) for the ranking. No API key or authentication required.
 
-Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `fetch_story`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
+Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `fetch_story`, `parse_item_id`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
 
 ### Requirements
 
@@ -2692,7 +2719,7 @@ The ranking requests use [`hn.py`](#hnpy)'s 10-second `REQUEST_TIMEOUT`, and the
 
 ### API reference
 
-- `parse_item_id(value)` — The item id from a number or an HN item link; raises `ValueError` otherwise.
+- `parse_item_id` (an id from a number or HN link) comes from [`hn.py`](#hnpy).
 - `fetch_tree(item_id)` — The item and its comment tree from Algolia, or `None` for a `404`.
 - `count_comments(node)` — Comments below a node, at any depth.
 - `is_empty(node)` — True for a deleted or dead comment with no replies.
@@ -2739,7 +2766,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Reduces the question to a few distinctive keywords (in the form people write them, since words match whole), and picks `--type` (stories for threads, comments for opinions, Ask/Show HN when asked), `--sort` (relevance for the big threads, date for "lately"), and any date window, minimum score or author from the user's wording.
 2. Runs `python3 hn_search.py "QUERY" [...] --json` from the repo root — for "what does HN think of X?", a story search to find the biggest threads and a comment search for recent views.
-3. Reads a thread the user linked, or the biggest one or two a search found, with `python3 hn_thread.py ITEM [...] --json`: the top comments in HN's ranked order with a few replies each, more for a very large thread.
+3. Reads a thread the user linked, or the biggest one or two a search found, with `python3 hn_thread.py ITEM [...] --json`; for "what did that thread say about X?", searches all of the thread's comments with `hn_search.py "X" --story ITEM` instead: the top comments in HN's ranked order with a few replies each, more for a very large thread.
 4. Reports threads as a compact list (title, score, comments, date, links), or summarizes the views in the comments it retrieved — for a thread, saying how many of its highest-ranked comments it read — grouping similar opinions, noting disagreement, linking its sources and saying how many comments it read — a sample, not a consensus. An exit code 2 means it fixes the arguments rather than retrying; a network-looking failure is retried at most once; an empty result is reported as such, with a broader search suggested or run.
 
 ### Configuration

@@ -57,6 +57,10 @@ class TestBuildParams:
     def test_type_tags(self, kind, tag):
         assert hs.build_params("x", kind=kind)["tags"] == tag
 
+    def test_story_added_to_tags(self):
+        params = hs.build_params("x", kind="comment", author="pg", story=48843352)
+        assert params["tags"] == "comment,author_pg,story_48843352"
+
     def test_author_added_to_tags(self):
         assert hs.build_params("x", kind="comment", author="pg")["tags"] == "comment,author_pg"
 
@@ -99,6 +103,17 @@ class TestSearch:
         monkeypatch.setattr(hs, "fetch_json", fake_fetch)
         assert hs.search("bun", sort="date") == ([], 0)
         assert captured["url"] == hs.SEARCH_BY_DATE_URL
+
+    def test_story_passed_through(self, monkeypatch):
+        captured = {}
+
+        def fake_fetch(url, params):
+            captured.update(params)
+            return {"hits": [], "nbHits": 0}
+
+        monkeypatch.setattr(hs, "fetch_json", fake_fetch)
+        hs.search("fuzzing", kind="comment", story=7)
+        assert captured["tags"] == "comment,story_7"
 
     def test_missing_fields(self, monkeypatch):
         monkeypatch.setattr(hs, "fetch_json", lambda url, params: {})
@@ -191,6 +206,16 @@ class TestParseArgs:
         assert args.max_chars == hs.TEXT_CHARS
         assert args.json is False
 
+    @pytest.mark.parametrize("argv", [
+        ["fuzzing", "--story", "48843352"],
+        ["fuzzing", "--story", "https://news.ycombinator.com/item?id=48843352"],
+        ["fuzzing", "--story", "48843352", "--type", "comment"],
+    ])
+    def test_story_implies_comments(self, argv):
+        args = hs.parse_args(argv)
+        assert args.story == 48843352
+        assert args.type == "comment"
+
     def test_flags(self):
         args = hs.parse_args([
             "bun", "--type", "ask", "--sort", "date", "--since", "2024-01-01",
@@ -219,6 +244,11 @@ class TestParseArgs:
         ["bun", "--limit", str(hs.MAX_RESULTS + 1)],
         ["bun", "--max-chars", "-5"],
         ["bun", "--author", "bad name"],
+        ["bun", "--story", "abc"],
+        ["bun", "--story", "https://example.com/?id=5"],
+        ["bun", "--story", "5", "--type", "story"],
+        ["bun", "--story", "5", "--type", "ask"],
+        ["bun", "--story", "5", "--min-points", "1"],
     ])
     def test_invalid_rejected(self, argv):
         with pytest.raises(SystemExit) as exc:
@@ -243,6 +273,7 @@ class TestMain:
         assert payload["sort"] == "relevance"
         assert payload["since"] == "2024-01-01"
         assert payload["until"] is None
+        assert payload["story"] is None
         assert payload["total_matches"] == 777
         assert payload["results"][0]["title"] == "Bun 1.0"
         assert captured["limit"] == 3
@@ -264,7 +295,37 @@ class TestMain:
     def test_no_results_text(self, monkeypatch, capsys):
         monkeypatch.setattr(hs, "search", self._fake_search({}, hits=[], total=0))
         hs.main(["zzqq"])
-        assert "No results found." in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "No results found." in out
+        assert "--story" not in out
+
+    def test_story_search(self, monkeypatch, capsys):
+        captured = {}
+        monkeypatch.setattr(
+            hs, "search", self._fake_search(captured, hits=[COMMENT_HIT], total=23)
+        )
+        hs.main(["fuzzing", "--story", "https://news.ycombinator.com/item?id=101"])
+        out = capsys.readouterr().out
+        assert "23 matching comments in thread 101; showing 1, by relevance." in out
+        assert captured["story"] == 101
+        assert captured["kind"] == "comment"
+
+    def test_story_search_json(self, monkeypatch, capsys):
+        monkeypatch.setattr(hs, "search", self._fake_search({}, hits=[COMMENT_HIT], total=1))
+        hs.main(["fuzzing", "--story", "101", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["story"] == 101
+        assert payload["type"] == "comment"
+
+    def test_story_no_results_hint(self, monkeypatch, capsys):
+        monkeypatch.setattr(hs, "search", self._fake_search({}, hits=[], total=0))
+        hs.main(["fuzzing", "--story", "102"])
+        assert "--story needs the story's id" in capsys.readouterr().out
+
+    def test_singular_counts(self, monkeypatch, capsys):
+        monkeypatch.setattr(hs, "search", self._fake_search({}, total=1))
+        hs.main(["bun"])
+        assert "1 matching story; showing 1" in capsys.readouterr().out
 
     def test_no_results_json(self, monkeypatch, capsys):
         monkeypatch.setattr(hs, "search", self._fake_search({}, hits=[], total=0))

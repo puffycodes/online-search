@@ -17,6 +17,7 @@
 - Turn the user's wording into a date window relative to today, a minimum score, or an author, if given.
 - To summarize a particular thread (one the user links, or the biggest one a search found), read it: its top comments in HN's ranked order, with a few replies under each; read more for a very large thread.
     - For "what does HN think of {{Topic}}", find the biggest threads, read the top one or two, and search recent comments.
+    - For "what did people in {{Thread}} say about {{Topic}}", search all of that thread's comments for the topic (the story's id, not a comment's).
 - Search Hacker News.
     - If the options are rejected, fix them rather than retrying.
     - Retry at most once, only for a transient network error.

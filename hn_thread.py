@@ -20,13 +20,20 @@ readable report.
 
 import argparse
 import json
-import re
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
 from cli_utils import die, positive_int, use_utf8_output
-from hn import TEXT_CHARS, clean_text, discussion_url, fetch_json, fetch_story, posted_at
+from hn import (
+    TEXT_CHARS,
+    clean_text,
+    discussion_url,
+    fetch_json,
+    fetch_story,
+    parse_item_id,
+    posted_at,
+)
 
 ITEM_URL = "https://hn.algolia.com/api/v1/items/{item_id}"
 # A big thread is ~500 KB from Algolia and takes a few seconds.
@@ -36,19 +43,6 @@ REPLIES_PER_COMMENT = 3
 DEPTH = 2
 MAX_TOP_COMMENTS = 200
 MAX_DEPTH = 10
-
-
-def parse_item_id(value):
-    """An HN item id from a number or a news.ycombinator.com/item?id=N URL."""
-    value = value.strip()
-    if value.isdigit():
-        return int(value)
-    match = re.search(r"news\.ycombinator\.com/item\?(?:.*&)?id=(\d+)", value)
-    if match:
-        return int(match.group(1))
-    raise ValueError(
-        f"expected an HN item id or a news.ycombinator.com/item?id=N link, got {value!r}"
-    )
 
 
 def fetch_tree(item_id):

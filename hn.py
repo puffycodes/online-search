@@ -3,8 +3,9 @@
 Shared Hacker News helpers for hottest_tech_discussions.py, hn_search.py
 and hn_thread.py: JSON fetching (surfacing the Algolia API's own error
 message), fetching one item from the official Hacker News API
-(https://github.com/HackerNews/API), the item's HN page link, its posting
-time, and converting HN's HTML comment / self-post text to plain text.
+(https://github.com/HackerNews/API), reading an item id from a number or
+an HN link, the item's HN page link, its posting time, and converting HN's
+HTML comment / self-post text to plain text.
 
 Not a CLI itself - this module is imported, not run.
 """
@@ -47,6 +48,19 @@ def fetch_story(item_id):
         return fetch_json(HN_ITEM_URL.format(item_id=item_id))
     except (requests.RequestException, ValueError):
         return None
+
+
+def parse_item_id(value):
+    """An HN item id from a number or a news.ycombinator.com/item?id=N URL."""
+    value = value.strip()
+    if value.isdigit():
+        return int(value)
+    match = re.search(r"news\.ycombinator\.com/item\?(?:.*&)?id=(\d+)", value)
+    if match:
+        return int(match.group(1))
+    raise ValueError(
+        f"expected an HN item id or a news.ycombinator.com/item?id=N link, got {value!r}"
+    )
 
 
 def discussion_url(story):

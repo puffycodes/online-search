@@ -4,7 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Algolia Hacker News API (no API key) for the comment tree, and the official Hacker News API (no API key) for HN's ranked comment order.
-- Use hn.py's fetch_json(), fetch_story(), clean_text(), discussion_url() and posted_at().
+- Use hn.py's fetch_json(), fetch_story(), parse_item_id(), clean_text(), discussion_url() and posted_at().
 
 ## Actions
 

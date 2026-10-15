@@ -14,9 +14,7 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **Search comments within one thread** (Extending `hn_search.py`): pairs with
-   `hn_thread.py` to search all of a big thread's comments, not just its top 60-80.
-2. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
+1. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
    instructions-only change to the `hottest-tech-discussion-summary` agent, but it
    lengthens an already multi-step workflow.
 
@@ -55,8 +53,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### Extending `hn_search.py`
 
-- [ ] **Search comments within one thread**: a `--story ID` option adding the
-  `story_<id>` tag, for "what did people in that thread say about X?".
 - [ ] **Less noise in comment searches**: a bare `"bun"` comment search also finds
   burger buns and job-post skill lists (about 1 in 5 of a recent sample). Options:
   agent guidance to add context words, or dropping comments whose story is clearly

@@ -6,7 +6,9 @@ Algolia Hacker News Search API (https://hn.algolia.com/api).
 Unlike hottest_tech_discussions.py, which only sees the current front
 page, this searches the whole HN archive: stories (or just Ask HN / Show
 HN posts) or comments, ranked by relevance or newest first, optionally
-limited to a date window, a minimum score, or one author. Words in the
+limited to a date window, a minimum score, one author, or the comments of
+one story's thread (--story, which pairs with hn_thread.py: that reads a
+thread's top comments, this searches all of them). Words in the
 query are matched whole, with no typo tolerance or prefix matching, so
 "bun" doesn't also match "bundle" or "build".
 
@@ -25,7 +27,7 @@ import re
 import requests
 
 from cli_utils import die, positive_int, use_utf8_output
-from hn import TEXT_CHARS, clean_text, discussion_url, fetch_json, posted_at
+from hn import TEXT_CHARS, clean_text, discussion_url, fetch_json, parse_item_id, posted_at
 
 SEARCH_URL = "https://hn.algolia.com/api/v1/search"
 SEARCH_BY_DATE_URL = "https://hn.algolia.com/api/v1/search_by_date"
@@ -47,16 +49,19 @@ def _day_start(day):
 
 
 def build_params(query, kind="story", since=None, until=None, min_points=None,
-                 author=None, limit=RESULTS_TO_SHOW):
+                 author=None, limit=RESULTS_TO_SHOW, story=None):
     """The Algolia query parameters for a search.
 
     `since` / `until` are inclusive dates (UTC days); `min_points` only
-    applies to stories. Typo tolerance and prefix matching are turned off so
-    query words match whole words only.
+    applies to stories; `story` limits the search to one story's thread (it
+    must be the story's id - a comment's id matches nothing). Typo tolerance
+    and prefix matching are turned off so query words match whole words only.
     """
     tags = TYPE_TAGS[kind]
     if author:
         tags = f"{tags},author_{author}"
+    if story:
+        tags = f"{tags},story_{story}"
     filters = []
     if since:
         filters.append(f"created_at_i>={_day_start(since)}")
@@ -77,10 +82,11 @@ def build_params(query, kind="story", since=None, until=None, min_points=None,
 
 
 def search(query, kind="story", sort="relevance", since=None, until=None,
-           min_points=None, author=None, limit=RESULTS_TO_SHOW):
+           min_points=None, author=None, limit=RESULTS_TO_SHOW, story=None):
     """Run a search; returns (hits, total_matches)."""
     url = SEARCH_BY_DATE_URL if sort == "date" else SEARCH_URL
-    data = fetch_json(url, build_params(query, kind, since, until, min_points, author, limit))
+    params = build_params(query, kind, since, until, min_points, author, limit, story)
+    data = fetch_json(url, params)
     return data.get("hits") or [], data.get("nbHits", 0)
 
 
@@ -158,6 +164,13 @@ def _date(value):
         raise argparse.ArgumentTypeError(f"invalid date {value!r}, expected YYYY-MM-DD")
 
 
+def _item_id(value):
+    try:
+        return parse_item_id(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc))
+
+
 def _limit(value):
     """argparse type for --limit: 1 to MAX_RESULTS."""
     number = positive_int(value)
@@ -184,7 +197,6 @@ def parse_args(argv=None):
     parser.add_argument(
         "--type",
         choices=list(TYPE_TAGS),
-        default="story",
         help="What to search: story (default), comment, ask (Ask HN) or show (Show HN)",
     )
     parser.add_argument(
@@ -201,6 +213,12 @@ def parse_args(argv=None):
         help="Only stories with at least this score (not for --type comment)",
     )
     parser.add_argument("--author", help="Only items posted by this HN username")
+    parser.add_argument(
+        "--story",
+        type=_item_id,
+        metavar="ITEM",
+        help="Only comments in this story's thread: a story id or HN link (implies --type comment)",
+    )
     parser.add_argument(
         "--limit",
         type=_limit,
@@ -221,6 +239,11 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if not args.query.strip():
         parser.error("the search query must not be empty")
+    if args.story:
+        if args.type not in (None, "comment"):
+            parser.error(f"--story searches a thread's comments; it can't be combined with --type {args.type}")
+        args.type = "comment"
+    args.type = args.type or "story"
     if args.since and args.until and args.until < args.since:
         parser.error("--until must not be before --since")
     if args.min_points is not None and args.type == "comment":
@@ -247,6 +270,7 @@ def main(argv=None):
             min_points=args.min_points,
             author=args.author,
             limit=args.limit,
+            story=args.story,
         )
     except (requests.RequestException, ValueError) as exc:
         die(str(exc), args.json)
@@ -260,6 +284,7 @@ def main(argv=None):
             "sort": args.sort,
             "since": args.since.isoformat() if args.since else None,
             "until": args.until.isoformat() if args.until else None,
+            "story": args.story,
             "total_matches": total,
             "results": rows,
         }, indent=2))
@@ -267,10 +292,16 @@ def main(argv=None):
 
     if not rows:
         print("No results found.")
+        if args.story:
+            print("(--story needs the story's id; a comment's id matches nothing.)")
         return
 
-    noun = "comments" if args.type == "comment" else "stories"
-    print(f"{total} matching {noun}; showing {len(rows)}, by {args.sort}.\n")
+    if args.type == "comment":
+        noun = "comment" if total == 1 else "comments"
+    else:
+        noun = "story" if total == 1 else "stories"
+    where = f" in thread {args.story}" if args.story else ""
+    print(f"{total} matching {noun}{where}; showing {len(rows)}, by {args.sort}.\n")
     for row in rows:
         print(format_hit(row))
         print()

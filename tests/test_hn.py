@@ -1,4 +1,4 @@
-"""Tests for hn: JSON fetching, HN item fetch, link/time helpers, and HTML text cleanup."""
+"""Tests for hn: JSON fetching, HN item fetch, item ids, link/time helpers, and HTML text cleanup."""
 
 import pytest
 import requests
@@ -77,6 +77,23 @@ class TestFetchStory:
 
         monkeypatch.setattr(hn, "fetch_json", boom)
         assert hn.fetch_story(1) is None
+
+
+class TestParseItemId:
+    @pytest.mark.parametrize("value, expected", [
+        ("48843352", 48843352),
+        (" 42 ", 42),
+        ("https://news.ycombinator.com/item?id=48843352", 48843352),
+        ("news.ycombinator.com/item?id=7", 7),
+        ("https://news.ycombinator.com/item?p=2&id=99", 99),
+    ])
+    def test_valid(self, value, expected):
+        assert hn.parse_item_id(value) == expected
+
+    @pytest.mark.parametrize("value", ["", "abc", "https://example.com/?id=5", "-3"])
+    def test_invalid(self, value):
+        with pytest.raises(ValueError):
+            hn.parse_item_id(value)
 
 
 class TestLinkAndTime:
