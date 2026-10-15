@@ -14,9 +14,20 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
+1. **Upgrades/downgrades history** (Finance): one more `quoteSummary` module, likely in
+   `stock_analyst_targets.py`; adds the firm-level actions behind the agent's monthly
+   rating counts.
+2. **Benchmark overlay** (Finance): a `--benchmark ^GSPC` option for
+   `stock_rebased_chart.py`, drawn distinct from the compared stocks; no new data source.
+3. **`url_metadata.py`** (Web pages): title, description, OpenGraph tags and canonical
+   URL, reusing the `url_*` validation and BeautifulSoup; `url-summary` could use it to
+   label pages.
+4. **Less noise in comment searches** (Extending `hn_search.py`): agent guidance to add
+   context words or prefer `--story`; instructions-only, about 1 in 5 off-topic today.
+5. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
    instructions-only change to the `hottest-tech-discussion-summary` agent, but it
-   lengthens an already multi-step workflow.
+   lengthens an already multi-step workflow. Open questions: search only or also read
+   the top earlier thread, always on or on request, and how far back counts as earlier.
 
 ## Weather and environment
 
