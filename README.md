@@ -56,8 +56,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`web_search_exa.py`](#web_search_exapy) — top web search results for a query, via the Exa neural/semantic Search API (requires a free `EXA_API_KEY`)
 - [`web_search_perplexity.py`](#web_search_perplexitypy) — a synthesized, cited answer to a query, via the Perplexity Sonar API (requires a paid `PERPLEXITY_API_KEY`; a different output shape from the other five — see its section below)
 - [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds (`web_search_perplexity.py` is a standalone tool, not part of this fallback chain)
-- [`url_availability.py`](#url_availabilitypy) — checks whether a web page at a given URL is reachable, via an HTTP GET request and status-code classification (no API key)
-- [`.claude/agents/url-availability.md`](#claude-code-agent-url-availability) — Claude Code subagent that calls `url_availability.py` and reports whether a named URL is up, down, or returning an error
+- [`url_availability.py`](#url_availabilitypy) — checks whether a web page at a given URL is reachable, via an HTTP GET request and status-code classification, optionally finding a dead page's last Wayback Machine copy (no API key)
+- [`.claude/agents/url-availability.md`](#claude-code-agent-url-availability) — Claude Code subagent that calls `url_availability.py` and reports whether a named URL is up, down, or returning an error, with a dead page's Wayback Machine copy on request
 - [`url_content.py`](#url_contentpy) — retrieves the raw content (HTML/text/JSON/etc.) of a web page at a given URL, via an HTTP GET request, with an optional `--text` mode (BeautifulSoup) to extract just the human-readable text (no API key)
 - [`.claude/agents/url-content.md`](#claude-code-agent-url-content) — Claude Code subagent that calls `url_content.py` and reports or summarizes the content at a named URL
 - [`url_links.py`](#url_linkspy) — retrieves a web page at a given URL and extracts every hyperlink (`<a href>`) in its HTML content, resolved to absolute URLs, via BeautifulSoup (no API key)
@@ -3440,7 +3440,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ## url_availability.py
 
-Checks whether a web page at a given URL is reachable, by making an HTTP GET request and inspecting the response. A `4xx`/`5xx` status is reported as unavailable, not just a connection failure — so a live server returning "404 Not Found" is correctly distinguished from an unreachable host. No API key required.
+Checks whether a web page at a given URL is reachable, by making an HTTP GET request and inspecting the response. A `4xx`/`5xx` status is reported as unavailable, not just a connection failure — so a live server returning "404 Not Found" is correctly distinguished from an unreachable host. With `--wayback`, a page that isn't available is also looked up in the Internet Archive's [Wayback Machine](https://web.archive.org/) and its most recent archived copy is reported. No API key required.
 
 ### Requirements
 
@@ -3450,13 +3450,14 @@ Checks whether a web page at a given URL is reachable, by making an HTTP GET req
 ### Usage
 
 ```bash
-python3 url_availability.py URL [--timeout SECONDS] [--json]
+python3 url_availability.py URL [--timeout SECONDS] [--wayback] [--json]
 ```
 
 | Flag | Default | Description |
 |---|---|---|
 | `URL` (positional) | — | URL to check, e.g. `https://example.com`; must start with `http://` or `https://` |
-| `--timeout SECONDS` | 10 | Request timeout in seconds |
+| `--timeout SECONDS` | 10 | Request timeout in seconds, for the page and for the Wayback Machine lookup |
+| `--wayback` | off | If the page isn't available, also look up its most recent archived copy in the Wayback Machine |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
@@ -3488,11 +3489,53 @@ python3 url_availability.py https://example.com/missing --json
 
 With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
 
+#### Wayback Machine lookup (`--wayback`)
+
+```bash
+python3 url_availability.py https://example.com/gone --wayback
+```
+
+```
+Checking: https://example.com/gone
+
+URL: https://example.com/gone
+Status: NOT AVAILABLE (404 Not Found)
+Response time: 118 ms
+Archived copy: http://web.archive.org/web/20240312094501/https://example.com/gone
+  Archived 2024-03-12 09:45:01 UTC; page status then: 200
+```
+
+With `--json`, a page that isn't available gets two more fields:
+
+```json
+{
+  "url": "https://example.com/gone",
+  "available": false,
+  "status_code": 404,
+  "reason": "Not Found",
+  "final_url": "https://example.com/gone",
+  "elapsed_ms": 118,
+  "archived": {
+    "url": "http://web.archive.org/web/20240312094501/https://example.com/gone",
+    "timestamp": "20240312094501",
+    "archived_at": "2024-03-12T09:45:01Z",
+    "status": 200
+  },
+  "archive_error": null
+}
+```
+
+- `archived` is `null` when the archive has no copy (the report says `Archived copy: none found in the Wayback Machine`). `status` is the page's HTTP status when it was archived, so a snapshot can itself be a 404 or a redirect.
+- `archive_error` is `null`, or why the lookup failed — e.g. `429 Client Error: Too Many Requests` when archive.org rate-limits. A failed lookup doesn't fail the check: the dead-page result is still printed and the exit code is 0.
+- If the server can't be reached at all, `--wayback` reports that as a result instead of an error exit: `available` is `false`, `status_code` / `reason` / `final_url` / `elapsed_ms` are `null`, `error` holds the connection error, and the report shows `Status: NOT REACHABLE (<error>)` followed by the archived copy.
+- A page that is available is never looked up, and without `--wayback` the output has no `archived` / `archive_error` fields.
+
 ### How it works
 
 1. **Validate the URL** — Rejects a URL that doesn't start with `http://` or `https://` before making any request.
 2. **Fetch** — Issues a `GET` (not `HEAD` — some servers block or mishandle `HEAD`, which would produce false negatives) with a browser-like `User-Agent`, following redirects, timing the round trip.
-3. **Classify** — A response status code under 400 is `available: true`; `4xx`/`5xx` is `available: false`. Connection-level failures (DNS, timeout, refused connection, ...) are caught separately and reported as an error, not as `available: false`.
+3. **Classify** — A response status code under 400 is `available: true`; `4xx`/`5xx` is `available: false`. Connection-level failures (DNS, timeout, refused connection, ...) are caught separately and reported as an error, not as `available: false` — unless `--wayback` is passed, when they become an `available: false` result with an `error` field.
+4. **Wayback lookup** (only with `--wayback`, only for a page that isn't available) — Calls `https://archive.org/wayback/available?url=<URL>`, which returns the closest (most recent) snapshot under `archived_snapshots.closest`, or an empty `archived_snapshots` when there's none. The snapshot's URL, timestamp (also converted to ISO 8601 UTC) and archived status are added as `archived`; a request failure or non-JSON body is recorded in `archive_error` instead.
 
 ### Configuration
 
@@ -3502,18 +3545,23 @@ These are set as constants near the top of the file — edit them directly to ch
 |---|---|---|
 | `TIMEOUT_SECONDS` | 10 | Default request timeout, used unless `--timeout` overrides it |
 | `USER_AGENT` | `Mozilla/5.0 (compatible; online-search-url-availability/1.0)` | `User-Agent` header sent with the request — some sites 403 requests with no/default UA |
+| `WAYBACK_API_URL` | `https://archive.org/wayback/available` | Wayback Machine availability API used by `--wayback` |
 
 ### API reference
 
 - `check_url(url, timeout=TIMEOUT_SECONDS)` — Issues the `GET` request and returns `{url, available, status_code, reason, final_url, elapsed_ms}`. HTTP-level errors (4xx/5xx) are returned as `available: False`, not raised; connection-level failures propagate as `requests.RequestException` for the caller to handle.
-- `format_result(result)` — Renders a `check_url()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url`.
-- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--json` CLI flags.
-- `main(argv=None)` — Entry point; validates the URL scheme, calls `check_url()`, handles top-level errors, and prints the result (either human-readable or JSON, depending on `--json`).
+- `unreachable_result(url, error)` — The `available: False` record for a connection-level failure, with `status_code` / `reason` / `final_url` / `elapsed_ms` set to `None` and `error` set; used only with `--wayback`.
+- `fetch_wayback(url, timeout=TIMEOUT_SECONDS)` — Queries the Wayback Machine availability API and returns `{url, timestamp, archived_at, status}` for the most recent snapshot, or `None` if there is none. `archived_at` is `None` (and `status` kept as given) if the archive returns an unexpected format. Request failures, including a `429`, propagate as `requests.RequestException`; a non-JSON body raises `ValueError`.
+- `add_wayback(result, timeout=TIMEOUT_SECONDS)` — Sets `result["archived"]` from `fetch_wayback()` and `result["archive_error"]` to `None`, or, if the lookup fails, `archived` to `None` and `archive_error` to the error message.
+- `format_result(result)` — Renders a `check_url()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url`, a `NOT REACHABLE` status for an `unreachable_result()` record, and the "Archived copy:" lines when a Wayback lookup was made.
+- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--wayback` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; validates the URL scheme, calls `check_url()`, handles top-level errors, runs the Wayback lookup with `--wayback` for a page that isn't available, and prints the result (either human-readable or JSON, depending on `--json`).
 
 ### Error handling
 
 - If the URL doesn't start with `http://` or `https://`, the script prints an error and exits with status code 1 before making any request.
-- If the request fails at the connection level (DNS failure, timeout, connection refused, etc. — raised by `requests` as a `requests.RequestException`), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If the request fails at the connection level (DNS failure, timeout, connection refused, etc. — raised by `requests` as a `requests.RequestException`), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed. With `--wayback`, it instead prints a result with `available: false` and the error in `error`, plus the archive lookup, and exits 0.
+- A failed Wayback lookup (network error, rate limiting, unexpected response) never fails the script; it is reported in `archive_error` / `Archived copy: lookup failed (...)`.
 - A reachable server returning a `4xx`/`5xx` status is **not** an error exit — it prints/returns normally with `available: false` and exits 0, since the page was successfully checked, just found unavailable.
 - An out-of-range `--timeout` (e.g. `0` or negative) is rejected by argparse before any request, exiting with status code 2.
 
@@ -3523,6 +3571,8 @@ These are set as constants near the top of the file — edit them directly to ch
 - Does not verify page *content* — a site that returns `200 OK` with an error message in the body (a "soft 404") is reported as available.
 - Some sites block automated requests regardless of `User-Agent` (bot-detection, Cloudflare challenges, etc.), which can surface as a `4xx`/`5xx` status even though the page is reachable in a real browser.
 - A single attempt, no retry — a transient network hiccup is reported as a connection-level error rather than retried internally.
+- The Wayback Machine API is free and keyless but rate-limits fairly aggressively: several lookups in quick succession can get `429 Too Many Requests` for a while. The script doesn't retry; the error is reported in `archive_error`.
+- The lookup returns only the single most recent snapshot, and matches the URL as given — a different scheme, `www.` prefix, trailing slash or query string can find a different snapshot or none.
 
 ---
 
@@ -3532,7 +3582,7 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer questions like "is this link still working?", "check if example.com is down", "can you verify this URL is available?", or "is https://foo.com/docs a 404?" by running the script and summarizing its JSON output, instead of guessing.
+Lets Claude Code answer questions like "is this link still working?", "check if example.com is down", "can you verify this URL is available?", "is https://foo.com/docs a 404?" or "this link is dead, is there an archived copy?" by running the script and summarizing its JSON output, instead of guessing.
 
 ### How it's invoked
 
@@ -3544,8 +3594,9 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### What it does
 
 1. Adds a `https://` scheme itself if the user gave a bare domain or path (the underlying script requires one).
-2. Runs `python3 url_availability.py "URL" --json` from the repo root.
-3. Parses the JSON object (`available`, `status_code`, `reason`, `final_url`, `elapsed_ms`) and leads with a direct yes/no plus the status code, mentioning `final_url` only when a redirect happened and `elapsed_ms` only if speed is relevant. It distinguishes a reachable-but-erroring page (a `4xx`/`5xx` status, still a successful check) from a connection-level failure (the `{"error": "..."}` exit path), and retries the latter at most once when it looks transient.
+2. Runs `python3 url_availability.py "URL" --json` from the repo root, adding `--wayback` when the user wants an archived copy, asks what used to be at the link, or wants a replacement for a broken one. A plain "is it up?" check leaves it off, since archive.org is slow and rate-limits.
+3. Parses the JSON object (`available`, `status_code`, `reason`, `final_url`, `elapsed_ms`) and leads with a direct yes/no plus the status code, mentioning `final_url` only when a redirect happened and `elapsed_ms` only if speed is relevant. It distinguishes a reachable-but-erroring page (a `4xx`/`5xx` status, still a successful check) from a connection-level failure (the `{"error": "..."}` exit path, or the `error` field with `--wayback`), and retries the latter at most once when it looks transient.
+4. With `--wayback` and a dead page, follows with the archived copy's URL and date (and its archived status if that wasn't `200`, as such a copy isn't a working one), or says the archive has no copy, or that the archive lookup failed and why.
 
 ### Configuration
 
@@ -3560,7 +3611,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 - Requires `url_availability.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Checks reachability via HTTP status only, not page content — a "soft 404" (`200 OK` with an error message in the body) is reported as available; the agent says so if the user seems to be asking about content correctness rather than server reachability.
-- Inherits all the limitations of [`url_availability.py`](#url_availabilitypy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false `4xx`/`5xx`, single-attempt GET).
+- Inherits all the limitations of [`url_availability.py`](#url_availabilitypy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false `4xx`/`5xx`, single-attempt GET, Wayback Machine rate limiting and exact-URL matching).
 
 ---
 

@@ -14,8 +14,7 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **Wayback Machine fallback for `url_availability.py`**: high practical value.
-2. **Hacker News search**: lets the tech-discussion agents answer "what did people
+1. **Hacker News search**: lets the tech-discussion agents answer "what did people
    say about X?"
 
 ## Weather and environment
@@ -78,10 +77,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 - [ ] **`url_metadata.py`**: page title, meta description, OpenGraph/Twitter-card tags,
   canonical URL (BeautifulSoup is already a dependency of `url_links.py`).
-- [ ] **Wayback Machine lookup** (archive.org availability API, no key): when
-  `url_availability.py` finds a dead link, report the last archived copy.
-  Opt-in with a `--wayback` flag (off by default), so the script's current
-  behaviour, output and exit codes are unchanged without it.
 - [ ] **RSS/Atom feed reader**: latest items from a site's feed.
 - [ ] **SSL certificate expiry and DNS lookup**: standard library only (`ssl`, `socket`).
 - [ ] **robots.txt and sitemap listing**.
