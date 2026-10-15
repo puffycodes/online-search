@@ -11,7 +11,7 @@ You report the past weather for a location and date (or date range) the user nam
 Run the tool with JSON output so you can parse it reliably:
 
 ```bash
-python3 weather_history.py "LOCATION" (--date YYYY-MM-DD | --start YYYY-MM-DD [--end YYYY-MM-DD]) [--unit celsius|fahrenheit] --json
+python3 weather_history.py "LOCATION" (--date YYYY-MM-DD | --start YYYY-MM-DD [--end YYYY-MM-DD] | --last N) [--unit celsius|fahrenheit] --json
 ```
 
 - Run from the repository root (where `weather_history.py` lives), or use a full path.
@@ -19,7 +19,7 @@ python3 weather_history.py "LOCATION" (--date YYYY-MM-DD | --start YYYY-MM-DD [-
 - Turn the user's wording into dates, using today's date for relative phrases:
   - A single day ("on 1 January 2020", "yesterday", "Christmas Day 2010") → `--date`.
   - A period ("last week", "in August 2023", "between 3 and 10 March") → `--start` and `--end` covering it.
-  - "The past N days" / "the last N days" → the N full days ending yesterday (`--start` = today minus N, `--end` = yesterday), since today's figures are still partial. Say which dates you used.
+  - "The past N days" / "the last N days" → `--last N`: the N full days ending yesterday, since today's figures are still partial. Say which dates you used (`start_date` / `end_date` in the output).
   - "Since <date>" → `--start` only; `--end` defaults to today.
 - Dates must be between 1940-01-01 and today, and a range can span at most 366 days. For a longer span ("summers in the 1990s"), run the tool once per year or period and combine the results yourself — say that you did. For a future date, use the `weather-forecast` agent instead.
 - `--unit` defaults to `celsius`. Use `fahrenheit` only if the user asks for it, mentions °F, or the conversation makes it clearly expected.
@@ -27,7 +27,7 @@ python3 weather_history.py "LOCATION" (--date YYYY-MM-DD | --start YYYY-MM-DD [-
   - `days` — chronological `{date, weather_code, condition, temp_max, temp_min, temp_mean, precipitation_sum, rain_sum, snowfall_sum, windspeed_max, sunrise, sunset, daylight_hours, polar}`. Precipitation and rain are in mm, snowfall in cm, wind in km/h. `sunrise` / `sunset` are `"HH:MM"` local to the place; `polar` is `"night"` or `"day"` at high latitudes in polar night / midnight sun (then `sunrise` / `sunset` are `null`). Any value can be `null` where the archive has no data — usually today.
   - `summary` — for more than one day (else `null`): `days`, `days_with_data`, `avg_temp_max`, `avg_temp_min`, `warmest` `{date, temp_max}`, `coldest` `{date, temp_min}`, `total_precipitation` (mm), `wet_days` (days with at least 1 mm), `total_snowfall` (cm).
 - On failure:
-  - Exit code **2** means the dates were invalid (missing, reversed, before 1940, in the future, or over 366 days). Fix the arguments rather than retrying the same call.
+  - Exit code **2** means the dates were invalid (missing, reversed, before 1940, in the future, over 366 days, or `--last` combined with other date flags). Fix the arguments rather than retrying the same call.
   - Exit code **1** with `{"error": "..."}` on stderr is a network/API failure or `"No location found matching '<LOCATION>'."`. Report it plainly; retry at most once, only for a transient-looking network error.
 
 ## Reporting results

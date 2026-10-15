@@ -11,10 +11,11 @@
 - Run as python3 weather_history.py from the repo root.
 - Take:
     - {{Location}}: free text, e.g. "Tokyo", "Long Island".
-    - Either {{Date}}, a single day, or {{Start Date}} with an optional {{End Date}} (default: today). All YYYY-MM-DD.
+    - Either {{Date}}, a single day, or {{Start Date}} with an optional {{End Date}} (default: today), all YYYY-MM-DD; or {{Last N}}, the last N full days ending yesterday (today's figures are partial).
     - The temperature unit: celsius (default) or fahrenheit.
 - Reject the dates, before any network call, when:
-    - Neither a date nor a start date is given, a date is combined with a start or end date, or an end date is given without a start date.
+    - None of a date, a start date or a last-N count is given, a date is combined with a start or end date, a last-N count is combined with any date, or an end date is given without a start date.
+    - A last-N count isn't a positive whole number.
     - The end date is before the start date.
     - A date is before 1940-01-01 (the archive's first day) or after today.
     - The range is longer than 366 days.

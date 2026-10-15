@@ -414,7 +414,7 @@ Requires `weather.py` to be present in the same directory — it imports `geocod
 ### Usage
 
 ```bash
-python3 weather_history.py LOCATION (--date YYYY-MM-DD | --start YYYY-MM-DD [--end YYYY-MM-DD]) [--unit {celsius,fahrenheit}] [--json]
+python3 weather_history.py LOCATION (--date YYYY-MM-DD | --start YYYY-MM-DD [--end YYYY-MM-DD] | --last N) [--unit {celsius,fahrenheit}] [--json]
 ```
 
 | Flag | Default | Description |
@@ -423,10 +423,11 @@ python3 weather_history.py LOCATION (--date YYYY-MM-DD | --start YYYY-MM-DD [--e
 | `--date` | — | A single day. Cannot be combined with `--start` / `--end` |
 | `--start` | — | First day of a range |
 | `--end` | today | Last day of a range (needs `--start`) |
+| `--last N` | — | The last `N` full days, ending yesterday — today is left out because its figures are still partial. `--last 1` is yesterday. Cannot be combined with `--date` / `--start` / `--end` |
 | `--unit {celsius,fahrenheit}` | `celsius` | Temperature unit |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
 
-One of `--date` or `--start` is required. Dates must lie between 1940-01-01 and today, and a range can span at most 366 days.
+One of `--date`, `--start` or `--last` is required. Dates must lie between 1940-01-01 and today, and a range can span at most 366 days.
 
 #### Example output
 
@@ -499,7 +500,7 @@ For a range, `summary` is `{days, days_with_data, avg_temp_max, avg_temp_min, wa
 
 ### How it works
 
-1. **Validate the window** — `resolve_window()` turns `--date` / `--start` / `--end` into a `(start, end)` pair during argument parsing, rejecting a missing, combined, reversed, pre-1940, future or over-366-day window with exit code 2 before any request.
+1. **Validate the window** — `resolve_window()` turns `--date` / `--start` / `--end` / `--last` into a `(start, end)` pair during argument parsing (`--last N` → yesterday minus `N - 1` days to yesterday), rejecting a missing, combined, reversed, pre-1940, future or over-366-day window with exit code 2 before any request.
 2. **Geocode** — `weather.geocode()` resolves `LOCATION` to its top match.
 3. **Fetch** — Calls `archive-api.open-meteo.com/v1/archive` with `start_date` / `end_date`, `daily=weathercode,temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,rain_sum,snowfall_sum,windspeed_10m_max,sunrise,sunset,daylight_duration`, `timezone=auto` (so days follow the location's own calendar) and the requested `--unit`.
 4. **Build days** — `build_day()` reads each day's values with `weather.daily_value()` (missing → `None`), maps the weather code via `weather_description()`, and adds `weather.sun_fields()` (local `HH:MM` sunrise/sunset, daylight hours, polar night/day).
@@ -530,7 +531,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `daily_value()`,
 
 ### Error handling
 
-- An invalid window — no `--date` or `--start`, `--date` combined with `--start`/`--end`, `--end` without `--start`, `--end` before `--start`, a date before 1940-01-01 or after today, or a range over 366 days — is rejected by argument parsing (exit code 2), before any request. A future date's message points to `weather_forecast.py`.
+- An invalid window — no `--date`, `--start` or `--last`, `--date` combined with `--start`/`--end`, `--last` combined with any of them, a `--last` that isn't a positive integer, `--end` without `--start`, `--end` before `--start`, a date before 1940-01-01 or after today, or a range over 366 days — is rejected by argument parsing (exit code 2), before any request. A future date's message points to `weather_forecast.py`.
 - If a request fails, the script exits 1 with the error on stderr (`{"error": "..."}` with `--json`). When Open-Meteo rejects a request it explains why, and that reason is the error message.
 - If the location can't be geocoded, it exits 1 with `No location found matching '<LOCATION>'.`
 
@@ -561,7 +562,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### What it does
 
 1. Passes the location through mostly as the user wrote it, keeping accents, and adds a country/state qualifier only for an ambiguous name.
-2. Turns the user's wording into `--date` or `--start`/`--end` relative to today — "the past N days" means the N full days ending yesterday, since today's figures are partial; for a span over 366 days it runs the tool once per year and combines the results, saying so.
+2. Turns the user's wording into `--date` or `--start`/`--end` relative to today, or `--last N` for "the past N days" (the N full days ending yesterday, since today's figures are partial); for a span over 366 days it runs the tool once per year and combines the results, saying so.
 3. Runs `python3 weather_history.py "LOCATION" (--date … | --start … [--end …]) [--unit …] --json` from the repo root.
 4. Leads with the single day's condition and high/low, or with the range summary (average high/low, warmest and coldest days, total precipitation, wet days) and a compact day table for up to about two weeks. It notes that the figures are gridded model data rather than a station record and that today's are partial. An exit code 2 means it fixes the dates rather than retrying; a "no location found" result is reported as-is; a network-looking failure is retried at most once.
 

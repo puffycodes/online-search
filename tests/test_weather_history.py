@@ -54,6 +54,18 @@ class TestResolveWindow:
         assert self._parse("--date", "1940-01-01").start == wh.EARLIEST_DATE
         assert self._parse("--date", "2026-10-15").end == TODAY
 
+    def test_last_n_ends_yesterday(self):
+        args = self._parse("--last", "5")
+        assert (args.start, args.end) == (dt.date(2026, 10, 10), dt.date(2026, 10, 14))
+
+    def test_last_one_is_yesterday(self):
+        args = self._parse("--last", "1")
+        assert args.start == args.end == dt.date(2026, 10, 14)
+
+    def test_last_full_range_allowed(self):
+        args = self._parse("--last", str(wh.MAX_RANGE_DAYS))
+        assert (args.end - args.start).days + 1 == wh.MAX_RANGE_DAYS
+
     def test_full_range_allowed(self):
         args = self._parse("--start", "2024-01-01", "--end", "2024-12-31")  # 366 days
         assert (args.end - args.start).days + 1 == wh.MAX_RANGE_DAYS
@@ -67,6 +79,12 @@ class TestResolveWindow:
         (["--date", "2026-10-16"], "in the future"),
         (["--start", "2024-01-01", "--end", "2025-01-01"], "limited to 366 days"),
         (["--date", "2024-13-01"], "invalid date"),
+        (["--last", "5", "--date", "2024-01-01"], "--last cannot be combined"),
+        (["--last", "5", "--start", "2024-01-01"], "--last cannot be combined"),
+        (["--last", "5", "--end", "2024-01-01"], "--last cannot be combined"),
+        (["--last", "0"], "positive integer"),
+        (["--last", "x"], "expected an integer"),
+        (["--last", "367"], "limited to 366 days"),
     ])
     def test_rejected_with_exit_2(self, argv, message, capsys):
         with pytest.raises(SystemExit) as exc:

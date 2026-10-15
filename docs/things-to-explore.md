@@ -14,11 +14,9 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **`--last N` for `weather_history.py`** (Weather): makes "the past N days" a single
-   flag, mirroring the stock scripts' `--last`.
-2. **Search comments within one thread** (Extending `hn_search.py`): pairs with
+1. **Search comments within one thread** (Extending `hn_search.py`): pairs with
    `hn_thread.py` to search all of a big thread's comments, not just its top 60-80.
-3. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
+2. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
    instructions-only change to the `hottest-tech-discussion-summary` agent, but it
    lengthens an already multi-step workflow.
 
@@ -34,10 +32,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 - [ ] **River flood forecast** (Open-Meteo flood API): river discharge levels.
 - [ ] **Earthquakes near a place** (USGS GeoJSON feed, free): recent quakes filtered by
   magnitude and distance from the coordinates `geocode()` returns.
-- [ ] **`--last N` for `weather_history.py`**: "the past N days" currently means
-  working out `--start`/`--end` by hand. A `--last N` flag (N full days ending
-  yesterday) would make the most common question a single flag, mirroring
-  `yahoo_finance.add_window_args()`.
 
 ## Finance
 

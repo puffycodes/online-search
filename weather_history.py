@@ -27,7 +27,7 @@ import json
 
 import requests
 
-from cli_utils import die, use_utf8_output
+from cli_utils import die, positive_int, use_utf8_output
 from weather import (
     daily_value,
     fetch_json,
@@ -219,11 +219,19 @@ def _date(value):
 
 
 def resolve_window(args, parser, today=None):
-    """Turn --date / --start / --end into a (start, end) pair of dates,
-    calling ``parser.error`` (exit 2) for a missing, reversed, out-of-range
-    or over-long window."""
+    """Turn --date / --start / --end / --last into a (start, end) pair of
+    dates, calling ``parser.error`` (exit 2) for a missing, reversed,
+    out-of-range or over-long window.
+
+    ``--last N`` is the N full days ending yesterday; today is left out
+    because its figures are still partial."""
     today = today or dt.date.today()
-    if args.date:
+    if args.last:
+        if args.date or args.start or args.end:
+            parser.error("--last cannot be combined with --date/--start/--end")
+        end = today - dt.timedelta(days=1)
+        start = end - dt.timedelta(days=args.last - 1)
+    elif args.date:
         if args.start or args.end:
             parser.error("--date cannot be combined with --start/--end")
         start = end = args.date
@@ -232,7 +240,7 @@ def resolve_window(args, parser, today=None):
     elif args.end:
         parser.error("--end requires --start")
     else:
-        parser.error("give a --date, or a --start (with optional --end)")
+        parser.error("give a --date, a --start (with optional --end), or --last N")
 
     if end < start:
         parser.error("--end must not be before --start")
@@ -243,7 +251,7 @@ def resolve_window(args, parser, today=None):
             f"{end.isoformat()} is in the future; use weather_forecast.py for upcoming days"
         )
     if (end - start).days + 1 > MAX_RANGE_DAYS:
-        parser.error(f"the range is limited to {MAX_RANGE_DAYS} days; narrow --start/--end")
+        parser.error(f"the range is limited to {MAX_RANGE_DAYS} days; narrow the window")
     return start, end
 
 
@@ -259,6 +267,12 @@ def parse_args(argv=None, today=None):
     parser.add_argument("--start", type=_date, help="First day of a range, YYYY-MM-DD")
     parser.add_argument(
         "--end", type=_date, help="Last day of a range, YYYY-MM-DD (default: today)"
+    )
+    parser.add_argument(
+        "--last",
+        type=positive_int,
+        metavar="N",
+        help="The last N full days, ending yesterday (today's figures are partial)",
     )
     parser.add_argument(
         "--unit",
