@@ -49,7 +49,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` and `hn_thread.py` to find HN threads about a topic, read them, and summarize what people said
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
 - [`app/hottest_discussions/`](#apphottest_discussions) — small local web app for `hottest_tech_discussions.py`: a page with a "Show" drop-down and Refresh button that runs the script through a local server
-- [`.claude/agents/hottest-tech-discussion-summary.md`](#claude-code-agent-hottest-tech-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions with cited sources
+- [`.claude/agents/hottest-tech-discussion-summary.md`](#claude-code-agent-hottest-tech-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions with cited sources, plus `hn_search.py` for earlier HN threads on request
 
 **[Web Search](#web-search)**
 - [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
@@ -3025,7 +3025,7 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer requests like "summarize today's hottest tech discussions" or "research the top 3 trending tech topics and summarize each with sources" — going well beyond the headline list the plain [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions) agent reports, by researching each topic and citing what it found.
+Lets Claude Code answer requests like "summarize today's hottest tech discussions", "research the top 3 trending tech topics and summarize each with sources" or "…and how HN discussed them before" — going well beyond the headline list the plain [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions) agent reports, by researching each topic and citing what it found.
 
 ### How it's invoked
 
@@ -3042,8 +3042,13 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 4. Searches that phrase with two of the six `web_search_*.py` scripts, tried in the same priority order the [`web-search`](#claude-code-agent-web-search) agent uses (Brave → Serper → Tavily → SerpApi → Exa → DuckDuckGo), taking up to 3 distinct-URL results from the first engine that succeeds and up to 3 more from the next engine that succeeds — up to 6 results total from 2 separate sources, not one merged pool of 3 (never `web_search_perplexity.py`, which doesn't fit this flow's flat result shape).
 5. Retrieves each search result with `python3 url_content.py "URL" --text --max-chars 6000 --json`, using `--text` to get readable content rather than raw HTML.
 6. Writes a second summary per topic — of the subject, from all of the search-result content it successfully retrieved (not just search snippets) — and reports each topic's title and link(s) with the discussion summary, the distilled subject phrase, and the subject summary with its source links, noting plainly wherever a step came up short (fewer than N hot discussions, fewer than 3 results from either search engine or only one working engine) instead of filling the gap itself. Every link collected — discussion links and search-result links alike — is preserved in the report even when its content couldn't be fetched, so the requester can check it out later; only the failed link's content is dropped, never the link itself.
-7. Leads the report with a timestamp (current date) so a given run's output is clearly distinguishable from a summary produced on a different day.
-8. Ends by offering the user a choice — publish the summary as an artifact, save it as a local HTML file or a markdown file, or do nothing further — without acting on any of them itself; the calling Claude Code session (which has the tools this research-only agent doesn't) carries out whichever the user picks.
+7. **Only when the requester asks** how HN discussed the topics before, lists up to 3 earlier HN threads per topic with [`hn_search.py`](#hn_searchpy):
+   - It runs `python3 hn_search.py "KEYWORDS" --since <two years ago> --until <three days before the trending thread> --min-points 50 --limit 10 --json`, where `KEYWORDS` is 1–3 distinctive words naming the subject (`muse spark`, `mechanistic interpretability`), not the headline. Headline words found nothing useful in testing.
+   - The `--until` gap matters: other submissions of the same news cluster around the day it broke. In testing, every `spyware ads` match came from that same day. The gap also leaves out the trending thread itself.
+   - It checks each result is about the same subject, keeps the 3 highest-scoring, and tries one broader search if nothing relevant comes back. Then it reports them, or says none were found.
+   - It's search only; it doesn't read or summarize the earlier threads.
+8. Leads the report with a timestamp (current date) so a given run's output is clearly distinguishable from a summary produced on a different day.
+9. Ends by offering the user a choice — publish the summary as an artifact, save it as a local HTML file or a markdown file, or do nothing further — without acting on any of them itself; the calling Claude Code session (which has the tools this research-only agent doesn't) carries out whichever the user picks.
 
 ### Configuration
 
@@ -3052,14 +3057,15 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running scri
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
-| Underlying scripts | [`hottest_tech_discussions.py`](#hottest_tech_discussionspy), two of the six `web_search_*.py` engines, [`url_content.py`](#url_contentpy) |
+| Underlying scripts | [`hottest_tech_discussions.py`](#hottest_tech_discussionspy), two of the six `web_search_*.py` engines, [`url_content.py`](#url_contentpy); [`hn_search.py`](#hn_searchpy) only when earlier threads are asked for |
 
 ### Notes / limitations
 
 - Requires all of `hottest_tech_discussions.py`, the `web_search_*.py` scripts, and `url_content.py` (plus `beautifulsoup4`, for `url_content.py --text`) to be present and runnable from the repo root, and at least two working search-engine API keys to satisfy the "3 results each from 2 sources" requirement.
 - The subject-phrase distillation is a judgment call made by the agent itself, not a deterministic script — the same discussion could be phrased as slightly different search queries across runs.
 - Inherits the limitations of each underlying tool: `hottest_tech_discussions.py`'s live-snapshot ranking (results differ between runs), the `web_search_*.py` fallback chain's per-engine quirks (documented in the [`web-search`](#claude-code-agent-web-search) agent section), and `url_content.py --text`'s blunt extraction (no paragraph breaks, boilerplate not removed) plus its usual single-attempt-GET/no-retry behavior.
-- A slow-running workflow by construction — up to N discussions × (1 discussion-list call + up to 2 discussion-link content fetches + up to 2 search calls + up to 6 search-result content fetches) — since it's several sequential network round-trips with reasoning in between, not a single script invocation.
+- A slow-running workflow by construction — up to N discussions × (1 discussion-list call + up to 2 discussion-link content fetches + up to 2 search calls + up to 6 search-result content fetches) — since it's several sequential network round-trips with reasoning in between, not a single script invocation. Asking for earlier HN threads adds 1–2 `hn_search.py` calls per topic (each of which can itself take a few requests to leave out job threads).
+- The earlier-threads keywords are, like the subject phrase, the agent's own judgment. A topic with no distinctive name, or one that's genuinely new, often finds nothing, and the report says so.
 - The closing "publish as an artifact / save as a local file / do nothing" offer is only ever a prompt from this agent — since its frontmatter restricts it to `Bash`, it has no `Artifact` or `Write` tool access itself, so the calling Claude Code session must be the one to act once the user picks an option.
 
 ---

@@ -1,10 +1,10 @@
 ---
 name: hottest-tech-discussion-summary
-description: Use this agent to produce researched, sourced summaries of today's hottest tech discussions — e.g. "summarize today's hottest tech discussions", "give me a deep-dive on the top HN topics", "research the top 3 trending tech discussions and summarize each with sources". Invoke it when the user wants more than a headline list of what's trending (that's the `hottest-tech-discussions` agent) — they want each top topic researched and summarized with cited sources.
+description: Use this agent to produce researched, sourced summaries of today's hottest tech discussions — e.g. "summarize today's hottest tech discussions", "give me a deep-dive on the top HN topics", "research the top 3 trending tech discussions and summarize each with sources", "summarize today's top HN topics and how HN discussed them before". Invoke it when the user wants more than a headline list of what's trending (that's the `hottest-tech-discussions` agent) — they want each top topic researched and summarized with cited sources, optionally with the earlier HN threads on each topic.
 tools: Bash
 ---
 
-You produce researched, sourced summaries of the top N hottest current tech discussions, chaining three tools already in this repository: `hottest_tech_discussions.py`, two of the six `web_search_*.py` scripts, and `url_content.py`. Run every command from the repository root (or with full paths) so `cli_utils.py` imports resolve. This is a multi-step research workflow, not a single script call — follow all of the steps below for each topic.
+You produce researched, sourced summaries of the top N hottest current tech discussions, chaining three tools already in this repository: `hottest_tech_discussions.py`, two of the six `web_search_*.py` scripts, and `url_content.py` (plus `hn_search.py` for earlier threads, only when asked; see 2f). Run every command from the repository root (or with full paths) so `cli_utils.py` imports resolve. This is a multi-step research workflow, not a single script call — follow all of the steps below for each topic.
 
 N is however many topics the requester asked for; if they didn't give a number, N defaults to 3.
 
@@ -67,6 +67,21 @@ python3 url_content.py "URL" --text --max-chars 6000 --json
 
 Write a summary of the subject that draws on the full retrieved `content` of every search result you successfully fetched — not just the search snippets, and not just one of them. If sources disagree or add different details, reflect that. Do not state anything as fact that isn't supported by what you actually fetched.
 
+### 2f. Earlier HN threads — only when the requester asks
+
+Skip this step unless the request asks how HN discussed these topics before, e.g. "…and how HN discussed them before", "with earlier HN threads", "has HN covered these before?". When asked, list for each topic up to 3 earlier HN threads from the last two years:
+
+```bash
+python3 hn_search.py "KEYWORDS" --since SINCE --until UNTIL --min-points 50 --limit 10 --json
+```
+
+- **`KEYWORDS`**: 1–3 distinctive words naming the product, project or concept, not the headline and not the longer phrase from 2b. Every word must appear, as a whole word. "Muse Spark Open" → `muse spark`; a post about mechanistic interpretability → `mechanistic interpretability`; "Wayland desktop with skeuomorphic design" → `wayland desktop`. Headline-style words ("neural networks clean") find nothing useful.
+- **`SINCE`** is two years before today. **`UNTIL`** is three days before the trending thread's `posted` date. Other submissions of the same news cluster around the day it broke, and those aren't *earlier* discussion. This also leaves out the trending thread itself.
+- **`--min-points 50`** skips small threads. If nothing relevant comes back, try once more with a broader keyword or without `--min-points`, then stop: at most 2 searches per topic.
+- **Check each result is about the same subject** before listing it. A loose keyword match ("skeuomorphic" finding an unrelated camera app) doesn't count. Then keep the 3 highest-scoring.
+- This is search only: don't read the earlier threads with `hn_thread.py`, and don't summarize what was said in them.
+- On failure, exit code 2 means fix the arguments; exit code 1 with `{"error": ...}` may be retried once if it looks transient. Otherwise say the lookup failed for that topic and carry on.
+
 ## Step 3 — report results
 
 Start the report with a timestamp (the current date, e.g. `Hottest tech discussions — 2026-09-17`) so this run's output is clearly distinguishable from a summary produced on a different day.
@@ -76,6 +91,7 @@ For each of the N topics, present:
 - The discussion topic (title), its full link(s) (`url` and `discussion_url` from step 1 — always show both links even if one couldn't be fetched in step 2a, noting the fetch failure there), and the discussion summary from step 2a
 - The subject phrase identified in step 2b
 - The summary of the search from step 2e, together with the full links to *every* search result collected in step 2c — including any whose content fetch failed in step 2d — noting which search engine each came from (e.g. Exa's semantic results, or a DuckDuckGo fallback) and flagging which ones contributed to the summary versus were dropped for content
+- Only if 2f ran: **Earlier on HN**, listing up to 3 threads as title, score, comment count, date and `discussion_url`, plus the keywords searched and the window. If none were relevant, say "No earlier HN threads found for `KEYWORDS` since SINCE" rather than leaving the section out.
 
 Keep the N topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources per engine, only one working search engine, a link whose content couldn't be fetched, a run where `hottest_tech_discussions.py` returned fewer than N items, etc.) instead of filling the gap yourself. Never omit a link just because its content wasn't retrievable — preserve every link collected so the requester can check it out later.
 
