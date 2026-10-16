@@ -4,6 +4,13 @@
 
 Small standalone scripts that pull live data from public web APIs, plus two small local web apps built on top of them. Each script is self-contained — no local package, just a `.py` file; where scripts overlap they import small shared helper modules from the same directory (`yahoo_finance.py`, `weather.py`, `indicators.py`, `valuation.py`, `cli_utils.py`) instead of duplicating logic.
 
+> **Windows: make sure `python3` is a real Python.** Every example here, and every Claude Code agent in `.claude/agents/`, runs scripts as `python3 …`. The python.org installer for Windows doesn't create a `python3.exe`, so `python3` usually resolves to the Microsoft Store placeholder in `%LOCALAPPDATA%\Microsoft\WindowsApps\`. That prints "Python was not found; run without arguments to install from the Microsoft Store…" and fails (exit code 9009 in PowerShell / cmd, 49 from Git Bash), so an agent's first command fails. Fix it in the environment, not the repo (on macOS and Linux, `python` may be missing or Python 2):
+>
+> - **With a virtualenv** (what this repo is used with): copy its `Scripts\python.exe` to `Scripts\python3.exe`. While that virtualenv is first on `PATH`, `python3` runs the same interpreter with the same packages. Recreating the virtualenv removes the copy, so repeat this after a rebuild.
+> - **Optionally**, turn off the placeholder: Settings → Apps → Advanced app settings → App execution aliases → "python3.exe" off.
+>
+> Check with `python3 --version` in both PowerShell and Git Bash.
+
 **[Weather](#weather)**
 - [`weather.py`](#weatherpy) — current weather (temperature, condition, wind) for a named location, anywhere in the world
 - [`.claude/agents/weather.md`](#claude-code-agent-weather) — Claude Code subagent that calls `weather.py` and reports the current weather for a named location

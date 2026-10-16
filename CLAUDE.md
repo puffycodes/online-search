@@ -34,6 +34,8 @@ python3 -m pytest -x -vv
 
 Any script or test must be run **from the repo root** — nothing is pip-installed, so imports of sibling modules (`import weather`, `import cli_utils`, `from yahoo_finance import ...`) only resolve when the repo root is on `sys.path`. `pytest.ini` sets `testpaths = tests`; the root `conftest.py` prepends the repo root to `sys.path` so tests can `import` the scripts under test.
 
+Commands, docs and agents all use `python3`. On Windows that only works if `python3` is a real interpreter rather than the Microsoft Store alias, which prints "Python was not found…" and exits 9009 (49 from Git Bash). The working setup is a `python3.exe` copied next to `python.exe` in the active virtualenv's `Scripts\` (see the Windows note at the top of `README.md`). If `python3` fails that way, say so and fall back to `python`; don't switch the repo's commands to `python`.
+
 There is no linter or formatter configured in this repo — don't invent a lint/format step in instructions to the user.
 
 ## Architecture
