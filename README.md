@@ -36,7 +36,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-fundamental.md`](#claude-code-agent-stock-fundamental) — Claude Code subagent that calls `stock_fundamental.py` and reports and interprets a named stock's fundamental indicators
 - [`stock_earnings_calendar.py`](#stock_earnings_calendarpy) — pulls a stock's next earnings date with the EPS and revenue estimates, its ex-dividend and payment dates, and its last four quarters of EPS against estimates from Yahoo Finance
 - [`.claude/agents/stock-earnings-calendar.md`](#claude-code-agent-stock-earnings-calendar) — Claude Code subagent that calls `stock_earnings_calendar.py` and answers when a named stock reports, what's expected, whether it beat, and its dividend dates
-- [`stock_analyst_targets.py`](#stock_analyst_targetspy) — pulls a stock's analyst price targets (low / median / mean / high, with upside), consensus rating and four-month buy / hold / sell trend from Yahoo Finance
+- [`stock_analyst_targets.py`](#stock_analyst_targetspy) — pulls a stock's analyst price targets (low / median / mean / high, with upside), consensus rating, four-month buy / hold / sell trend and recent firm-level upgrades / downgrades from Yahoo Finance
 - [`.claude/agents/stock-analyst-targets.md`](#claude-code-agent-stock-analyst-targets) — Claude Code subagent that calls `stock_analyst_targets.py` and summarizes what analysts think of a named stock
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail; plus a feature spec (`features.md`) for every [script](docs/features/script/) and [agent](docs/features/agent/)
 
@@ -2088,13 +2088,14 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ## stock_analyst_targets.py
 
-Pulls the analyst view on a stock from Yahoo Finance's public `quoteSummary` endpoint: the 12-month price targets (low / median / mean / high) and each one's upside from the current price, the consensus recommendation, and how the buy / hold / sell counts have moved over the last four months. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
+Pulls the analyst view on a stock from Yahoo Finance's public `quoteSummary` endpoint: the 12-month price targets (low / median / mean / high) and each one's upside from the current price, the consensus recommendation, how the buy / hold / sell counts have moved over the last four months, and which firms upgraded, downgraded or changed their target recently. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
 
 | Section | What it shows | Source |
 |---|---|---|
 | Price targets | low, median, mean and high target, each with its upside vs the price; number of analysts with a target | `financialData.targetLowPrice`, `targetMedianPrice`, `targetMeanPrice`, `targetHighPrice`, `numberOfAnalystOpinions`, `currentPrice` |
 | Consensus | recommendation key and mean score (1 = strong buy … 5 = strong sell) | `financialData.recommendationKey`, `recommendationMean` |
 | Recommendation trend | strong buy / buy / hold / sell / strong sell counts for this month and the three before | `recommendationTrend` |
+| Analyst actions | each firm's upgrade / downgrade / initiation / reiteration with its old and new rating and target, over the last `--days` days, plus counts | `upgradeDowngradeHistory` |
 
 ### Requirements
 
@@ -2105,29 +2106,30 @@ Pulls the analyst view on a stock from Yahoo Finance's public `quoteSummary` end
 ### Usage
 
 ```bash
-python3 stock_analyst_targets.py SYMBOL [--json]
+python3 stock_analyst_targets.py SYMBOL [--days N] [--json]
 ```
 
 | Flag | Default | Description |
 |---|---|---|
 | `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, … |
+| `--days N` | `90` | How many days of analyst actions (upgrades, downgrades, target changes) to list; a positive integer |
 | `--json` | off | Emit structured JSON on stdout instead of the report |
 
 #### Example
 
 ```bash
-python3 stock_analyst_targets.py AAPL
+python3 stock_analyst_targets.py AAPL --days 30
 ```
 
 ```
 AAPL - Apple Inc.  (NasdaqGS - USD)
-Price 342.96 USD    39 analysts with a price target
+Price 342.00 USD    39 analysts with a price target
 
 Price targets              Target   vs price
-  Low                      215.00    -37.31%
-  Median                   340.00     -0.86%
-  Mean                     329.38     -3.96%
-  High                     405.00    +18.09%
+  Low                      215.00    -37.13%
+  Median                   340.00     -0.58%
+  Mean                     329.38     -3.69%
+  High                     405.00    +18.42%
 
 Consensus  BUY  (mean 2.20 on 1 = strong buy ... 5 = strong sell)
 
@@ -2137,23 +2139,38 @@ Recommendation trend
   1 month ago              6          19          13           3           3      44
   2 months ago             6          19          14           3           2      44
   3 months ago             6          22          14           2           2      46
+
+Analyst actions (last 30 days)
+  0 upgrades, 0 downgrades, 0 initiations; targets raised 2, lowered 1
+  Date        Firm                   Action     Rating                       Target
+  2026-10-12  JP Morgan              maintain   Overweight                   340.00 -> 360.00
+  2026-10-01  Morgan Stanley         maintain   Overweight                   360.00 -> 355.00
+  2026-10-01  Needham                reiterate  Hold                         -
+  2026-09-29  Morgan Stanley         reiterate  Overweight                   360.00
+  2026-09-23  B of A Securities      reiterate  Buy                          370.00
+  2026-09-18  Evercore ISI Group     maintain   Outperform                   365.00 -> 380.00
+  2026-09-17  B of A Securities      reiterate  Buy                          370.00
 ```
 
-(Figures move with live data; the closing notes are omitted.) With `--json`: `{symbol, name, exchange, currency, price, analysts, targets, upside, recommendation, trend}`, where `targets` and `upside` are keyed `low` / `median` / `mean` / `high` (`upside` as a fraction rounded to 4 places: `0.1809` = +18.09%), `recommendation` is `{key, mean}`, and `trend` is newest first: `[{period, strong_buy, buy, hold, sell, strong_sell, total}, ...]` with `period` `0m`, `-1m`, `-2m`, `-3m`.
+(Figures move with live data; the closing notes are omitted.) With `--json`: `{symbol, name, exchange, currency, price, analysts, targets, upside, recommendation, trend, actions_days, action_summary, actions}`, where `targets` and `upside` are keyed `low` / `median` / `mean` / `high` (`upside` as a fraction rounded to 4 places: `0.1842` = +18.42%), `recommendation` is `{key, mean}`, `trend` is newest first: `[{period, strong_buy, buy, hold, sell, strong_sell, total}, ...]` with `period` `0m`, `-1m`, `-2m`, `-3m`, `action_summary` is `{upgrades, downgrades, initiations, targets_raised, targets_lowered}`, and `actions` is newest first: `[{date, firm, action, from_grade, to_grade, target_action, target, prior_target}, ...]` with `action` one of `upgrade` / `downgrade` / `initiate` / `reiterate` / `maintain` and `target_action` one of `raised` / `lowered` / `maintained` / `announced` / `adjusted` or `null`.
 
 ### How it works
 
-1. **Fetch** — `yahoo_finance.fetch_quote_summary()`: the cookie + crumb handshake, then `quoteSummary` for `price,financialData,recommendationTrend`.
+1. **Fetch** — `yahoo_finance.fetch_quote_summary()`: the cookie + crumb handshake, then `quoteSummary` for `price,financialData,recommendationTrend,upgradeDowngradeHistory`.
 2. **Targets** — `extract_targets()` reads the four targets and divides each by the price (`financialData.currentPrice`, falling back to `price.regularMarketPrice`) for its upside. A recommendation key of `none` becomes `null`.
 3. **Trend** — `recommendation_trend()` turns each month's counts into a row with a total, newest first, dropping months with no counts.
-4. **Coverage** — `has_coverage()` is false when there are no targets, no recommendation and no trend; `main()` then fails.
-5. **Report** — the three sections, or the JSON object.
+4. **Actions** — `analyst_actions()` keeps the `upgradeDowngradeHistory` entries dated within `--days` of now (Yahoo returns the whole history, back to 2012 for Apple), newest first. It maps Yahoo's action codes (`up`, `down`, `init`, `reit`, `main`) and target verbs (`Raises`, `Lowers`, …) to plain words, and turns blank grades and Yahoo's `0` "no target" placeholder into `null`. `action_summary()` counts them.
+5. **Coverage** — `has_coverage()` is false when there are no targets, no recommendation, no trend and no actions; `main()` then fails.
+6. **Report** — the four sections, or the JSON object.
 
 ### API reference
 
 - `MODULES` — The `quoteSummary` modules fetched.
-- `extract_targets(modules)` — Returns the JSON-shaped dict (without `symbol`).
+- `DEFAULT_DAYS` — The default `--days` window (90).
+- `extract_targets(modules, days=DEFAULT_DAYS, now=None)` — Returns the JSON-shaped dict (without `symbol`). `now` (epoch seconds) fixes the clock for tests.
 - `recommendation_trend(modules)` — The monthly rating counts, newest first.
+- `analyst_actions(modules, days=DEFAULT_DAYS, now=None)` — The firm-level actions in the window, newest first.
+- `action_summary(actions)` — Upgrade, downgrade, initiation, target-raised and target-lowered counts.
 - `has_coverage(data)` — Whether `extract_targets()` found any analyst data.
 - `build_report(symbol, data)` / `build_json(symbol, data)` — The text report and the JSON payload.
 - `parse_args(argv=None)`, `main(argv=None)` — The CLI.
@@ -2162,13 +2179,15 @@ Recommendation trend
 
 - Network failure or a bad ticker → exits 1, printing `Error: …` to stderr (or `{"error": "…"}` with `--json`).
 - A symbol with no analyst data — an uncovered small cap, ETF, index, currency or future — exits 1 with `no analyst coverage for '<symbol>' (only covered company stocks have targets)`.
-- A missing symbol or unknown flag is rejected by argument parsing (exit code 2), before any request is made.
+- A missing symbol, unknown flag or non-positive `--days` is rejected by argument parsing (exit code 2), before any request is made.
 
 ### Notes / limitations
 
 - These are other analysts' opinions as Yahoo aggregates them, not a forecast this script makes; Yahoo refreshes them irregularly.
 - Targets are in the trading currency, so `GBp` listings are in pence, the same unit as the price.
 - The trend counts ratings, which can come from more analysts than set a price target (Apple: 44 ratings, 39 targets).
+- Yahoo has analyst actions for US listings only: `D05.SI` and `VOD.L` return none, so the section is empty there. Action dates are UTC.
+- Grades are each firm's own wording (`Overweight`, `Outperform`, `Buy`), not mapped onto one scale. The split between `reiterate` and `maintain` is Yahoo's and not always meaningful. Old targets are not split-adjusted, which matters only for a long `--days`.
 - Same undocumented endpoint and fragile crumb/cookie flow as `stock_intrinsic_value.py`.
 
 ---
@@ -2179,11 +2198,11 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer requests like "what's the analyst price target for Apple?", "do analysts rate Tesla a buy?", "how much upside do analysts see in DBS?" or "have analysts turned more bearish on Intel?" from live Yahoo Finance data, instead of stale training data.
+Lets Claude Code answer requests like "what's the analyst price target for Apple?", "do analysts rate Tesla a buy?", "how much upside do analysts see in DBS?", "have analysts turned more bearish on Intel?" or "who downgraded Nike recently?" from live Yahoo Finance data, instead of stale training data.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's analyst price targets, ratings, consensus or upside to target, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value) and earnings dates to [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar) instead.
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's analyst price targets, ratings, consensus, upside to target, or recent upgrades, downgrades and target changes, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value) and earnings dates to [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar) instead.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-analyst-targets"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -2191,8 +2210,8 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### What it does
 
 1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings; if the ticker is uncertain it says so rather than guessing. It declines ETFs, indices, currencies and commodities (no analyst coverage) without running the script, and runs once per ticker for comparisons.
-2. Runs `python3 stock_analyst_targets.py SYMBOL --json` from the repo root.
-3. Leads with the consensus rating, the median and mean target with the implied upside or downside, and the number of analysts; gives the low–high spread; and describes any shift in the monthly buy / hold / sell counts. Comparisons go in one table.
+2. Runs `python3 stock_analyst_targets.py SYMBOL --json` from the repo root, adding `--days N` when the user names a period for recent analyst actions.
+3. Leads with the consensus rating, the median and mean target with the implied upside or downside, and the number of analysts; gives the low–high spread; describes any shift in the monthly buy / hold / sell counts; and names recent upgrades, downgrades and initiations firm by firm, with a summary of target raises and cuts. It leads with those actions instead when they are what the user asked about. Comparisons go in one table.
 4. Closes with a caveat that these are other people's opinions, often wrong, and not investment advice — and never adds a buy/sell view of its own. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
 
 ### Configuration
@@ -2205,7 +2224,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### Notes / limitations
 
 - Requires `stock_analyst_targets.py` and its `yahoo_finance.py` / `stock_intrinsic_value.py` / `cli_utils.py` helpers (and `requests`) to be runnable from the repo root.
-- Inherits all the limitations of [`stock_analyst_targets.py`](#stock_analyst_targetspy): aggregated opinions refreshed irregularly, rating counts that exceed the target count.
+- Inherits all the limitations of [`stock_analyst_targets.py`](#stock_analyst_targetspy): aggregated opinions refreshed irregularly, rating counts that exceed the target count, analyst actions for US listings only.
 
 ---
 

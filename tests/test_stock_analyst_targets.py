@@ -1,6 +1,7 @@
-"""Tests for stock_analyst_targets: target/trend extraction, output, main()."""
+"""Tests for stock_analyst_targets: target/trend/action extraction, output, main()."""
 
 import json
+import time
 
 import pytest
 import requests
@@ -12,6 +13,30 @@ import yahoo_finance as yf
 def _trend(period, strong_buy, buy, hold, sell, strong_sell):
     return {"period": period, "strongBuy": strong_buy, "buy": buy, "hold": hold,
             "sell": sell, "strongSell": strong_sell}
+
+
+DAY = 86400
+NOW = 1_790_000_000  # 2026-09-21 14:13 UTC
+
+
+def _grade(days_ago, firm, action, from_grade, to_grade, target_action="", target=0.0,
+           prior=0.0, now=NOW):
+    return {"epochGradeDate": int(now - days_ago * DAY), "firm": firm, "action": action,
+            "fromGrade": from_grade, "toGrade": to_grade,
+            "priceTargetAction": target_action, "currentPriceTarget": target,
+            "priorPriceTarget": prior}
+
+
+def _history(now=NOW):
+    """``upgradeDowngradeHistory`` out of date order, one entry outside 90 days."""
+    return {"history": [
+        _grade(10, "Beta Bank", "down", "Buy", "Hold", "Lowers", 120.0, 140.0, now),
+        _grade(2, "Alpha Capital", "up", "Hold", "Buy", "Raises", 150.0, 130.0, now),
+        _grade(200, "Old Firm", "init", "", "Buy", "Announces", 90.0, 0.0, now),
+        _grade(30, "Gamma Research", "reit", "Neutral", "Neutral", "", 0.0, 0.0, now),
+        _grade(45, "Delta Partners", "main", "Outperform", "Outperform", "Maintains",
+               115.0, 115.0, now),
+    ]}
 
 
 def _modules(price=100.0):
@@ -74,6 +99,60 @@ class TestRecommendationTrend:
         assert sat.recommendation_trend(modules) == []
 
 
+class TestAnalystActions:
+    def test_window_and_newest_first(self):
+        rows = sat.analyst_actions({"upgradeDowngradeHistory": _history()}, 90, now=NOW)
+        assert [r["firm"] for r in rows] == [
+            "Alpha Capital", "Beta Bank", "Gamma Research", "Delta Partners"]
+
+    def test_fields_and_mapping(self):
+        rows = sat.analyst_actions({"upgradeDowngradeHistory": _history()}, 90, now=NOW)
+        assert rows[0] == {
+            "date": "2026-09-19", "firm": "Alpha Capital", "action": "upgrade",
+            "from_grade": "Hold", "to_grade": "Buy", "target_action": "raised",
+            "target": 150.0, "prior_target": 130.0,
+        }
+        assert (rows[1]["action"], rows[1]["target_action"]) == ("downgrade", "lowered")
+        assert (rows[3]["action"], rows[3]["target_action"]) == ("maintain", "maintained")
+
+    def test_zero_targets_and_blank_text_become_none(self):
+        rows = sat.analyst_actions({"upgradeDowngradeHistory": _history()}, 90, now=NOW)
+        gamma = rows[2]
+        assert gamma["action"] == "reiterate"
+        assert (gamma["target_action"], gamma["target"], gamma["prior_target"]) == (None, None, None)
+        old = sat.analyst_actions({"upgradeDowngradeHistory": _history()}, 365, now=NOW)[-1]
+        assert (old["action"], old["from_grade"], old["prior_target"]) == ("initiate", None, None)
+
+    def test_days_narrows_window(self):
+        rows = sat.analyst_actions({"upgradeDowngradeHistory": _history()}, 7, now=NOW)
+        assert [r["firm"] for r in rows] == ["Alpha Capital"]
+
+    def test_unknown_codes_pass_through_and_undated_skipped(self):
+        history = {"history": [
+            _grade(1, "X", "xyz", "A", "B", "Rethinks", 1.0),
+            {"firm": "No Date", "action": "up"},
+        ]}
+        rows = sat.analyst_actions({"upgradeDowngradeHistory": history}, 90, now=NOW)
+        assert [(r["action"], r["target_action"]) for r in rows] == [("xyz", "rethinks")]
+
+    def test_missing_module(self):
+        assert sat.analyst_actions(_modules(), now=NOW) == []
+
+    def test_summary(self):
+        rows = sat.analyst_actions({"upgradeDowngradeHistory": _history()}, 365, now=NOW)
+        assert sat.action_summary(rows) == {
+            "upgrades": 1, "downgrades": 1, "initiations": 1,
+            "targets_raised": 1, "targets_lowered": 1,
+        }
+
+    def test_extract_targets_includes_actions(self):
+        modules = {**_modules(), "upgradeDowngradeHistory": _history()}
+        data = sat.extract_targets(modules, 90, now=NOW)
+        assert data["actions_days"] == 90
+        assert len(data["actions"]) == 4
+        assert data["action_summary"]["upgrades"] == 1
+
+
 class TestHasCoverage:
     def test_covered(self):
         assert sat.has_coverage(sat.extract_targets(_modules()))
@@ -84,6 +163,10 @@ class TestHasCoverage:
     def test_trend_alone_counts(self):
         modules = {"recommendationTrend": _modules()["recommendationTrend"]}
         assert sat.has_coverage(sat.extract_targets(modules))
+
+    def test_actions_alone_count(self):
+        modules = {"upgradeDowngradeHistory": _history()}
+        assert sat.has_coverage(sat.extract_targets(modules, 90, now=NOW))
 
 
 class TestBuildReport:
@@ -110,11 +193,34 @@ class TestBuildReport:
         assert "Consensus  -" in report
         assert "No rating counts from Yahoo" in report
 
+    def test_actions_section(self):
+        modules = {**_modules(), "upgradeDowngradeHistory": _history()}
+        report = sat.build_report("AAA", sat.extract_targets(modules, 90, now=NOW))
+        assert "Analyst actions (last 90 days)" in report
+        assert "1 upgrades, 1 downgrades, 0 initiations; targets raised 1, lowered 1" in report
+        lines = report.splitlines()
+        alpha = next(line for line in lines if "Alpha Capital" in line)
+        assert "upgrade" in alpha and "Hold -> Buy" in alpha and "130.00 -> 150.00" in alpha
+        gamma = next(line for line in lines if "Gamma Research" in line)
+        assert "->" not in gamma and gamma.rstrip().endswith("-")
+        delta = next(line for line in lines if "Delta Partners" in line)
+        assert delta.rstrip().endswith("115.00") and "->" not in delta
+
+    def test_no_actions(self):
+        report = sat.build_report("AAA", sat.extract_targets(_modules(), 30))
+        assert "No upgrades, downgrades or target changes from Yahoo in the last 30 days" in report
+
 
 class TestParseArgs:
     def test_defaults(self):
         args = sat.parse_args(["AAPL"])
-        assert (args.symbol, args.json) == ("AAPL", False)
+        assert (args.symbol, args.days, args.json) == ("AAPL", 90, False)
+
+    @pytest.mark.parametrize("bad", ["0", "-5", "abc"])
+    def test_bad_days_exits_2(self, bad):
+        with pytest.raises(SystemExit) as exc:
+            sat.parse_args(["AAPL", "--days", bad])
+        assert exc.value.code == 2
 
     def test_missing_symbol_exits_2(self):
         with pytest.raises(SystemExit) as exc:
@@ -133,6 +239,14 @@ class TestMain:
         assert out["symbol"] == "AAA"  # upper-cased
         assert out["upside"]["median"] == 0.1
         assert out["trend"][0]["total"] == 22
+
+    def test_days_flag_limits_actions(self, monkeypatch, capsys):
+        modules = {**_modules(), "upgradeDowngradeHistory": _history(now=time.time())}
+        monkeypatch.setattr(yf, "fetch_quote_summary", lambda s, m: modules)
+        sat.main(["AAA", "--days", "20", "--json"])
+        out = json.loads(capsys.readouterr().out)
+        assert out["actions_days"] == 20
+        assert [a["firm"] for a in out["actions"]] == ["Alpha Capital", "Beta Bank"]
 
     def test_text_output(self, monkeypatch, capsys):
         monkeypatch.setattr(yf, "fetch_quote_summary", lambda s, m: _modules())
