@@ -12,8 +12,9 @@
     - If unsure of the ticker, say so rather than guess.
     - Only company stocks report earnings; for an ETF, index, currency or commodity, say so instead of retrieving anything.
 - Retrieve the earnings calendar, once per ticker.
+    - `no fundamentals in response` can mean an unknown ticker or a temporary Yahoo glitch: for a ticker you're confident of, retry once before reporting it; for one you guessed, say it may be wrong.
     - If the ticker is unknown or has no earnings data, report the error.
-    - Retry at most once, only for a transient network error.
+    - Retry at most once in total: for that error, or a transient network error.
 - Output:
     - Answer the question asked first:
         - "When does it report?": {{Next Earnings Date}}, {{Time (UTC)}} if confirmed, whether it is confirmed or an estimated window, and {{EPS Estimate}} {{Revenue Estimate}} in the {{Reporting Currency}}.

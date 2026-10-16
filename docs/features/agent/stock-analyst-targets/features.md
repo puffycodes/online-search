@@ -13,8 +13,9 @@
     - Analysts cover company stocks only; for an ETF, index, currency or commodity, say so instead of retrieving anything.
 - Retrieve the analyst targets and ratings, once per ticker.
     - When the user names a period for recent analyst actions, retrieve that many {{Days}}; otherwise the last 90.
+    - `no fundamentals in response` can mean an unknown ticker or a temporary Yahoo glitch: for a ticker you're confident of, retry once before reporting it; for one you guessed, say it may be wrong.
     - If the ticker is unknown or has no analyst coverage, report the error.
-    - Retry at most once, only for a transient network error.
+    - Retry at most once in total: for that error, or a transient network error.
 - Output:
     - {{Consensus Rating}}, {{Median Target}} and {{Mean Target}} with the {{Upside}} from {{Price}}, and the {{Number of Analysts}}.
     - {{Low Target}} to {{High Target}}; a wide spread means analysts disagree.

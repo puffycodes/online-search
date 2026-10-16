@@ -5,8 +5,8 @@ Shared helpers for Yahoo Finance's public endpoints. No API key required.
 Used by stock_price_history.py, stock_candlestick_chart.py and stock_rebased_chart.py
 for price history (the chart endpoint, the --range/--last/--start/--end window
 flags, and exchange-local session dates), by market_top_volume.py for the
-cookie + crumb handshake, by stock_intrinsic_value.py, stock_earnings_calendar.py
-and stock_analyst_targets.py for the quoteSummary fetch built on that handshake
+cookie + crumb handshake, by stock_intrinsic_value.py, stock_earnings_calendar.py,
+stock_analyst_targets.py and stock_holders.py for the quoteSummary fetch built on that handshake
 (stock_fundamental.py gets it through stock_intrinsic_value.py's fetch),
 and by app/stock_information/stock_info_server.py for its quote. Each caller
 keeps its own row shaping (rounding, date formatting, which rows to drop) and

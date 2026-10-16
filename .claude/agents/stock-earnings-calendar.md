@@ -24,7 +24,7 @@ When the user asks about several companies, run the tool once per ticker.
 
 ### On failure
 
-The command exits non-zero with `{"error": "..."}` on stderr — usually an unknown ticker (`no fundamentals in response`), a symbol with no earnings (`no earnings data`), or, occasionally, a transient Yahoo cookie/crumb blip. Report it plainly and retry at most once, only for a transient-looking network error.
+The command exits non-zero with `{"error": "..."}` on stderr — for an unknown ticker or a Yahoo blip (`no fundamentals in response`, see below), or a symbol with no earnings (`no earnings data`). Report it plainly. `no fundamentals in response` means Yahoo returned nothing for the symbol. That is the message both for an unknown ticker **and** for a transient Yahoo cookie/crumb blip, so it doesn't prove the ticker is wrong: in testing, `NVDA` and `VOD.L` each failed this way once and worked on the next try. If you're confident of the ticker (a well-known company, or one the user gave), retry once; if it fails again, say Yahoo returned no data for that ticker and suggest checking it. If the ticker was your own guess, say it may be wrong rather than retrying. A timeout or connection error may also be retried once. Retry at most once in total, and don't retry the other errors above, which won't change on retry.
 
 ## Step 2 — read the JSON
 

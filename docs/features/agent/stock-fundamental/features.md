@@ -11,8 +11,9 @@
     - Resolve each company to its Yahoo Finance ticker, adding the exchange suffix for non-US listings (e.g. .L, .SI, .DE, .PA, .TO, .AX, .NS, .HK, .T).
     - If unsure of the ticker, say so rather than guess.
 - Retrieve the fundamental indicators, once per ticker.
+    - `no fundamentals in response` can mean an unknown ticker or a temporary Yahoo glitch: for a ticker you're confident of, retry once before reporting it; for one you guessed, say it may be wrong.
     - If the ticker is unknown, report the error.
-    - Retry at most once, only for a transient network error.
+    - Retry at most once in total: for that error, or a transient network error.
 - Output:
     - {{Company Name}} {{Symbol}} {{Sector}} {{Industry}} {{Price}} {{Market Cap}}
     - If the user asked about specific indicators, answer those first, with only the related context that helps.

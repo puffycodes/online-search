@@ -15,8 +15,9 @@
     - Use any discount rate, growth, terminal growth, horizon, P/E, EV/EBITDA, P/S or CAPM input the user states.
 - If the user asks whether the stock is over- or undervalued, or wants a considered fair value, run conservative, base and optimistic scenarios by varying growth and discount rate.
 - Compute the valuations.
+    - `no fundamentals in response` can mean an unknown ticker or a temporary Yahoo glitch: for a ticker you're confident of, retry once before reporting it; for one you guessed, say it may be wrong.
     - If the ticker is unknown, report the error.
-    - Retry at most once, only for a transient network error.
+    - Retry at most once in total: for that error, or a transient network error.
 - Output:
     - The headline: {{DCF Value}} (or the {{DCF Range}} across scenarios) against {{Current Price}}, with the {{Discount Rate}} {{Growth}} {{Years}} used.
     - The reverse DCF: {{Implied Growth}} needed to justify the price, against {{Analyst Growth}}.

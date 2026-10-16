@@ -31,10 +31,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ## Finance
 
-### Yahoo `quoteSummary`: more modules (reuse `yahoo_finance.fetch_quote_summary()`)
-
-- [ ] **Insider transactions and major holders** (`insiderTransactions`, `majorHoldersBreakdown`)
-
 ### New sources
 
 - [ ] **FX rates from Frankfurter** (ECB reference rates, no key): an official

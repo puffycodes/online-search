@@ -31,7 +31,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick_chart.py` and produces a candlestick chart for a named stock, index, currency pair, crypto coin or commodity future
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks, indices, currency pairs, crypto coins or commodity futures
-- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing and the cookie + crumb `quoteSummary` fetch, used by the three price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `app/stock_information/`
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing and the cookie + crumb `quoteSummary` fetch, used by the three price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py`, `stock_holders.py` and `app/stock_information/`
 - [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py`, `stock_fundamental.py` and `stock_intrinsic_value.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
@@ -45,6 +45,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-earnings-calendar.md`](#claude-code-agent-stock-earnings-calendar) — Claude Code subagent that calls `stock_earnings_calendar.py` and answers when a named stock reports, what's expected, whether it beat, and its dividend dates
 - [`stock_analyst_targets.py`](#stock_analyst_targetspy) — pulls a stock's analyst price targets (low / median / mean / high, with upside), consensus rating, four-month buy / hold / sell trend and recent firm-level upgrades / downgrades from Yahoo Finance
 - [`.claude/agents/stock-analyst-targets.md`](#claude-code-agent-stock-analyst-targets) — Claude Code subagent that calls `stock_analyst_targets.py` and summarizes what analysts think of a named stock
+- [`stock_holders.py`](#stock_holderspy) — pulls a stock's ownership breakdown (insiders / institutions), recent insider transactions sorted into sales, purchases, awards, gifts and buybacks, and its top fund and institutional holders from Yahoo Finance
+- [`.claude/agents/stock-holders.md`](#claude-code-agent-stock-holders) — Claude Code subagent that calls `stock_holders.py` and reports who owns a named stock and what its insiders have been doing
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail; plus a feature spec (`features.md`) for every [script](docs/features/script/) and [agent](docs/features/agent/)
 
 **[Tech News & Discussions](#tech-news--discussions)**
@@ -1464,7 +1466,7 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy) and [`stock_analyst_targets.py`](#stock_analyst_targetspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1501,7 +1503,7 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 
 ### Notes / limitations
 
-- Changing a constant, the window flags or the `build_params` window logic here affects **all three** price scripts that use it, and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py` and `stock_analyst_targets.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all three** price scripts that use it, and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
 
 ---
 
@@ -1956,7 +1958,7 @@ Lets Claude Code answer requests like "what are Apple's fundamentals?", "what's 
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's margins, returns, growth, valuation multiples, debt or liquidity, cash flow or dividend, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value), earnings and dividend dates to [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar), and analyst price targets to [`stock-analyst-targets`](#claude-code-agent-stock-analyst-targets) instead.
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's margins, returns, growth, valuation multiples, debt or liquidity, cash flow or dividend, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value), earnings and dividend dates to [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar), analyst price targets to [`stock-analyst-targets`](#claude-code-agent-stock-analyst-targets), and shareholders and insider trading to [`stock-holders`](#claude-code-agent-stock-holders) instead.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-fundamental"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -2227,7 +2229,7 @@ Lets Claude Code answer requests like "what's the analyst price target for Apple
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's analyst price targets, ratings, consensus, upside to target, or recent upgrades, downgrades and target changes, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value) and earnings dates to [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar) instead.
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's analyst price targets, ratings, consensus, upside to target, or recent upgrades, downgrades and target changes, based on the `description` field in its frontmatter. Intrinsic/fair-value questions go to [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value) earnings dates to [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar), and shareholders and insider trading to [`stock-holders`](#claude-code-agent-stock-holders) instead.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "stock-analyst-targets"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -2250,6 +2252,164 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 - Requires `stock_analyst_targets.py` and its `yahoo_finance.py` / `stock_intrinsic_value.py` / `cli_utils.py` helpers (and `requests`) to be runnable from the repo root.
 - Inherits all the limitations of [`stock_analyst_targets.py`](#stock_analyst_targetspy): aggregated opinions refreshed irregularly, rating counts that exceed the target count, analyst actions for US listings only.
+
+---
+
+## stock_holders.py
+
+Pulls who owns a stock and what its insiders have been doing, from Yahoo Finance's public `quoteSummary` endpoint: the share held by insiders and institutions, each insider transaction over the last `--days` days, and the top fund and institutional holders. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
+
+| Section | What it shows | Source |
+|---|---|---|
+| Ownership | % held by insiders and by institutions (and of the float), number of institutions | `majorHoldersBreakdown` |
+| Insider activity | each transaction in the window, sorted into kinds, with sales and purchases totalled separately from everything else | `insiderTransactions` |
+| Top funds | the 10 largest fund holders: % held, change since their last report, shares, report date | `fundOwnership` |
+| Top institutions | the same for institutions — **US listings only** | `institutionOwnership` |
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `yahoo_finance.py` (the fetch), `stock_intrinsic_value.py` (number formatting) and `cli_utils.py` — run from the repo root so they import
+
+### Usage
+
+```bash
+python3 stock_holders.py SYMBOL [--days N] [--trades-only] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `7203.T`, … |
+| `--days N` | `180` | How many days of insider transactions to list; a positive integer |
+| `--trades-only` | off | List only sales, purchases and option exercises. Buybacks, awards, gifts and holder notices are left out of the list but still counted in the summary. Vodafone over 289 days: 54KB of JSON in full, 11KB with this flag |
+| `--json` | off | Emit structured JSON on stdout instead of the report |
+
+#### Example
+
+```bash
+python3 stock_holders.py AAPL --days 30
+```
+
+```
+AAPL - Apple Inc.  (NasdaqGS - USD)
+
+Ownership  insiders 1.65%    institutions 66.33% (67.44% of float)    7,697 institutions
+
+Insider activity (last 30 days)
+  Sales         6          270,751 shares     90,192,296.00 value
+  Purchases     0                0 shares                 - value
+  Other      1 gift, 4 unspecified
+
+  By insider                 Role                            Sold       Sale value      Bought      Buy value
+  COOK TIMOTHY D             Officer and Director         191,753    63,845,841.00           0              -
+  O'BRIEN DEIRDRE            Officer                       46,389    15,466,923.00           0              -
+  ...
+
+  Date        Name                     Role                   Kind             Shares           Price            Value
+  2026-10-06  NEWSTEAD JENNIFER        General Counsel        sale              2,399          332.01       796,492.00
+  2026-10-02  COOK TIMOTHY D           Officer and Director   gift             26,325               -                -
+  2026-10-02  O'BRIEN DEIRDRE          Officer                sale             46,389   333.35-333.91    15,466,923.00
+  2026-10-02  COOK TIMOTHY D           Officer and Director   sale            191,753   331.44-333.94    63,845,841.00
+  2026-10-01  COOK TIMOTHY D           Officer and Director   ?               374,541               -                -
+  ...
+
+Top funds
+  Holder                                            Held   Change          Shares  As of
+  VANGUARD INDEX FUNDS-Vanguard Total Stock Mark   3.19%   +0.01%     466,272,244  2026-06-30
+  VANGUARD INDEX FUNDS-Vanguard 500 Index Fund     2.61%   +2.02%     380,610,709  2026-06-30
+  ...
+
+Top institutions
+  Holder                                            Held   Change          Shares  As of
+  Blackrock Inc.                                   7.97%   +1.60%   1,162,996,939  2026-06-30
+  ...
+```
+
+(Figures move with live data; rows and the closing notes trimmed.) With `--json`: `{symbol, name, exchange, currency, us_listing, transaction_currency, ownership, days, trades_only, insider_summary, transactions, top_funds, top_institutions}`:
+- `currency` is the quote currency. `transaction_currency` is the currency of insider-trade prices and values: the quote currency for US listings and `USD` for non-US ones (see Notes / limitations).
+- `ownership` is `{insiders_pct, institutions_pct, institutions_float_pct, institutions_count}`, as fractions (`0.6633` = 66.33%).
+- `transactions` is newest first: `[{date, name, relation, kind, text, shares, value, price_low, price_high, ownership}, ...]`, with `kind` one of `sale`, `purchase`, `option_exercise`, `award`, `gift`, `buyback`, `holder_disclosure`, `other`, `unspecified`, and `ownership` `direct` / `indirect`.
+- `insider_summary` is `{sales: {count, shares, value}, purchases: {...}, other_counts: {kind: n}, by_insider: [...]}`. `by_insider` lists each insider with at least one sale or purchase, most value traded first, as `{name, relation, sales: {count, shares, value}, purchases: {...}}`. The text report shows the first 10. The summary always covers the whole window, even with `--trades-only`.
+- `top_funds` and `top_institutions` are `[{name, pct_held, shares, value, pct_change, report_date}, ...]`; `top_institutions` is `null` for non-US listings.
+
+### How it works
+
+1. **Fetch** — `yahoo_finance.fetch_quote_summary()`: the cookie + crumb handshake, then `quoteSummary` for `price,majorHoldersBreakdown,insiderTransactions,fundOwnership,institutionOwnership`.
+2. **Transactions** — `insider_transactions()` keeps entries dated within `--days` of now, newest first, and reads the per-share price (or low–high range) out of Yahoo's description ("Sale at price 222.19 - 223.75 per share."). Yahoo's `0` placeholders for value and price become `null`.
+3. **Kinds** — `classify()` decides each transaction's kind from that description first: `Sale`/`Sold`, `Purchase`/`Bought`, `Buy Back`, `Conversion of Exercise of derivative security`, `Stock Award(Grant)`, `Stock Gift`, else `other`. With **no** description, it's a `buyback` when the filer is the company itself (matched on the first two words of its name: "Vodafone Group Plc" ↔ "Vodafone Group Public Limited Company"), a `holder_disclosure` when no role is given (a bank or fund reporting its stake), and `unspecified` otherwise.
+4. **Summary** — `insider_summary()` totals sales and purchases (count, shares, value), overall and per insider, and only counts every other kind, so awards, gifts, exercises and buybacks never look like buying or selling. `--trades-only` then trims the listed transactions to sales, purchases and exercises; the summary is worked out first, so it still counts everything.
+5. **Holders** — `holders()` reads the fund and institution lists. The institution list is dropped for non-US listings (`is_us_listing()`: a symbol without an exchange suffix such as `.L`).
+6. **Coverage** — `has_data()` is false with no ownership breakdown, no transactions and no holders; `main()` then fails.
+
+Yahoo's `netSharePurchaseActivity` module (a 6-month buy/sell summary) is deliberately not used: it counts stock awards as purchases, and its institutional net-buying figure was implausible in testing (Apple: −14% in six months).
+
+### API reference
+
+- `MODULES` / `DEFAULT_DAYS` — The `quoteSummary` modules fetched, and the default window (180).
+- `extract_holders(symbol, modules, days=DEFAULT_DAYS, now=None, trades_only=False)` — Returns the JSON-shaped dict (without `symbol`). `now` (epoch seconds) fixes the clock for tests.
+- `insider_transactions(modules, company_names, days=DEFAULT_DAYS, now=None)` / `insider_summary(transactions)` — The transactions in the window, and their totals (overall, per kind, and per insider in `by_insider`).
+- `transaction_count(data)` — Every transaction in the window, including any `--trades-only` left out of the list.
+- `classify(text, filer, relation, company_names)` — The kind of one transaction.
+- `holders(modules, module)` — A fund or institution list.
+- `is_us_listing(symbol)`, `has_data(data)` — The listing and coverage checks.
+- `build_report(symbol, data)` / `build_json(symbol, data)` — The text report and the JSON payload.
+- `parse_args(argv=None)`, `main(argv=None)` — The CLI.
+
+### Error handling
+
+- Network failure or a bad ticker → exits 1, printing `Error: …` to stderr (or `{"error": "…"}` with `--json`).
+- A symbol with no ownership data — an ETF, index, currency or future — exits 1 with `no ownership data for '<symbol>' (only company stocks have holders)`.
+- A missing symbol, unknown flag or non-positive `--days` is rejected by argument parsing (exit code 2), before any request is made.
+
+### Notes / limitations
+
+- **Non-US listings look different.**
+  - Yahoo's transaction list there is mostly company buybacks and large-holder disclosures. VOD.L: 82 of 150 rows were Vodafone's own buybacks; Toyota had only buybacks from 2013–2022; SAP.DE had none.
+  - Real director trades appear for some listings (DBS's CEO sale on D05.SI), often without a role.
+  - **Insider-trade prices and values are in US dollars**, not the quote currency. Yahoo doesn't label them, but on the trade dates they match the local price converted to dollars: Vodafone at 104.95p × 1.317 = $1.38 (Yahoo: 1.38), and DBS at S$60.20 × 0.783 = $47.16 (Yahoo: 46.96). The JSON's `transaction_currency` is `USD` for non-US listings for this reason; it's an inference, so a market that behaves differently would need checking.
+  - A `holder_disclosure` (no description, no role) is often a bank or fund reporting its stake. Outside the US it can also be a director's own holdings notice: Vodafone's directors filed these the day before their sales.
+- **US data is better, but still partial.** Large US companies rarely show open-market purchases, and many rows have no description (Apple: identical share counts for several officers on one day, which look like vesting awards). Those are labelled `unspecified` rather than guessed.
+- **Holder lists are periodic filings,** quarterly for institutions, so their report dates can be weeks or months old. A holder's `value` is not as of that date, though: it's the reported shares × **today's** price, in the quote currency (every DBS fund came out at today's S$74.26 a share whatever its report date; Vodafone's are in pence).
+- **Yahoo's own text can be corrupted:** "Société Générale" arrives with replacement characters in the JSON itself.
+- Same undocumented endpoint and fragile crumb/cookie flow as `stock_intrinsic_value.py`.
+
+---
+
+## Claude Code agent: `stock-holders`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-holders.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_holders.py`](#stock_holderspy).
+
+### Purpose
+
+Lets Claude Code answer requests like "have insiders been selling Nvidia?", "who are Apple's biggest shareholders?", "what share of Tesla do institutions own?" or "is Vodafone buying back its stock?" from live Yahoo Finance data, instead of stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about a named company's shareholders, ownership structure, fund or institutional holders, or insider buying and selling, based on the `description` field in its frontmatter. Analyst ratings go to [`stock-analyst-targets`](#claude-code-agent-stock-analyst-targets) and financial ratios to [`stock-fundamental`](#claude-code-agent-stock-fundamental) instead.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-holders"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings; if the ticker is uncertain it says so rather than guessing. It declines ETFs, indices, currencies and commodities without running the script, and runs once per ticker for comparisons.
+2. Runs `python3 stock_holders.py SYMBOL --json` from the repo root, adding `--days N` when the user names a period. For vague words like "lately" it keeps the default 180 days and says so. It adds `--trades-only` when the question is only about insider buying and selling.
+3. Leads with what was asked: insider sales and purchases in the window (count, shares, value, and the most active insiders and their roles, from `by_insider` rather than its own arithmetic), or the insider and institutional percentages and largest holders. It keeps awards, option exercises, gifts and buybacks apart from buying and selling, and doesn't read insider selling as a signal.
+4. For non-US listings, says the transaction list is mostly buybacks and holder disclosures, reports real director trades separately, and keeps the currencies apart: trade values in US dollars (`transaction_currency`), fund values in the quote currency (pence for London). It always gives the holder lists' report dates. Comparisons go in one table.
+5. Closes with a caveat that the data is aggregated by Yahoo Finance, can lag, and isn't investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_holders.py`](#stock_holderspy) |
+
+### Notes / limitations
+
+- Requires `stock_holders.py` and its `yahoo_finance.py` / `stock_intrinsic_value.py` / `cli_utils.py` helpers (and `requests`) to be runnable from the repo root.
+- Inherits all the limitations of [`stock_holders.py`](#stock_holderspy): thin and differently-shaped non-US data, periodic holder filings, unspecified US rows.
 
 ---
 
