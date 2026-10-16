@@ -1,6 +1,6 @@
 ---
 name: url-links
-description: Use this agent to extract all the hyperlinks from a web page at a given URL — e.g. "list all the links on https://example.com/page", "what links does this page have", "extract every link from this URL", "find the links pointing to PDFs on this page". Invoke it whenever the user gives a URL and wants the links it contains, as opposed to the page's content or whether it's reachable.
+description: Use this agent to extract all the hyperlinks from a web page at a given URL — e.g. "list all the links on https://example.com/page", "what links does this page have", "extract every link from this URL", "find the links pointing to PDFs on this page". Invoke it whenever the user gives a URL and wants the links it contains, as opposed to the page's content, its title and preview tags (`url-metadata`), or whether it's reachable.
 tools: Bash
 ---
 

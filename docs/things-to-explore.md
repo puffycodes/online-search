@@ -14,12 +14,9 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **`url_metadata.py`** (Web pages): title, description, OpenGraph tags and canonical
-   URL, reusing the `url_*` validation and BeautifulSoup; `url-summary` could use it to
-   label pages.
-2. **Less noise in comment searches** (Extending `hn_search.py`): agent guidance to add
+1. **Less noise in comment searches** (Extending `hn_search.py`): agent guidance to add
    context words or prefer `--story`; instructions-only, about 1 in 5 off-topic today.
-3. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
+2. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
    instructions-only change to the `hottest-tech-discussion-summary` agent, but it
    lengthens an already multi-step workflow. Open questions: search only or also read
    the top earlier thread, always on or on request, and how far back counts as earlier.
@@ -78,8 +75,10 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ## Web pages (extending the `url_*` family)
 
-- [ ] **`url_metadata.py`**: page title, meta description, OpenGraph/Twitter-card tags,
-  canonical URL (BeautifulSoup is already a dependency of `url_links.py`).
+- [ ] **Page titles in `url-summary`**: have the agent also run `url_metadata.py` per
+  URL to label each summary with the page's title (`url_content.py --text` keeps the
+  title only as unlabelled text at the start of `content`). Instructions-only, but
+  doubles the fetches per URL.
 - [ ] **RSS/Atom feed reader**: latest items from a site's feed.
 - [ ] **SSL certificate expiry and DNS lookup**: standard library only (`ssl`, `socket`).
 - [ ] **robots.txt and sitemap listing**.

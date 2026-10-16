@@ -66,6 +66,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/url-content.md`](#claude-code-agent-url-content) — Claude Code subagent that calls `url_content.py` and reports or summarizes the content at a named URL
 - [`url_links.py`](#url_linkspy) — retrieves a web page at a given URL and extracts every hyperlink (`<a href>`) in its HTML content, resolved to absolute URLs, via BeautifulSoup (no API key)
 - [`.claude/agents/url-links.md`](#claude-code-agent-url-links) — Claude Code subagent that calls `url_links.py` and reports the links found on a named URL
+- [`url_metadata.py`](#url_metadatapy) — retrieves a web page at a given URL and extracts its title, meta description, canonical URL, and OpenGraph / Twitter-card tags, via BeautifulSoup (no API key)
+- [`.claude/agents/url-metadata.md`](#claude-code-agent-url-metadata) — Claude Code subagent that calls `url_metadata.py` and reports the title, description, canonical URL or link-preview tags of one or more URLs
 - [`.claude/agents/url-summary.md`](#claude-code-agent-url-summary) — Claude Code subagent that calls `url_content.py` once per given URL and reports a summary of each page's content
 
 **[Development](#development)**
@@ -4377,6 +4379,179 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ---
 
+## url_metadata.py
+
+Retrieves a web page at a given URL and extracts its metadata: the `<title>`, the meta description, the canonical URL, and the OpenGraph (`og:*`) and Twitter-card (`twitter:*`) tags that sites use to build link previews. Makes an HTTP GET request and parses the HTML with BeautifulSoup. The canonical URL and URL-valued tags are resolved against the page's final URL (after redirects). No API key required.
+
+### Requirements
+
+- `requests`
+- `beautifulsoup4`
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+
+### Usage
+
+```bash
+python3 url_metadata.py URL [--timeout SECONDS] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `URL` (positional) | — | URL to fetch, e.g. `https://example.com`; must start with `http://` or `https://` |
+| `--timeout SECONDS` | 10 | Request timeout in seconds |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Fetching: https://github.com/anthropics
+
+URL: https://github.com/anthropics
+Status: 200
+
+Title:       Anthropic · GitHub
+Description: Anthropic has 115 repositories available. Follow their code on GitHub.
+Canonical:   https://github.com/anthropics
+
+OpenGraph:
+  image        https://avatars.githubusercontent.com/u/76263028?s=280&v=4
+  image:alt    Anthropic has 115 repositories available. Follow their code on GitHub.
+  site_name    GitHub
+  type         profile
+  title        Anthropic
+  url          https://github.com/anthropics
+  description  Anthropic has 115 repositories available. Follow their code on GitHub.
+
+Twitter card:
+  image        https://avatars.githubusercontent.com/u/76263028?s=280&v=4
+  site         @github
+  card         summary_large_image
+  title        Anthropic
+  description  Anthropic has 115 repositories available. Follow their code on GitHub.
+```
+
+A page without them reports `-` for a missing title / description / canonical URL and `none` for an empty tag group (`https://example.com` has only a title).
+
+#### Tool usage (`--json`)
+
+```bash
+python3 url_metadata.py https://github.com/anthropics --json
+```
+
+```json
+{
+  "url": "https://github.com/anthropics",
+  "final_url": "https://github.com/anthropics",
+  "status_code": 200,
+  "content_type": "text/html; charset=utf-8",
+  "title": "Anthropic · GitHub",
+  "description": "Anthropic has 115 repositories available. Follow their code on GitHub.",
+  "canonical": "https://github.com/anthropics",
+  "open_graph": {
+    "image": "https://avatars.githubusercontent.com/u/76263028?s=280&v=4",
+    "site_name": "GitHub",
+    "type": "profile",
+    "title": "Anthropic",
+    "url": "https://github.com/anthropics"
+  },
+  "twitter": {
+    "site": "@github",
+    "card": "summary_large_image",
+    "title": "Anthropic"
+  }
+}
+```
+
+(Trimmed.) `open_graph` and `twitter` keep each tag's name without its prefix, in page order. A missing `title`, `description` or `canonical` is `null`, and a page with no tags in a group gives `{}`. Non-ASCII characters are `\u`-escaped, as in the other `url_*.py` scripts. With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Validate the URL** — Rejects a URL that doesn't start with `http://` or `https://` before making any request.
+2. **Fetch** — Issues a `GET` with a browser-like `User-Agent`, following redirects.
+3. **Check the response** — A `4xx`/`5xx` status raises `requests.HTTPError`; a `Content-Type` that doesn't contain `html` raises `ValueError`.
+4. **Extract** — Parses the body with BeautifulSoup (`html.parser`):
+   - **Title** — the `<title>` inside `<head>` (an inline `<svg>` can carry its own `<title>`), falling back to the first `<title>` anywhere; whitespace collapsed.
+   - **Meta tags** — each `<meta>` keyed by its `property` or `name` attribute, lower-cased (sites use both attributes for both groups). `description` fills the description; `og:*` and `twitter:*` fill their groups with the prefix stripped. A tag with empty content is skipped, and a repeated tag keeps its first value. URL-valued keys (`url`, `image`, `image:url`, `image:secure_url`) are resolved with `urllib.parse.urljoin`.
+   - **Canonical** — the first `<link>` whose `rel` includes `canonical` (case-insensitive) and has a non-empty `href`, resolved against the final URL.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `TIMEOUT_SECONDS` | 10 | Default request timeout, used unless `--timeout` overrides it |
+| `USER_AGENT` | `Mozilla/5.0 (compatible; online-search-url-metadata/1.0)` | `User-Agent` header sent with the request — some sites 403 requests with no/default UA |
+| `TAG_GROUPS` | `{"open_graph": "og:", "twitter": "twitter:"}` | Output key and meta-name prefix of each tag group |
+| `URL_KEYS` | `url`, `image`, `image:url`, `image:secure_url` | Tag names (without prefix) whose values are resolved to absolute URLs |
+
+### API reference
+
+- `extract_metadata(html, base_url)` — Parses `html` and returns `{title, description, canonical, open_graph, twitter}`, resolving URLs against `base_url`. Raises `ImportError` if `beautifulsoup4` isn't installed (imported lazily, so the rest of the script works without it).
+- `fetch_metadata(url, timeout=TIMEOUT_SECONDS)` — Issues the `GET` request and returns `{url, final_url, status_code, content_type}` plus the `extract_metadata()` fields. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-HTML `Content-Type`, and `ImportError` if `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
+- `format_result(result)` — Renders a `fetch_metadata()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url`, `-` for a missing field and `none` for an empty tag group.
+- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; validates the URL scheme, calls `fetch_metadata()`, handles top-level errors, and prints the result (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If the URL doesn't start with `http://` or `https://`, the script prints an error and exits with status code 1 before making any request.
+- If the server returns a `4xx`/`5xx` status, the script prints an error (`requests`' own `HTTPError` message) and exits with status code 1.
+- If the response's `Content-Type` doesn't contain `html`, the script prints an error (`"URL did not return HTML content (Content-Type: ...)"`) and exits with status code 1.
+- If `beautifulsoup4` isn't installed, the script prints `"beautifulsoup4 is required (pip install beautifulsoup4)"` and exits with status code 1.
+- If the request fails at the connection level (DNS failure, timeout, connection refused, etc.), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- An out-of-range `--timeout` (e.g. `0` or negative) is rejected by argparse before any request, exiting with status code 2.
+
+### Notes / limitations
+
+- No JavaScript rendering — single-page apps that set their title or tags client-side can come back with `null` / `{}` even though a browser shows them.
+- A repeated tag keeps only its first value, so a page with several `og:image` tags reports just the first.
+- Other metadata (`<html lang>`, favicons, JSON-LD structured data, `<meta name="robots">`, Dublin Core tags) isn't extracted.
+- Content-type sniffing is a simple substring check (`"html" in content_type.lower()`) on the `Content-Type` header, not a body sniff.
+- Some sites block automated requests regardless of `User-Agent` (bot-detection, Cloudflare challenges, etc.), which can surface as a `4xx`/`5xx` error even though the page is reachable in a real browser.
+- A single attempt, no retry — a transient network hiccup is reported as a connection-level error rather than retried internally.
+
+---
+
+## Claude Code agent: `url-metadata`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/url-metadata.md`. It calls no API itself — it shells out to [`url_metadata.py`](#url_metadatapy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what's the title of this page?", "what will this link look like when I share it?", "get the OpenGraph tags for this URL", "what's the canonical URL of this page?" or "label these links with their page titles" by running the script and reporting its JSON output, instead of guessing.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own when the user gives one or more URLs and wants their title, description, canonical URL or social-preview tags, based on the `description` field in its frontmatter. The page's full content goes to [`url-content`](#claude-code-agent-url-content), a summary to [`url-summary`](#claude-code-agent-url-summary), its links to [`url-links`](#claude-code-agent-url-links), and reachability to [`url-availability`](#claude-code-agent-url-availability) instead.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "url-metadata"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Adds a `https://` scheme itself if the user gave a bare domain or path (the underlying script requires one).
+2. Runs `python3 url_metadata.py "URL" --json` from the repo root, once per URL.
+3. Leads with what the user asked for (e.g. just the title), otherwise gives the title, description and canonical URL, then the preview tags. For a link-preview question it says which values a preview would use (`og:*`, falling back to the title and description) and what's missing, such as an `og:image`. It notes a canonical URL that differs from the final URL, and a redirect. Several URLs go in one table, with any failures and their reasons.
+4. Distinguishes an HTTP error, a non-HTML response, a missing `beautifulsoup4` dependency, and a connection-level failure (all surfaced as `{"error": "..."}`) when reporting a failure, and retries a connection-level failure at most once when it looks transient.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`url_metadata.py`](#url_metadatapy) |
+
+### Notes / limitations
+
+- Requires `url_metadata.py` (and its `requests`/`beautifulsoup4` dependencies) to be present and runnable from the repo root.
+- Its description of how a preview card would look follows the usual `og:*` / `twitter:*` conventions; each social site has its own rules and caches, so the real card can differ.
+- Inherits all the limitations of [`url_metadata.py`](#url_metadatapy) itself (no JavaScript rendering, first value only for a repeated tag, no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error).
+
+---
+
 ## Claude Code agent: `url-summary`
 
 A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/url-summary.md`. It calls no API itself — it shells out to [`url_content.py`](#url_contentpy) via the `Bash` tool, once per URL it's given, and reports a summary conversationally. Unlike [`url-content`](#claude-code-agent-url-content), it always summarizes rather than quoting/reporting raw content, and it accepts one *or more* URLs in a single request rather than just one.
@@ -4452,7 +4627,7 @@ Small helpers shared by the command-line scripts: UTF-8 output, uniform error ex
 - `use_utf8_output()` — Switches `sys.stdout` and `sys.stderr` to UTF-8. Every script's `main()` calls it first, before parsing arguments. Without it, Python on Windows writes piped or redirected output in the ANSI code page (cp1252): `°` and similar characters garble in a UTF-8 reader such as Git Bash, and any character cp1252 lacks (Japanese, Chinese, emoji, many symbols in web-search results or HN comments) raises `UnicodeEncodeError` and crashes the script. A stream that can't be reconfigured (e.g. one replaced by a test harness) is left alone. `--json` output was never affected, since `json.dumps` escapes non-ASCII characters.
 - `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
 - `require_env(name, script, as_json=False)` — Returns environment variable `name`, or calls `die()` (status code 1) with `"<name> environment variable must be set. See the module docstring in <script> for how to obtain one."` if it is unset or empty. Used by the six `web_search_*.py` scripts that need an API key, each calling `load_dotenv()` first so a `.env` value counts.
-- `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the three `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`), which all take a URL positional and reject a bare domain/path before making any request.
+- `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the four `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`, `url_metadata.py`), which all take a URL positional and reject a bare domain/path before making any request.
 - `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
 - `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).
 - `format_result(row)` — Renders a `{rank, title, url, snippet}` record (the shape every `web_search_*.py` script but `web_search_perplexity.py` produces) as a multi-line human-readable string.

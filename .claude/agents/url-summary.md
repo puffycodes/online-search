@@ -1,6 +1,6 @@
 ---
 name: url-summary
-description: Use this agent to summarize the content of one or more web pages given their URLs — e.g. "summarize this article: https://example.com/post", "summarize these URLs for me: https://a.com, https://b.com", "give me a summary of these three pages", "what do these links say, in short". Invoke it whenever the user gives one or more URLs and wants a summary of what's on them, as opposed to the full/raw content (that's the `url-content` agent), the links found on the page (`url-links`), or just a reachability check (`url-availability`).
+description: Use this agent to summarize the content of one or more web pages given their URLs — e.g. "summarize this article: https://example.com/post", "summarize these URLs for me: https://a.com, https://b.com", "give me a summary of these three pages", "what do these links say, in short". Invoke it whenever the user gives one or more URLs and wants a summary of what's on them, as opposed to the full/raw content (that's the `url-content` agent), the links found on the page (`url-links`), its title and link-preview tags (`url-metadata`), or just a reachability check (`url-availability`).
 tools: Bash
 ---
 

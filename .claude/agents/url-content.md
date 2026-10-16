@@ -1,6 +1,6 @@
 ---
 name: url-content
-description: Use this agent to retrieve the content of a web page at a given URL — e.g. "get the content of https://example.com/page", "fetch this page's text", "what's on this URL", "pull the HTML from this link", "summarize this page". Invoke it whenever the user gives a URL and wants to see or extract what's actually on the page, as opposed to just checking whether it's reachable.
+description: Use this agent to retrieve the content of a web page at a given URL — e.g. "get the content of https://example.com/page", "fetch this page's text", "what's on this URL", "pull the HTML from this link", "summarize this page". Invoke it whenever the user gives a URL and wants to see or extract what's actually on the page, as opposed to just checking whether it's reachable, or just its title, description and link-preview tags (that's the `url-metadata` agent).
 tools: Bash
 ---
 
