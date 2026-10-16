@@ -17,7 +17,7 @@
     - Prefer searching inside {{Topic}}'s own threads (found by a story search) over searching all comments.
     - Give an ambiguous name one context word that only fits the meaning wanted (e.g. swift xcode, bun node, golang for Go), and check the first results: a context word can bring in a meaning of its own, skill-list words pull in job posts, and matches drop sharply (don't quote the narrowed total as how often HN mentions the bare name). Distinctive names need none.
     - A context word biases the sample towards its own topic (e.g. swift xcode finds Xcode complaints), and none is neutral. For opinions, rely on the topic's own threads and use context-word searches only to add recent views. Run two with different context words, give more weight to views found in both, and never report a context word's topic as a finding.
-    - Drop comments from the monthly job threads (Who is hiring?, Who wants to be hired?, Freelancer? Seeking freelancer?) unless the user asks about jobs.
+    - The monthly job threads (Who is hiring?, Who wants to be hired?, Freelancer? Seeking freelancer?) are left out by the search itself; include them only when the user asks about jobs or hiring demand.
     - Skip comments that use the word in another sense or matched only on their author's name; ask for more results than needed so enough remain.
 - Choose the order: by relevance to find the big threads, by date for "lately" or "latest".
 - Turn the user's wording into a date window relative to today, a minimum score, or an author, if given.

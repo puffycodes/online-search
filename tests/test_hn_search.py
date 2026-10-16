@@ -41,6 +41,54 @@ COMMENT_HIT = {
 }
 
 
+def _job_comment(object_id, story_id, month="October 2026", kind="Who is hiring?"):
+    return {
+        "_tags": ["comment", f"story_{story_id}"],
+        "author": "recruiter",
+        "comment_text": "Acme | Swift engineer | REMOTE",
+        "created_at_i": 1704070800,
+        "objectID": str(object_id),
+        "story_id": story_id,
+        "story_title": f"Ask HN: {kind} ({month})",
+    }
+
+
+class TestJobThreads:
+    @pytest.mark.parametrize("title", [
+        "Ask HN: Who is hiring? (October 2026)",
+        "Ask HN: Who Is Hiring? (October 2010 Edition)",
+        "Ask HN: Who is Hiring? (July 2011)",
+        "Ask HN: Who wants to be hired? (October 2026)",
+        "Ask HN: Who wants to be hired?",
+        "Ask HN: Freelancer? Seeking freelancer? (August 2026)",
+        "Ask HN: Freelancer? Seeking Freelancer? (May 2013)",
+        "Ask HN: Freelancer? Seeking freelancers? (May 2011)",
+        " Ask HN: Freelancer? Seeking freelancer? (February 2012)",
+    ])
+    def test_job_thread_titles(self, title):
+        assert hs.is_job_thread(title)
+
+    @pytest.mark.parametrize("title", [
+        None,
+        "",
+        "Bun 1.0",
+        "Ask HN: Who is hiring right now?",
+        "Ask HN: Have the whoishiring posts been useful? Can we do better?",
+        "Show HN: Who is hiring refugees?",
+        "Tell HN: Ask HN: Who is hiring? is moving",
+    ])
+    def test_other_titles(self, title):
+        assert not hs.is_job_thread(title)
+
+    def test_is_job_hit_for_comments_and_stories(self):
+        assert hs.is_job_hit(_job_comment(1, 900))
+        assert not hs.is_job_hit(COMMENT_HIT)
+        story = {"_tags": ["story"], "objectID": "900",
+                 "title": "Ask HN: Who is hiring? (October 2026)"}
+        assert hs.is_job_hit(story)
+        assert not hs.is_job_hit(STORY_HIT)
+
+
 class TestBuildParams:
     def test_defaults(self):
         assert hs.build_params("bun") == {
@@ -77,6 +125,23 @@ class TestBuildParams:
     def test_limit(self):
         assert hs.build_params("x", limit=25)["hitsPerPage"] == 25
 
+    def test_excluded_stories_are_negative_tags(self):
+        params = hs.build_params("x", kind="comment", author="pg", exclude_stories=[5, 6])
+        assert params["tags"] == "comment,author_pg,-story_5,-story_6"
+
+
+def _scripted_fetch(monkeypatch, responses):
+    """Make fetch_json return `responses` in turn; returns the params list sent."""
+    sent = []
+    queue = list(responses)
+
+    def fake_fetch(url, params):
+        sent.append(params)
+        return queue.pop(0)
+
+    monkeypatch.setattr(hs, "fetch_json", fake_fetch)
+    return sent
+
 
 class TestSearch:
     def test_relevance_endpoint(self, monkeypatch):
@@ -87,9 +152,10 @@ class TestSearch:
             return {"hits": [STORY_HIT], "nbHits": 777}
 
         monkeypatch.setattr(hs, "fetch_json", fake_fetch)
-        hits, total = hs.search("bun", limit=3)
+        hits, total, job_threads = hs.search("bun", limit=3)
         assert hits == [STORY_HIT]
         assert total == 777
+        assert job_threads == 0
         assert captured["url"] == hs.SEARCH_URL
         assert captured["params"]["hitsPerPage"] == 3
 
@@ -101,7 +167,7 @@ class TestSearch:
             return {"hits": [], "nbHits": 0}
 
         monkeypatch.setattr(hs, "fetch_json", fake_fetch)
-        assert hs.search("bun", sort="date") == ([], 0)
+        assert hs.search("bun", sort="date") == ([], 0, 0)
         assert captured["url"] == hs.SEARCH_BY_DATE_URL
 
     def test_story_passed_through(self, monkeypatch):
@@ -117,7 +183,72 @@ class TestSearch:
 
     def test_missing_fields(self, monkeypatch):
         monkeypatch.setattr(hs, "fetch_json", lambda url, params: {})
-        assert hs.search("bun") == ([], 0)
+        assert hs.search("bun") == ([], 0, 0)
+
+
+class TestSearchJobThreads:
+    def test_found_threads_excluded_and_search_rerun(self, monkeypatch):
+        sent = _scripted_fetch(monkeypatch, [
+            {"hits": [_job_comment(1, 900), COMMENT_HIT, _job_comment(2, 800)], "nbHits": 50},
+            {"hits": [COMMENT_HIT], "nbHits": 40},
+        ])
+        hits, total, job_threads = hs.search("swift", kind="comment")
+        assert hits == [COMMENT_HIT]
+        assert (total, job_threads) == (40, 2)
+        assert [p["tags"] for p in sent] == ["comment", "comment,-story_800,-story_900"]
+
+    def test_exclusions_accumulate_over_rounds(self, monkeypatch):
+        sent = _scripted_fetch(monkeypatch, [
+            {"hits": [_job_comment(1, 900)], "nbHits": 9},
+            {"hits": [_job_comment(2, 800), COMMENT_HIT], "nbHits": 8},
+            {"hits": [COMMENT_HIT], "nbHits": 7},
+        ])
+        hits, total, job_threads = hs.search("swift", kind="comment")
+        assert (hits, total, job_threads) == ([COMMENT_HIT], 7, 2)
+        assert sent[-1]["tags"] == "comment,-story_900,-story_800"
+
+    def test_clean_first_page_takes_one_request(self, monkeypatch):
+        sent = _scripted_fetch(monkeypatch, [{"hits": [COMMENT_HIT], "nbHits": 1}])
+        assert hs.search("bun", kind="comment") == ([COMMENT_HIT], 1, 0)
+        assert len(sent) == 1
+
+    def test_stops_at_max_rounds_and_drops_leftovers(self, monkeypatch):
+        responses = [{"hits": [_job_comment(i, 900 + i), COMMENT_HIT], "nbHits": 100 - i}
+                     for i in range(hs.MAX_JOB_ROUNDS)]
+        sent = _scripted_fetch(monkeypatch, responses)
+        hits, total, job_threads = hs.search("swift", kind="comment")
+        assert len(sent) == hs.MAX_JOB_ROUNDS
+        assert hits == [COMMENT_HIT]
+        assert job_threads == hs.MAX_JOB_ROUNDS
+        assert total == 100 - (hs.MAX_JOB_ROUNDS - 1)
+
+    def test_job_hit_without_id_dropped_and_counted(self, monkeypatch):
+        no_id = {**_job_comment(1, 900), "story_id": None}
+        sent = _scripted_fetch(monkeypatch, [{"hits": [no_id, COMMENT_HIT], "nbHits": 2}])
+        assert hs.search("swift", kind="comment") == ([COMMENT_HIT], 2, 1)
+        assert len(sent) == 1
+
+    def test_job_thread_stories_excluded(self, monkeypatch):
+        job_story = {"_tags": ["story", "story_900"], "objectID": "900",
+                     "title": "Ask HN: Who is hiring? (October 2026)"}
+        sent = _scripted_fetch(monkeypatch, [
+            {"hits": [job_story, STORY_HIT], "nbHits": 2},
+            {"hits": [STORY_HIT], "nbHits": 1},
+        ])
+        assert hs.search("hiring") == ([STORY_HIT], 1, 1)
+        assert sent[1]["tags"] == "story,-story_900"
+
+    def test_include_job_threads_keeps_them(self, monkeypatch):
+        job = _job_comment(1, 900)
+        sent = _scripted_fetch(monkeypatch, [{"hits": [job], "nbHits": 1}])
+        assert hs.search("swift", kind="comment", include_job_threads=True) == ([job], 1, 0)
+        assert len(sent) == 1
+
+    def test_story_search_is_not_filtered(self, monkeypatch):
+        job = _job_comment(1, 900)
+        sent = _scripted_fetch(monkeypatch, [{"hits": [job], "nbHits": 1}])
+        assert hs.search("swift", kind="comment", story=900) == ([job], 1, 0)
+        assert sent[0]["tags"] == "comment,story_900"
 
 
 class TestHitToDict:
@@ -204,7 +335,11 @@ class TestParseArgs:
         assert args.min_points is None and args.author is None
         assert args.limit == hs.RESULTS_TO_SHOW
         assert args.max_chars == hs.TEXT_CHARS
+        assert args.include_job_threads is False
         assert args.json is False
+
+    def test_include_job_threads_flag(self):
+        assert hs.parse_args(["bun", "--include-job-threads"]).include_job_threads is True
 
     @pytest.mark.parametrize("argv", [
         ["fuzzing", "--story", "48843352"],
@@ -257,11 +392,41 @@ class TestParseArgs:
 
 
 class TestMain:
-    def _fake_search(self, captured, hits=(STORY_HIT,), total=777):
+    def _fake_search(self, captured, hits=(STORY_HIT,), total=777, job_threads=0):
         def fake(query, **kwargs):
             captured.update(kwargs, query=query)
-            return list(hits), total
+            return list(hits), total, job_threads
         return fake
+
+    def test_job_threads_reported_json(self, monkeypatch, capsys):
+        captured = {}
+        monkeypatch.setattr(hs, "search", self._fake_search(captured, job_threads=3))
+        hs.main(["swift", "--json"])
+        assert json.loads(capsys.readouterr().out)["job_threads_skipped"] == 3
+        assert captured["include_job_threads"] is False
+
+    def test_job_threads_reported_text(self, monkeypatch, capsys):
+        monkeypatch.setattr(hs, "search", self._fake_search({}, job_threads=1))
+        hs.main(["swift"])
+        assert "(Left out 1 job thread; --include-job-threads keeps them.)" in capsys.readouterr().out
+
+    def test_job_threads_reported_with_no_results(self, monkeypatch, capsys):
+        monkeypatch.setattr(hs, "search", self._fake_search({}, hits=[], total=0, job_threads=2))
+        hs.main(["hiring"])
+        out = capsys.readouterr().out
+        assert "No results found." in out
+        assert "Left out 2 job threads" in out
+
+    def test_no_job_threads_no_note(self, monkeypatch, capsys):
+        monkeypatch.setattr(hs, "search", self._fake_search({}))
+        hs.main(["bun"])
+        assert "Left out" not in capsys.readouterr().out
+
+    def test_include_job_threads_passed_through(self, monkeypatch, capsys):
+        captured = {}
+        monkeypatch.setattr(hs, "search", self._fake_search(captured))
+        hs.main(["swift", "--include-job-threads", "--json"])
+        assert captured["include_job_threads"] is True
 
     def test_json_output(self, monkeypatch, capsys):
         captured = {}

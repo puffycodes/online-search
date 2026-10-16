@@ -44,7 +44,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`hn.py`](#hnpy) — shared helper module for the Hacker News scripts: JSON fetching, one-item fetch from the official HN API, HN page links, posting times, and HTML-to-text cleanup, used by `hottest_tech_discussions.py`, `hn_search.py` and `hn_thread.py`
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — the hottest Hacker News discussions (top 10 by default, `--limit N` for more)
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
-- [`hn_search.py`](#hn_searchpy) — searches past Hacker News stories and comments for a query, by relevance or date, with date, score and author filters, via the Algolia HN Search API (no API key)
+- [`hn_search.py`](#hn_searchpy) — searches past Hacker News stories and comments for a query, by relevance or date, with date, score and author filters, leaving out HN's monthly job threads by default, via the Algolia HN Search API (no API key)
 - [`hn_thread.py`](#hn_threadpy) — reads one Hacker News thread: the story and its top comments in HN's ranked order, with a few replies under each, trimmed to a set size (no API key)
 - [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` and `hn_thread.py` to find HN threads about a topic, read them, and summarize what people said
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
@@ -2441,7 +2441,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ## hn_search.py
 
-Searches past [Hacker News](https://news.ycombinator.com/) stories and comments for a query, using the [Algolia HN Search API](https://hn.algolia.com/api) — the same index behind the search box on HN. Where [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) only sees the current front page, this searches the whole archive: stories (or just Ask HN / Show HN posts) or comments, ranked by relevance or newest first, optionally limited to a date window, a minimum score or one author. No API key or authentication required.
+Searches past [Hacker News](https://news.ycombinator.com/) stories and comments for a query, using the [Algolia HN Search API](https://hn.algolia.com/api) — the same index behind the search box on HN. Where [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) only sees the current front page, this searches the whole archive: stories (or just Ask HN / Show HN posts) or comments, ranked by relevance or newest first, optionally limited to a date window, a minimum score or one author. HN's monthly job threads ("Who is hiring?", "Who wants to be hired?", "Freelancer? Seeking freelancer?") are left out by default, since their comments list technologies as skills rather than discussing them. No API key or authentication required.
 
 Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it, so links, times and text look the same as in the other HN scripts. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
 
@@ -2454,7 +2454,7 @@ Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fe
 ### Usage
 
 ```bash
-python3 hn_search.py QUERY [--type {story,comment,ask,show}] [--sort {relevance,date}] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--min-points N] [--author USERNAME] [--story ITEM] [--limit N] [--max-chars N] [--json]
+python3 hn_search.py QUERY [--type {story,comment,ask,show}] [--sort {relevance,date}] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--min-points N] [--author USERNAME] [--story ITEM] [--include-job-threads] [--limit N] [--max-chars N] [--json]
 ```
 
 | Flag | Default | Description |
@@ -2467,6 +2467,7 @@ python3 hn_search.py QUERY [--type {story,comment,ask,show}] [--sort {relevance,
 | `--min-points N` | — | Only stories with a score of at least `N`. Not allowed with `--type comment` (comments have no public score) |
 | `--author USERNAME` | — | Only items posted by this HN user |
 | `--story ITEM` | — | Only comments in one story's thread: the story's id or HN link. Implies `--type comment` (any other `--type` is an error). Pairs with [`hn_thread.py`](#hn_threadpy), which reads a thread's top comments — this searches all of them |
+| `--include-job-threads` | off | Keep the monthly job threads and their comments, which are left out by default (see How it works). Has no effect with `--story` |
 | `--limit N` | 10 | Number of results, 1-100 |
 | `--max-chars N` | 600 | Cut comment / self-post text to `N` characters (with `...`); `0` keeps it whole |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
@@ -2527,6 +2528,7 @@ python3 hn_search.py "rust" --type show --sort date --min-points 100 --limit 1 -
   "until": null,
   "story": null,
   "total_matches": 233,
+  "job_threads_skipped": 0,
   "results": [
     {
       "rank": 1,
@@ -2544,7 +2546,7 @@ python3 hn_search.py "rust" --type show --sort date --min-points 100 --limit 1 -
 }
 ```
 
-`total_matches` counts every match, not just the results returned. Each result has the same keys:
+`total_matches` counts every match, not just the results returned, minus the job threads that were left out. `job_threads_skipped` is how many job threads were left out (`0` with `--include-job-threads` or `--story`). The text report adds a line such as `(Left out 3 job threads; --include-job-threads keeps them.)`. Each result has the same keys:
 
 - **Stories** — `url` is the linked article, or the HN thread for a self-post (Ask HN, most Show HN); `text` is a self-post's body, or `null`.
 - **Comments** — `type` is `"comment"`, `title` is the story the comment is on, `url` is the comment's own HN page, `discussion_url` the story's thread, `score` and `comments` are `null`, and `text` is the comment.
@@ -2577,8 +2579,9 @@ With `--json`, the leading progress line is suppressed. On failure, an exit code
 ### How it works
 
 1. **Validate** — Rejects an empty query, a bad date, `--until` before `--since`, `--min-points` with `--type comment` (or `--story`), a `--story` that isn't an id or HN link or is combined with a `--type` other than `comment`, a `--limit` outside 1-100, or an invalid username, before any request.
-2. **Build the query** — `build_params()` maps `--type` to an Algolia tag (`story`, `comment`, `ask_hn`, `show_hn`), adds `author_<USERNAME>` for `--author` and `story_<ITEM>` for `--story`, turns `--since` / `--until` into `created_at_i` bounds (00:00 UTC on `--since` up to, but not including, 00:00 UTC the day after `--until`) and `--min-points` into `points>=N`, and sets `typoTolerance=false` and `queryType=prefixNone` so words match whole.
+2. **Build the query** — `build_params()` maps `--type` to an Algolia tag (`story`, `comment`, `ask_hn`, `show_hn`), adds `author_<USERNAME>` for `--author` and `story_<ITEM>` for `--story`, a negative `-story_<ID>` tag for each job thread being left out, turns `--since` / `--until` into `created_at_i` bounds (00:00 UTC on `--since` up to, but not including, 00:00 UTC the day after `--until`) and `--min-points` into `points>=N`, and sets `typoTolerance=false` and `queryType=prefixNone` so words match whole.
 3. **Fetch** — GETs `hn.algolia.com/api/v1/search` (relevance) or `/search_by_date` (newest first) with `hitsPerPage` = `--limit`.
+   - **Leaving out job threads** (unless `--include-job-threads` or `--story`). Algolia can't filter by thread title, and the ~500 job threads since 2010 are too many to exclude in one URL (it fails at about 200). Instead `search()` checks the results' thread titles against `JOB_THREAD_TITLE`, excludes any job threads it finds by id (`-story_<ID>`), and searches again. It stops when a page has none, or after `MAX_JOB_ROUNDS` (5) searches, then drops any job-thread results still left, which can return fewer than `--limit`. A search's job hits come from only a few threads, so this converges quickly. Measured on comment searches for `swift`, `swift ios`, `golang`, `rust`, `react` and `kubernetes` at `--limit` 10 and 50, a clean page took 2 searches, 4 at most (1–19 threads excluded). A story search mostly for the job threads themselves (`"who is hiring"`) runs out of rounds and returns few results; use `--include-job-threads` for that.
 4. **Shape** — `hit_to_dict()` turns each hit into a story or comment record; `hn.clean_text()` converts the comment / self-post HTML to plain text (paragraphs to blank lines, tags dropped, entities decoded) and cuts it to `--max-chars`.
 
 ### Configuration
@@ -2592,13 +2595,16 @@ These are set as constants near the top of the file — edit them directly to ch
 | `RESULTS_TO_SHOW` | 10 | Default for `--limit` |
 | `MAX_RESULTS` | 100 | Upper bound accepted for `--limit` |
 | `TYPE_TAGS` | `story`/`comment`/`ask`/`show` → Algolia tag | `--type` choices and the tags they search |
+| `JOB_THREAD_TITLE` | regex for "Ask HN: Who is hiring?", "Who wants to be hired?", "Freelancer(s)? Seeking freelancer(s)?" | Titles of the job threads left out by default, case-insensitive, allowing a leading space |
+| `MAX_JOB_ROUNDS` | 5 | Most searches run while job threads keep turning up |
 
 The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` default (`TEXT_CHARS`, 600) live in [`hn.py`](#hnpy).
 
 ### API reference
 
-- `build_params(query, kind="story", since=None, until=None, min_points=None, author=None, limit=10, story=None)` — The Algolia query parameters for a search.
-- `search(query, kind="story", sort="relevance", since=None, until=None, min_points=None, author=None, limit=10, story=None)` — Runs a search; returns `(hits, total_matches)`.
+- `build_params(query, kind="story", since=None, until=None, min_points=None, author=None, limit=10, story=None, exclude_stories=())` — The Algolia query parameters for a search; `exclude_stories` leaves out those stories and their comments.
+- `search(query, kind="story", sort="relevance", since=None, until=None, min_points=None, author=None, limit=10, story=None, include_job_threads=False)` — Runs a search, leaving out job threads unless `include_job_threads` or `story` is set; returns `(hits, total_matches, job_threads_skipped)`.
+- `is_job_thread(title)` / `is_job_hit(hit)` — Whether a title is one of the job threads, and whether a story or comment hit is (in) one.
 - `fetch_json` (which surfaces Algolia's own error message) and `clean_text` come from [`hn.py`](#hnpy).
 - `hit_to_dict(rank, hit, max_chars=600)` — Flattens an Algolia hit into the `{rank, type, title, author, posted, score, comments, url, discussion_url, text}` record used for **both** output modes.
 - `format_hit(row)` — Renders a `hit_to_dict()` record as a multi-line human-readable string.
@@ -2609,16 +2615,17 @@ The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` defaul
 
 - Invalid arguments — see step 1 of How it works above — are rejected by argument parsing (exit code 2), before any request.
 - If the request fails (network error, timeout, non-2xx response, non-JSON body), the script exits 1 with the error on stderr (`{"error": "..."}` with `--json`). When Algolia rejects a request, its own message is the error.
-- No matches is not an error: the script prints `No results found.` (or an empty `results` list with `--json`) and exits 0. With `--story`, the report adds that the id must be a story's, not a comment's.
+- No matches is not an error: the script prints `No results found.` (or an empty `results` list with `--json`) and exits 0. With `--story`, the report adds that the id must be a story's, not a comment's. If job threads were left out, the report says so even when nothing else matched.
 
 ### Notes / limitations
 
 - **Whole-word matching.** Typo tolerance and prefix matching are turned off, so `"bun"` doesn't also match "Bunch", "bundle" or "build" (with Algolia's defaults it does — 196,449 story matches for "bun" against 777). The flip side: `"kubernetes"` won't find "k8s", and a plural or other word form may need its own search. Every query word must match (in the title, URL, text or author).
-- **A word matches in any sense.** A comment search for `"swift"` also finds "a swift recovery", Taylor Swift and job posts listing Swift as a skill. In 50-comment samples (October 2026), 23 of `swift`'s relevance-sorted results came from the monthly "Who is hiring?" / "Who wants to be hired?" threads. A user whose name is the query word matches too. The script doesn't filter any of this; the [`hn-search`](#claude-code-agent-hn-search) agent does.
+- **A word matches in any sense.** A comment search for `"swift"` also finds "a swift recovery", Taylor Swift and job posts listing Swift as a skill. In 50-comment samples (October 2026), 23 of `swift`'s relevance-sorted results came from the monthly "Who is hiring?" / "Who wants to be hired?" threads; the script now leaves those threads out by default. Other senses of the word, and a user whose name is the query word, still match. The script doesn't filter those; the [`hn-search`](#claude-code-agent-hn-search) agent does.
+- **`total_matches` is approximate with job threads left out.** It no longer counts the excluded threads, but still counts any job thread that never appeared in the results. Algolia's counts for `--sort date` also vary noticeably from one request to the next. Leaving out job threads costs one extra request per round (usually one, at most four more).
 - **"Relevance" ranks by text match first, then points.** A single-word query tends to put the biggest threads first; a multi-word query can rank a small story that matches all the words closely above a popular one. Use `--sort date` with `--min-points` for "the latest notable threads".
 - Comments have no public score in the API, hence no `--min-points` for them; comment results can't be ranked by popularity.
 - Story scores and comment counts are as of Algolia's last update of that item, which can lag HN slightly for recent stories.
-- Algolia returns at most 1,000 hits per request; this script caps `--limit` at 100 and doesn't page.
+- Algolia returns at most 1,000 hits per request; this script caps `--limit` at 100 and doesn't page. "Who is hiring right now?" (an extra thread from March 2020) isn't treated as a job thread, since its title doesn't match the monthly pattern.
 - Links inside a comment keep their visible text only, which HN itself shortens for long URLs.
 - `--story` can't tell a comment's id from a story with no matching comments — both return nothing.
 
@@ -2804,7 +2811,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Reduces the question to a few distinctive keywords (in the form people write them, since words match whole), and picks `--type` (stories for threads, comments for opinions, Ask/Show HN when asked), `--sort` (relevance for the big threads, date for "lately"), and any date window, minimum score or author from the user's wording.
 2. Runs `python3 hn_search.py "QUERY" [...] --json` from the repo root — for "what does HN think of X?", a story search to find the biggest threads and a comment search for recent views.
-   - Keeps comment searches on topic, because a word matches in any sense. It prefers searching inside the topic's own threads (`--story`), and gives an ambiguous name one context word that only fits the meaning wanted (`"swift xcode"`, `"bun node"`, `"golang"`), checking that the word hasn't brought in a meaning of its own (`"swift apple"` finds Taylor Swift). Because a context word also biases the sample towards its own topic (`"swift xcode"` finds Xcode complaints), it runs two such searches with different words for opinions, gives more weight to views found in both, and never reports a context word's topic as a finding. It drops comments from the monthly job threads unless the user asks about jobs, skips comments that use the word in another sense or matched on the author's name, and fetches extra results to make up for them.
+   - Keeps comment searches on topic, because a word matches in any sense. It prefers searching inside the topic's own threads (`--story`), and gives an ambiguous name one context word that only fits the meaning wanted (`"swift xcode"`, `"bun node"`, `"golang"`), checking that the word hasn't brought in a meaning of its own (`"swift apple"` finds Taylor Swift). Because a context word also biases the sample towards its own topic (`"swift xcode"` finds Xcode complaints), it runs two such searches with different words for opinions, gives more weight to views found in both, and never reports a context word's topic as a finding. It relies on the script's default of leaving out the monthly job threads, passing `--include-job-threads` only when the user asks about jobs, and skips comments that use the word in another sense or matched on the author's name, and fetches extra results to make up for them.
 3. Reads a thread the user linked, or the biggest one or two a search found, with `python3 hn_thread.py ITEM [...] --json`; for "what did that thread say about X?", searches all of the thread's comments with `hn_search.py "X" --story ITEM` instead: the top comments in HN's ranked order with a few replies each, more for a very large thread.
 4. Reports threads as a compact list (title, score, comments, date, links), or summarizes the views in the comments it retrieved — for a thread, saying how many of its highest-ranked comments it read — grouping similar opinions, noting disagreement, linking its sources and saying how many comments it read and how many it skipped as off-topic — a sample, not a consensus. An exit code 2 means it fixes the arguments rather than retrying; a network-looking failure is retried at most once; an empty result is reported as such, with a broader search suggested or run.
 

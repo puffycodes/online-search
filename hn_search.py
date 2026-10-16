@@ -12,6 +12,13 @@ thread's top comments, this searches all of them). Words in the
 query are matched whole, with no typo tolerance or prefix matching, so
 "bun" doesn't also match "bundle" or "build".
 
+HN's monthly job threads ("Who is hiring?", "Who wants to be hired?",
+"Freelancer? Seeking freelancer?") are left out by default: their
+comments list technologies as skills, which swamps searches like
+"swift". Algolia can't exclude them by title, so the search finds the
+job threads among its results, excludes those threads by id and runs
+again, up to MAX_JOB_ROUNDS times. --include-job-threads keeps them.
+
 No API key required.
 
 Supports a --json flag for structured output, so this script can be
@@ -42,6 +49,36 @@ TYPE_TAGS = {
     "show": "show_hn",
 }
 
+# Titles of HN's monthly job threads, as posted since 2010: capitalisation
+# varies ("Who Is Hiring?"), older ones say "Freelancers?", and one has a
+# leading space.
+JOB_THREAD_TITLE = re.compile(
+    r"\s*Ask HN: (Who is hiring\?|Who wants to be hired\?|Freelancers?\? Seeking freelancers?\?)",
+    re.IGNORECASE,
+)
+# Searches to run while job threads keep turning up. Measured on comment
+# searches for swift, golang, rust, react and kubernetes, a clean page took
+# 2 searches (4 at most); anything left after the last one is dropped from it.
+MAX_JOB_ROUNDS = 5
+
+
+def is_job_thread(title):
+    """Whether `title` is one of HN's monthly job threads."""
+    return bool(JOB_THREAD_TITLE.match(title or ""))
+
+
+def _hit_thread(hit):
+    """(thread title, thread id) for a story or comment hit; the id may be None."""
+    if "comment" in (hit.get("_tags") or []):
+        return hit.get("story_title"), hit.get("story_id")
+    object_id = str(hit.get("objectID") or "")
+    return hit.get("title"), int(object_id) if object_id.isdigit() else None
+
+
+def is_job_hit(hit):
+    """Whether a story or comment hit is (in) one of the job threads."""
+    return is_job_thread(_hit_thread(hit)[0])
+
 
 def _day_start(day):
     """Unix time of 00:00 UTC on `day`."""
@@ -49,19 +86,23 @@ def _day_start(day):
 
 
 def build_params(query, kind="story", since=None, until=None, min_points=None,
-                 author=None, limit=RESULTS_TO_SHOW, story=None):
+                 author=None, limit=RESULTS_TO_SHOW, story=None, exclude_stories=()):
     """The Algolia query parameters for a search.
 
     `since` / `until` are inclusive dates (UTC days); `min_points` only
     applies to stories; `story` limits the search to one story's thread (it
-    must be the story's id - a comment's id matches nothing). Typo tolerance
-    and prefix matching are turned off so query words match whole words only.
+    must be the story's id - a comment's id matches nothing);
+    `exclude_stories` leaves out those stories and their comments. Typo
+    tolerance and prefix matching are turned off so query words match whole
+    words only.
     """
     tags = TYPE_TAGS[kind]
     if author:
         tags = f"{tags},author_{author}"
     if story:
         tags = f"{tags},story_{story}"
+    for excluded in exclude_stories:
+        tags = f"{tags},-story_{excluded}"
     filters = []
     if since:
         filters.append(f"created_at_i>={_day_start(since)}")
@@ -82,12 +123,39 @@ def build_params(query, kind="story", since=None, until=None, min_points=None,
 
 
 def search(query, kind="story", sort="relevance", since=None, until=None,
-           min_points=None, author=None, limit=RESULTS_TO_SHOW, story=None):
-    """Run a search; returns (hits, total_matches)."""
+           min_points=None, author=None, limit=RESULTS_TO_SHOW, story=None,
+           include_job_threads=False):
+    """Run a search; returns (hits, total_matches, job_threads_skipped).
+
+    Unless `include_job_threads` (or `story`, a deliberate one-thread
+    search) is set, job threads found among the hits are excluded by id and
+    the search re-run, up to MAX_JOB_ROUNDS searches. Job-thread hits still
+    left after that (or with no id to exclude) are dropped, which can leave
+    fewer than `limit`. `total_matches` comes from the last search, so it no
+    longer counts the excluded threads but can still count job threads that
+    never surfaced.
+    """
     url = SEARCH_BY_DATE_URL if sort == "date" else SEARCH_URL
-    params = build_params(query, kind, since, until, min_points, author, limit, story)
-    data = fetch_json(url, params)
-    return data.get("hits") or [], data.get("nbHits", 0)
+    filtering = not include_job_threads and not story
+    excluded = []
+    for _ in range(MAX_JOB_ROUNDS):
+        params = build_params(query, kind, since, until, min_points, author, limit,
+                              story, excluded)
+        data = fetch_json(url, params)
+        hits = data.get("hits") or []
+        total = data.get("nbHits", 0)
+        if not filtering:
+            return hits, total, 0
+        found = {_hit_thread(hit)[1] for hit in hits if is_job_hit(hit)} - {None}
+        if not found:
+            break
+        excluded += sorted(found)
+    # Job hits still here are from the last round (out of rounds) or have no
+    # thread id to exclude; drop them, counting each thread once (by id, or by
+    # title when there is no id).
+    leftover = [hit for hit in hits if is_job_hit(hit)]
+    threads = set(excluded) | {_hit_thread(hit)[1] or _hit_thread(hit)[0] for hit in leftover}
+    return [hit for hit in hits if not is_job_hit(hit)], total, len(threads)
 
 
 def hit_to_dict(rank, hit, max_chars=TEXT_CHARS):
@@ -220,6 +288,12 @@ def parse_args(argv=None):
         help="Only comments in this story's thread: a story id or HN link (implies --type comment)",
     )
     parser.add_argument(
+        "--include-job-threads",
+        action="store_true",
+        help="Keep results from HN's monthly job threads (Who is hiring?, Who wants to "
+             "be hired?, Freelancer? Seeking freelancer?), left out by default",
+    )
+    parser.add_argument(
         "--limit",
         type=_limit,
         default=RESULTS_TO_SHOW,
@@ -261,7 +335,7 @@ def main(argv=None):
         print(f"Searching Hacker News for '{args.query}'...\n")
 
     try:
-        hits, total = search(
+        hits, total, job_threads = search(
             args.query,
             kind=args.type,
             sort=args.sort,
@@ -271,6 +345,7 @@ def main(argv=None):
             author=args.author,
             limit=args.limit,
             story=args.story,
+            include_job_threads=args.include_job_threads,
         )
     except (requests.RequestException, ValueError) as exc:
         die(str(exc), args.json)
@@ -286,12 +361,21 @@ def main(argv=None):
             "until": args.until.isoformat() if args.until else None,
             "story": args.story,
             "total_matches": total,
+            "job_threads_skipped": job_threads,
             "results": rows,
         }, indent=2))
         return
 
+    skipped_note = ""
+    if job_threads:
+        noun = "thread" if job_threads == 1 else "threads"
+        skipped_note = (f"(Left out {job_threads} job {noun}; "
+                        "--include-job-threads keeps them.)")
+
     if not rows:
         print("No results found.")
+        if skipped_note:
+            print(skipped_note)
         if args.story:
             print("(--story needs the story's id; a comment's id matches nothing.)")
         return
@@ -301,7 +385,10 @@ def main(argv=None):
     else:
         noun = "story" if total == 1 else "stories"
     where = f" in thread {args.story}" if args.story else ""
-    print(f"{total} matching {noun}{where}; showing {len(rows)}, by {args.sort}.\n")
+    print(f"{total} matching {noun}{where}; showing {len(rows)}, by {args.sort}.")
+    if skipped_note:
+        print(skipped_note)
+    print()
     for row in rows:
         print(format_hit(row))
         print()

@@ -51,11 +51,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### Extending `hn_search.py`
 
-- [ ] **Job-thread filter in `hn_search.py`**: the `hn-search` agent now drops comments
-  from the monthly "Who is hiring?" / "Who wants to be hired?" / "Freelancer?" threads
-  itself. A flag (or default) in the script would do it reliably and keep `--limit`
-  results on topic. In 50-comment samples that was 23 of `swift` and 24 of `swift ios`,
-  but 0 of `bun` or `zig`.
 - [ ] **Earlier HN threads in the research summary**: let the
   `hottest-tech-discussion-summary` agent run `hn_search.py` for each trending topic,
   to add how HN discussed it before.
