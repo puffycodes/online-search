@@ -21,7 +21,7 @@ from urllib.parse import urljoin
 
 import requests
 
-from cli_utils import die, positive_int, use_utf8_output, validate_url_scheme
+from cli_utils import die, positive_int, response_text, use_utf8_output, validate_url_scheme
 
 TIMEOUT_SECONDS = 10
 USER_AGENT = "Mozilla/5.0 (compatible; online-search-url-links/1.0)"
@@ -74,7 +74,7 @@ def fetch_links(url, timeout=TIMEOUT_SECONDS):
             f"URL did not return HTML content (Content-Type: {content_type or 'unknown'})"
         )
 
-    links = extract_links(response.text, response.url)
+    links = extract_links(response_text(response), response.url)
     return {
         "url": url,
         "final_url": response.url,

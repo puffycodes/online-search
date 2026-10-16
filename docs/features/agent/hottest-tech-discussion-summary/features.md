@@ -11,17 +11,19 @@
     - If n is not given, the default is three (3).
 - For each of the topics:
     - Make a summary of the discussion.
-        - Retrieve the content from the link(s) in the topics.
-        - Produce a summary using the content.
+        - Read the HN thread's top comments with the hn_thread.py script (HN refuses ordinary page fetches).
+        - Retrieve the linked article's content, if it has one, up to 15,000 characters.
+        - Treat a page that comes back with almost no content (just a site name, a JavaScript or sign-in wall) as not retrieved.
+        - Produce a summary of what the article says and what HN commenters said, with how many comments were read.
     - Identify the subject of the discussion and express it as a single phase.
     - Provide more information on the subject of discussion.
-        - Use the subject of the discussion to do web search to obtain 3 results each from 2 separate search sources.
+        - Use the subject of the discussion to do web search to obtain 3 results each from 2 separate search sources, skipping results that are the topic's own article or HN thread.
         - Retrieve the content of each of the results and give a summary using all of the content.
     - Only when the user asks how HN discussed the topics before, list the earlier HN threads on the subject:
         - Search Hacker News stories for 1-3 distinctive keywords naming the subject (not the headline).
         - Search the last two years, up to three days before the topic was posted, so that other submissions of the same news and the topic's own thread are not counted as earlier.
         - Skip threads under 50 points; if nothing relevant is found, try once more with broader keywords or no minimum score.
-        - Keep only threads about the same subject, at most three, highest score first.
+        - Keep only threads about the same subject (earlier releases or versions of the same product count), at most three, highest score first.
         - Search only; do not read or summarize the earlier threads.
 - Output:
     - Time stamped the output to differentiate it from the summaries from other days.
@@ -29,7 +31,7 @@
     - For each of the topics:
         - Show the discussion topic, the link(s), and the summary.
         - Show the subject of discussion that has been identified.
-            - Show the summary of the search, and the links from the search results.
+            - Show the summary of the search, and the links from the search results, each labelled with its {{Page Title}} (from the retrieved page, else the search engine's title).
         - If earlier threads were asked for: {{Earlier Thread Title}} {{Score}} {{Number of Comments}} {{Posted Date}} {{Discussion Link}} for each, with the {{Keywords}} and date window searched, or say that none were found.
 - Give the user the following choices after the completion of the above:
     - Publish the summary as an artifact.

@@ -60,9 +60,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ## Web pages (extending the `url_*` family)
 
-- [ ] **Page titles in the research summary**: `url_content.py --text` now returns
-  `title`, so `hottest-tech-discussion-summary` could label each search result with
-  its page title instead of a bare URL. Instructions-only.
 - [ ] **RSS/Atom feed reader**: latest items from a site's feed.
 - [ ] **SSL certificate expiry and DNS lookup**: standard library only (`ssl`, `socket`).
 - [ ] **robots.txt and sitemap listing**.

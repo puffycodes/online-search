@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Shared helpers for the command-line entry-point scripts in this repo:
-uniform error exits, URL-scheme validation, the ``positive_int`` argparse
+uniform error exits, URL-scheme validation and charset-aware decoding of
+fetched pages, the ``positive_int`` argparse
 ``type``, ``.env`` loading and API-key lookup, and the result-list
 formatting/printing shared by the ``web_search_*.py`` scripts that
 return a flat list of results.
@@ -126,6 +127,24 @@ def validate_url_scheme(url, as_json=False):
     """
     if not url.startswith(("http://", "https://")):
         die(f"URL must start with http:// or https://, got: {url}", as_json)
+
+
+def response_text(response):
+    """The body of a ``requests`` response as text, decoded correctly.
+
+    When the ``Content-Type`` header names no charset, ``requests`` decodes
+    any ``text/*`` body as ISO-8859-1 (the old HTTP default), so a UTF-8
+    page served as plain ``text/html`` comes out garbled ("—" becomes
+    "\\xe2\\x80\\x94", shown as "â€”" by most viewers).
+    In that case the encoding ``requests`` detects from the bytes is used
+    instead. A charset the server does name is left alone. Shared by the
+    ``url_*.py`` scripts that read a page's body.
+    """
+    content_type = (getattr(response, "headers", None) or {}).get("Content-Type") or ""
+    detected = getattr(response, "apparent_encoding", None)
+    if "charset=" not in content_type.lower() and detected:
+        response.encoding = detected
+    return response.text
 
 
 def positive_int(value):

@@ -22,7 +22,7 @@ import json
 
 import requests
 
-from cli_utils import die, positive_int, use_utf8_output, validate_url_scheme
+from cli_utils import die, positive_int, response_text, use_utf8_output, validate_url_scheme
 from url_metadata import extract_metadata
 
 TIMEOUT_SECONDS = 10
@@ -96,7 +96,7 @@ def fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=Fal
     if not is_text_content_type(content_type):
         raise ValueError(f"URL did not return text content (Content-Type: {content_type})")
 
-    text = response.text
+    text = response_text(response)
     title = None
     if as_text:
         if not content_type or "html" in content_type.lower():

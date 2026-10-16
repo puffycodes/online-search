@@ -22,7 +22,7 @@ from urllib.parse import urljoin
 
 import requests
 
-from cli_utils import die, positive_int, use_utf8_output, validate_url_scheme
+from cli_utils import die, positive_int, response_text, use_utf8_output, validate_url_scheme
 
 TIMEOUT_SECONDS = 10
 USER_AGENT = "Mozilla/5.0 (compatible; online-search-url-metadata/1.0)"
@@ -113,7 +113,7 @@ def fetch_metadata(url, timeout=TIMEOUT_SECONDS):
         "final_url": response.url,
         "status_code": response.status_code,
         "content_type": content_type,
-        **extract_metadata(response.text, response.url),
+        **extract_metadata(response_text(response), response.url),
     }
 
 

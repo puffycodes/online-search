@@ -1,5 +1,5 @@
 """Tests for cli_utils: dotenv loading, result formatting/printing, the
-die() error-exit helper, require_env, URL-scheme validation, the
+die() error-exit helper, require_env, URL-scheme validation, response_text() decoding, the
 positive_int argparse type, and UTF-8 output."""
 
 import argparse
@@ -17,6 +17,7 @@ from cli_utils import (
     positive_int,
     print_results,
     require_env,
+    response_text,
     use_utf8_output,
     validate_url_scheme,
 )
@@ -116,6 +117,53 @@ class TestRequireEnv:
         with pytest.raises(SystemExit):
             require_env("CLI_UTILS_TEST_KEY", "web_search_x.py", as_json=True)
         assert "CLI_UTILS_TEST_KEY" in json.loads(capsys.readouterr().err)["error"]
+
+
+def _real_response(body, content_type):
+    """A real requests.Response holding raw `body` bytes, as a server sent them."""
+    import requests
+
+    response = requests.models.Response()
+    response._content = body
+    response.status_code = 200
+    if content_type is not None:
+        response.headers["Content-Type"] = content_type
+    # The encoding a live request ends up with: the header's charset, or for a
+    # text/* type without one the ISO-8859-1 fallback (seen live on a
+    # charset-less text/html page; get_encoding_from_headers() alone returns
+    # None for it in requests 2.34).
+    declared = requests.utils.get_encoding_from_headers(response.headers)
+    if declared is None and (content_type or "").startswith("text/"):
+        declared = "ISO-8859-1"
+    response.encoding = declared
+    return response
+
+
+class TestResponseText:
+    PAGE = "<html><head><title>Cammarata — clean</title></head><body>naïve café</body></html>"
+
+    def test_utf8_without_charset_is_detected(self):
+        # requests alone decodes this as ISO-8859-1: "\xe2\x80\x94" instead of "—".
+        response = _real_response(self.PAGE.encode("utf-8"), "text/html")
+        assert "\xe2\x80\x94" in response.text
+        assert response_text(_real_response(self.PAGE.encode("utf-8"), "text/html")) == self.PAGE
+
+    def test_declared_charset_is_respected(self):
+        body = "café".encode("latin-1")
+        assert response_text(_real_response(body, "text/html; charset=ISO-8859-1")) == "café"
+
+    def test_declared_utf8_charset(self):
+        response = _real_response(self.PAGE.encode("utf-8"), "text/html; Charset=UTF-8")
+        assert response_text(response) == self.PAGE
+
+    def test_missing_content_type(self):
+        assert response_text(_real_response(self.PAGE.encode("utf-8"), None)) == self.PAGE
+
+    def test_duck_typed_response_without_encoding_attributes(self):
+        class Bare:
+            text = "plain"
+
+        assert response_text(Bare()) == "plain"
 
 
 class TestValidateUrlScheme:

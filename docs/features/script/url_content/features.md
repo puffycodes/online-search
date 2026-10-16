@@ -3,7 +3,7 @@
 ## Requirement
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
-- Use cli_utils.py's validate_url_scheme().
+- Use cli_utils.py's validate_url_scheme(), and its response_text() to decode the page (when the server names no charset, use the detected encoding rather than ISO-8859-1, so UTF-8 pages aren't garbled).
 - Use BeautifulSoup (beautifulsoup4) for text extraction.
 - Use url_metadata.py's extract_metadata() to read the page title.
 
