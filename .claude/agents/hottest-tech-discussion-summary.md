@@ -52,17 +52,21 @@ Read the discussion's `title` (and the content already fetched in 2a if the titl
 Use the search phrase as the query. Try the six `web_search_*.py` scripts in the same priority order the `web-search` agent uses — Brave → Serper → Tavily → SerpApi → Exa → DuckDuckGo (never `web_search_perplexity.py`; its `{answer, sources}` shape doesn't fit this flow) — all accepting:
 
 ```bash
-python3 web_search_<engine>.py "PHRASE" --limit 5 --json
+python3 web_search_<engine>.py "PHRASE" --limit 8 --json
 ```
 
-Ask for 5 so there are spares: **skip any result that is one of the topic's own links** (its `url` or `discussion_url` from step 1, ignoring `http`/`https`, a `www.` prefix and a trailing `/`). Those add nothing new, and the HN thread can't be fetched anyway.
+Ask for 8 so there are spares, and **skip** three kinds of result, using the search engine's `title`, `url` and `snippet` to decide:
 
-1. Run engines down the priority list until one doesn't fail outright (missing key, hard error). Call this Engine A and take its first 3 results that aren't the topic's own links.
-2. Continue down the priority list from where Engine A left off until a *different* engine succeeds — Engine B — and take its first 3 results that aren't the topic's own links or already collected from Engine A.
+- **The topic's own links**: its `url` or `discussion_url` from step 1, ignoring `http`/`https`, a `www.` prefix and a trailing `/`. They add nothing new, and the HN thread can't be fetched anyway.
+- **Sites that never give content to `url_content.py`**: `reddit.com`, `instagram.com`, `facebook.com`, `youtube.com` and `tiktok.com`. These return a shell with almost no text (in testing, 4–195 characters, or just the word "Reddit"). Skip any other site too if it already came back empty earlier in this run. `x.com` / `twitter.com` posts do return their text, so keep those.
+- **Results about a different subject**: another product, project or event that only shares words with the topic. For example, a search for one Wayland desktop also returned videos about two other desktops. If you can't tell from the title and snippet, keep it.
+
+1. Run engines down the priority list until one doesn't fail outright (missing key, hard error). Call this Engine A and take its first 3 results that aren't skipped.
+2. Continue down the priority list from where Engine A left off until a *different* engine succeeds — Engine B — and take its first 3 results that aren't skipped or already collected from Engine A.
 3. That's up to 6 distinct-URL results total, 3 from each of 2 separate sources — not one merged pool of 3. If either engine returns fewer than 3, or you can't find a second working engine at all, proceed with however many/few sources you got and say so plainly when reporting — don't pad with duplicates, a third engine, or invented results.
 4. Retry a given engine at most once, only for a transient-looking network error, not for a missing key or an unambiguous quota/rate-limit message.
 
-Keep track of every result URL and which engine it came from, even ones you later drop in 2d — you'll disclose and preserve all of them when reporting.
+Keep track of every result URL and which engine it came from, even ones you later drop in 2d — you'll disclose and preserve all of them when reporting. Also note each result you skipped and why; the report says how many were skipped (see Step 3).
 
 ### 2d. Retrieve the content of each search result
 
@@ -73,9 +77,9 @@ python3 url_content.py "URL" --text --max-chars 6000 --json
 ```
 
 - `--text` extracts readable text (via BeautifulSoup) instead of raw HTML — that's what you want to summarize from.
-- The JSON also has `title`: the page's own `<title>` (else its `og:title`), or `null` for a non-HTML page or one with neither. Note it for labelling the link in Step 3.
+- The JSON also has `title`: the page's own `<title>` (else its `og:title`), or `null` for a non-HTML page or one with neither. Note it for labelling the link in Step 3. If it's only the site's name ("Reddit", "Instagram", "Meta"), treat it like `null`: it identifies nothing.
 - On failure (missing scheme — shouldn't happen with a search-engine URL, a 4xx/5xx status, non-textual content, missing `beautifulsoup4`, or a connection error), retry once only if it looks transient; otherwise drop that source's *content* from the summary — but keep its URL for the report (see Step 3) rather than fabricating what it said.
-- As in 2a, a status-200 page with almost no content (just the site's name, or a JavaScript / sign-in / cookie wall) counts as dropped content. Reddit pages usually come back like this.
+- As in 2a, a status-200 page with almost no content (just the site's name, or a JavaScript / sign-in / cookie wall) counts as dropped content. Sites known to do this are skipped in 2c, but others can too (in testing, a news-aggregator page returned only its navigation).
 - A result on `news.ycombinator.com` other than the topic's own thread can't be fetched with `url_content.py` either. Keep its link but drop its content, rather than retrying.
 
 ### 2e. Summarize the subject from the search results
@@ -90,9 +94,10 @@ Skip this step unless the request asks how HN discussed these topics before, e.g
 python3 hn_search.py "KEYWORDS" --since SINCE --until UNTIL --min-points 50 --limit 10 --json
 ```
 
-- **`KEYWORDS`**: 1–3 distinctive words naming the product, project or concept, not the headline and not the longer phrase from 2b. Every word must appear, as a whole word. "Muse Spark Open" → `muse spark`; a post about mechanistic interpretability → `mechanistic interpretability`; "Wayland desktop with skeuomorphic design" → `wayland desktop`. Headline-style words ("neural networks clean") find nothing useful.
+- **`KEYWORDS`**: 1–3 distinctive words naming the product, project or concept, not the headline and not the longer phrase from 2b. Every word must appear, as a whole word. When the subject has a name of its own, use it: "Muse Spark Open" → `muse spark`. Fall back to the concept only when it doesn't: a post about mechanistic interpretability → `mechanistic interpretability`. Generic category words find other things: "Wayland desktop with skeuomorphic design" → `wayland desktop` found only unrelated Wayland threads, while the project's former name `deskwm` found it. Headline-style words ("neural networks clean") find nothing useful.
 - **`SINCE`** is two years before today. **`UNTIL`** is three days before the trending thread's `posted` date. Other submissions of the same news cluster around the day it broke, and those aren't *earlier* discussion. This also leaves out the trending thread itself.
-- **`--min-points 50`** skips small threads. If nothing relevant comes back, try once more with a broader keyword or without `--min-points`, then stop: at most 2 searches per topic.
+- **`--min-points 50`** skips small threads.
+- **A second search** (at most 2 per topic, then stop) is allowed when the first finds nothing relevant, *or* only threads about the general field rather than this subject (e.g. `mechanistic interpretability` finding interpretability threads, but nothing about the essay's author or claim). For the second search, use a more specific name taken from the article or thread: the project's or a former name ("DEsk" was previously "DeskWM"), the company or author behind it (`goodfire`), or the specific idea at stake (`superposition`). Drop `--min-points` if the subject is small or new. Report the threads from whichever search fits the subject best, and say which keywords they came from.
 - **Check each result is about the same subject** before listing it. A loose keyword match ("skeuomorphic" finding an unrelated camera app) doesn't count. Earlier releases, versions or announcements of the same product, project or line of work *do* count: "Muse Spark 1.3" is earlier discussion of "Muse Spark Open". Then keep the 3 highest-scoring, preferring a main thread over a near-duplicate or a pointer post with few comments.
 - This is search only: don't read the *earlier* threads with `hn_thread.py` (the trending thread itself is read in 2a), and don't summarize what was said in them.
 - On failure, exit code 2 means fix the arguments; exit code 1 with `{"error": ...}` may be retried once if it looks transient. Otherwise say the lookup failed for that topic and carry on.
@@ -105,7 +110,7 @@ For each of the N topics, present:
 
 - The discussion topic (title), its full link(s) (`url` and `discussion_url` from step 1 — always show both links even if one couldn't be fetched in step 2a, noting the fetch failure there), and the discussion summary from step 2a
 - The subject phrase identified in step 2b
-- The summary of the search from step 2e, together with the full links to *every* search result collected in step 2c — including any whose content fetch failed in step 2d — each labelled with a title: the page's `title` from 2d when it was fetched and not `null`, otherwise the search engine's `title` from 2c (never one you made up). Note which search engine each came from (e.g. Exa's semantic results, or a DuckDuckGo fallback) and flagging which ones contributed to the summary versus were dropped for content
+- The summary of the search from step 2e, together with the full links to *every* search result collected in step 2c — including any whose content fetch failed in step 2d — each labelled with a title: the page's `title` from 2d when it was fetched and is neither `null` nor just the site's name, otherwise the search engine's `title` from 2c (never one you made up). Note which search engine each came from (e.g. Exa's semantic results, or a DuckDuckGo fallback) and flagging which ones contributed to the summary versus were dropped for content. Add one line saying how many results were skipped in 2c and why (own links, social/video sites, different subject), so a thin source list is explained
 - Only if 2f ran: **Earlier on HN**, listing up to 3 threads as title, score, comment count, date and `discussion_url`, plus the keywords searched and the window. If none were relevant, say "No earlier HN threads found for `KEYWORDS` since SINCE" rather than leaving the section out.
 
 Keep the N topics clearly separated (numbered sections or headings). Do not fabricate discussions, search results, or content — only report what the tools actually returned, and say plainly when something came back short (fewer than 3 sources per engine, only one working search engine, a link whose content couldn't be fetched, a run where `hottest_tech_discussions.py` returned fewer than N items, etc.) instead of filling the gap yourself. Never omit a link just because its content wasn't retrievable — preserve every link collected so the requester can check it out later.

@@ -17,12 +17,16 @@
         - Produce a summary of what the article says and what HN commenters said, with how many comments were read.
     - Identify the subject of the discussion and express it as a single phase.
     - Provide more information on the subject of discussion.
-        - Use the subject of the discussion to do web search to obtain 3 results each from 2 separate search sources, skipping results that are the topic's own article or HN thread.
+        - Use the subject of the discussion to do web search to obtain 3 results each from 2 separate search sources, skipping:
+            - the topic's own article or HN thread;
+            - sites that return no readable content (Reddit, Instagram, Facebook, YouTube, TikTok);
+            - results clearly about a different subject.
+        - Say how many results were skipped, and why.
         - Retrieve the content of each of the results and give a summary using all of the content.
     - Only when the user asks how HN discussed the topics before, list the earlier HN threads on the subject:
-        - Search Hacker News stories for 1-3 distinctive keywords naming the subject (not the headline).
+        - Search Hacker News stories for 1-3 distinctive keywords naming the subject (its own name when it has one; not the headline or a generic category).
         - Search the last two years, up to three days before the topic was posted, so that other submissions of the same news and the topic's own thread are not counted as earlier.
-        - Skip threads under 50 points; if nothing relevant is found, try once more with broader keywords or no minimum score.
+        - Skip threads under 50 points. If nothing relevant is found, or only threads about the general field, try once more with a more specific name from the article (the project's or a former name, the company or author, the idea at stake), with no minimum score if the subject is small.
         - Keep only threads about the same subject (earlier releases or versions of the same product count), at most three, highest score first.
         - Search only; do not read or summarize the earlier threads.
 - Output:
@@ -31,7 +35,7 @@
     - For each of the topics:
         - Show the discussion topic, the link(s), and the summary.
         - Show the subject of discussion that has been identified.
-            - Show the summary of the search, and the links from the search results, each labelled with its {{Page Title}} (from the retrieved page, else the search engine's title).
+            - Show the summary of the search, and the links from the search results, each labelled with its {{Page Title}} (from the retrieved page, unless it is missing or just the site's name; else the search engine's title).
         - If earlier threads were asked for: {{Earlier Thread Title}} {{Score}} {{Number of Comments}} {{Posted Date}} {{Discussion Link}} for each, with the {{Keywords}} and date window searched, or say that none were found.
 - Give the user the following choices after the completion of the above:
     - Publish the summary as an artifact.
