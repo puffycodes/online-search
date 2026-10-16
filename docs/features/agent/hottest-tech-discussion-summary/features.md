@@ -20,8 +20,8 @@
         - Use the subject of the discussion to do web search to obtain 3 results each from 2 separate search sources, skipping:
             - the topic's own article or HN thread;
             - sites that return no readable content (Reddit, Instagram, Facebook, YouTube, TikTok);
-            - results clearly about a different subject.
-        - If a search source has no usable results left after skipping, search it once more with a narrower phrase (the subject's own name plus what it is), and say so.
+            - results clearly about a different subject (earlier releases or versions of the same product are background, not a different subject).
+        - If none of a search source's results gave real content after retrieval (failed, near-empty, duplicate, or only a link to elsewhere), search it once more with a narrower phrase (the subject's own name plus what it is), and say so.
         - Say how many results were skipped, and why.
         - Retrieve the content of each of the results and give a summary using all of the content.
             - A result that redirects to a page already collected is a duplicate; replace it with the next spare result.
