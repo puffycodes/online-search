@@ -18,6 +18,9 @@
         - The last N sessions (cannot be combined with a range).
         - A start date, and optionally an end date (default: today). This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
     - The base date, where every series reads 100 (default: the first date of the first symbol's series, or of the first symbol that fetched if that one failed).
+    - Optionally a {{Benchmark}} symbol (e.g. ^GSPC) to compare the others against.
+        - It never sets the default base date.
+        - If it is also one of the {{Symbols}}, it is drawn once, as the benchmark; if it is the only symbol, exit with code 2 before any network call.
     - The image path to write (default: rebased_chart.png), or open an interactive window instead.
 - For each symbol, retrieve its daily closes, skipping sessions with no close.
     - If a symbol fails to fetch or has no close in the window, drop it with a warning on stderr and carry on.
@@ -25,8 +28,10 @@
     - The base date must be a trading day in every series; a symbol with no close on that exact date is dropped with a warning.
 - Draw all the rebased series on one chart, with a line at 100.
     - Above 100 means the stock has risen since the base date; below 100 means it has fallen.
+    - Draw the benchmark, rebased the same way, as a heavier black dashed line labelled "{{Benchmark}} (benchmark)", behind the stocks and without using one of their colours.
+        - If the benchmark fails to fetch or has no close on the base date, warn on stderr and draw the chart without it.
 - Output: "Wrote {{Image Path}}", plus a warning for each dropped symbol.
-- If no symbol has data, or none has a close on the base date, fail with an error.
+- If no symbol has data, or none has a close on the base date, fail with an error (the benchmark alone does not count).
 - Write stdout and stderr as UTF-8 on every platform, so non-ASCII text (°, accents, CJK, emoji) neither garbles nor crashes the script when output is piped on Windows.
 - On failure:
     - A runtime or data failure (including matplotlib not being installed) exits with code 1, with "Error: ..." on stderr.

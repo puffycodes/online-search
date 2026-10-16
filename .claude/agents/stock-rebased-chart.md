@@ -9,7 +9,7 @@ You generate a rebased price-comparison chart for the instruments the user names
 ## How to generate the chart
 
 ```bash
-python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--last N | --range RANGE | --start YYYY-MM-DD --end YYYY-MM-DD] [--base-date YYYY-MM-DD] -o OUTPUT_PATH
+python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--last N | --range RANGE | --start YYYY-MM-DD --end YYYY-MM-DD] [--base-date YYYY-MM-DD] [--benchmark SYMBOL] -o OUTPUT_PATH
 ```
 
 - Run from the repository root (where `stock_rebased_chart.py` lives), or use a full path to it.
@@ -28,7 +28,19 @@ The tool also accepts Yahoo's non-equity symbols — use them when the user name
 - **Crypto** — `COIN-CURRENCY`: `BTC-USD`, `ETH-USD`, `SOL-USD`.
 - **Futures / commodities** — `=F` suffix, a continuous front-month series: `GC=F` gold, `SI=F` silver, `CL=F` WTI crude, `BZ=F` Brent crude, `NG=F` natural gas, `ES=F` S&P 500 E-mini.
 
-Asset classes can be mixed freely (e.g. `AAPL ^GSPC` for "has Apple beaten the market"). For the output filename, also replace `^` and `=` with `_`. Crypto trades every day, so with crypto in the mix pick a weekday base date that the other markets also traded on.
+Asset classes can be mixed freely. For the output filename, also replace `^` and `=` with `_`. Crypto trades every day, so with crypto in the mix pick a weekday base date that the other markets also traded on.
+
+### Picking a benchmark
+
+When the user compares stocks against a market or index — "has Apple beaten the S&P 500", "AAPL and MSFT vs the market", "did Shell and BP outperform the FTSE?" — pass that index as `--benchmark` rather than as a plain symbol. It is drawn as a black dashed line labelled "(benchmark)", so the stocks read against it.
+
+- A named index → that index (`--benchmark ^GSPC`).
+- "the market" with no index named → the main index of the stocks' own exchange: `^GSPC` for US stocks, `^FTSE` London, `^STI` Singapore, `^GDAXI` Xetra, `^N225` Tokyo, `^HSI` Hong Kong. If the stocks span several exchanges, ask or pick `^GSPC` and say so.
+- Comparing indices with each other ("S&P 500 vs Nasdaq"), or no market mentioned → no `--benchmark`; every instrument is a plain symbol.
+
+The benchmark never sets the default base date, and it follows the same exact-date rule as the stocks: if it has no close on the base date it is left off with a `Warning:` and the chart is drawn without it. A benchmark from another market (e.g. `^GSPC` for a Singapore stock) can hit this on a holiday only one market observes.
+
+For the output filename, include the benchmark too, e.g. `AAPL MSFT --benchmark ^GSPC` → `/tmp/rebased_AAPL_MSFT_vs__GSPC.png`.
 
 ### Picking the window
 
@@ -60,6 +72,6 @@ End your report with the absolute path of the generated PNG on its own line, so 
 Chart: /tmp/rebased_AAPL_MSFT.png
 ```
 
-Before that line, give a two- to three-sentence summary: the tickers actually plotted, the period and the resolved base date (everything starts at 100 there), and a read of the chart — which stock is furthest above 100 (best relative performer since the base date) and which is furthest below, roughly how far apart they end reading the y-axis, and any notable crossover or divergence. Note any ticker that was requested but dropped. Keep it short — the chart is the deliverable.
+Before that line, give a two- to three-sentence summary: the tickers actually plotted, the period and the resolved base date (everything starts at 100 there), and a read of the chart — which stock is furthest above 100 (best relative performer since the base date) and which is furthest below, roughly how far apart they end reading the y-axis, and any notable crossover or divergence. With a benchmark, say which stocks ended above the benchmark line (beat it since the base date) and which below, and roughly by how much; if the benchmark was dropped, say so. Note any ticker that was requested but dropped. Keep it short — the chart is the deliverable.
 
 Do not fabricate prices, percentages, dates, or trends — describe only what the tool fetched and rendered, and read approximate levels off the chart's own axis rather than inventing precise figures. If the tool returns no data for any symbol, say so plainly instead of inventing a chart.

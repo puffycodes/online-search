@@ -17,6 +17,9 @@
     - If unsure of a ticker, say so rather than guess.
     - Instruments from different exchanges, currencies and asset classes can be mixed.
     - Put the stock the user treats as the anchor first.
+- When the user compares stocks against a market or index ("vs the S&P 500", "did they beat the market?"), draw that index as the benchmark rather than as another stock.
+    - "The market" with no index named → the main index of the stocks' own exchange (e.g. ^GSPC US, ^FTSE London, ^STI Singapore).
+    - Indices compared with each other, or no market mentioned → no benchmark.
 - Pick the time window from what the user asked:
     - "last N days/weeks" → the last N sessions.
     - "past 3 months", "this year", "last 5 years" → the matching range (5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y, max).
@@ -37,6 +40,7 @@
         - {{Best Performer}} (furthest above 100) and {{Worst Performer}} (furthest below 100)
         - Roughly how far apart they end, read off the chart's axis.
         - Any notable crossover or divergence.
+        - With a benchmark: which stocks ended above it and which below, roughly by how much; or that it was dropped.
     - {{Stocks Dropped}}, with the reason, if any.
     - Chart: {{Absolute Path to the Image}}, on its own line at the end.
 - Never fabricate prices, percentages, dates or trends.

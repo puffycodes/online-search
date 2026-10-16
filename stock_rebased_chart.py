@@ -16,6 +16,11 @@ value on the reference date reads as 100 - values above 100 mean the stock
 has risen relative to that date, below 100 means it has fallen. A symbol
 with no settled close on the reference date is dropped with a warning.
 
+--benchmark SYMBOL (e.g. ^GSPC) adds one more series, rebased the same way
+but drawn as a heavier black dashed line so the stocks can be read against
+it. It never sets the default reference date, and if it cannot be drawn the
+chart is still made without it.
+
 By default the chart is written to rebased_chart.png; use --output to
 change the path or --show to open an interactive window instead.
 
@@ -39,6 +44,8 @@ COLOR_LINES = [
     "#1f78b4", "#e6550d", "#33a02c", "#e31a1c",
     "#6a3d9a", "#a6761d", "#e7298a", "#555555",
 ]
+# The benchmark line: black, dashed and heavier, so it never looks like a stock.
+BENCHMARK_COLOR = "#000000"
 
 
 def fetch_closes(symbol, params):
@@ -56,7 +63,8 @@ def fetch_closes(symbol, params):
     return meta, rows
 
 
-def render_chart(series, base_date, out_path, show):
+def render_chart(series, base_date, out_path, show, benchmark=None):
+    """Plot each (symbol, dates, values) in series, plus an optional benchmark."""
     import matplotlib
 
     if not show:
@@ -68,6 +76,11 @@ def render_chart(series, base_date, out_path, show):
     for idx, (symbol, dates, values) in enumerate(series):
         color = COLOR_LINES[idx % len(COLOR_LINES)]
         ax.plot(dates, values, color=color, linewidth=1.5, label=symbol)
+
+    if benchmark is not None:
+        symbol, dates, values = benchmark
+        ax.plot(dates, values, color=BENCHMARK_COLOR, linewidth=2.2, linestyle="--",
+                label=f"{symbol} (benchmark)", zorder=1.5)
 
     ax.axhline(100, color="#999999", linewidth=0.8, linestyle="--", zorder=1)
     ax.grid(True, color="#d0d0d0", linewidth=0.5, alpha=0.7)
@@ -104,6 +117,12 @@ def parse_args(argv=None):
              "100 (default: the first date in the first symbol's series)",
     )
     parser.add_argument(
+        "--benchmark",
+        metavar="SYMBOL",
+        help="Also draw this symbol (e.g. ^GSPC) as a dashed benchmark line "
+             "to compare the others against",
+    )
+    parser.add_argument(
         "-o", "--output",
         default=DEFAULT_OUTPUT,
         help=f"PNG path to write (default: {DEFAULT_OUTPUT})",
@@ -113,7 +132,43 @@ def parse_args(argv=None):
         action="store_true",
         help="Open an interactive window instead of writing a file",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.benchmark:
+        # A benchmark also listed as a symbol is drawn once, as the benchmark.
+        args.symbols = [s for s in args.symbols if s.upper() != args.benchmark.upper()]
+        if not args.symbols:
+            parser.error("give at least one symbol besides the --benchmark")
+    return args
+
+
+def load_closes(symbol, params, last):
+    """(date, close) rows for symbol, or None with a warning if there are none."""
+    try:
+        _, rows = fetch_closes(symbol, params)
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        print(f"Warning: failed to fetch prices for {symbol!r}: {exc}", file=sys.stderr)
+        return None
+    if last:
+        rows = rows[-last:]
+    if not rows:
+        print(f"Warning: no settled price data found for {symbol!r}", file=sys.stderr)
+        return None
+    return rows
+
+
+def rebase_rows(symbol, rows, base_date):
+    """(symbol, dates, values) rebased to 100 on base_date, or None with a warning."""
+    dates = [d for d, _ in rows]
+    closes = [c for _, c in rows]
+    try:
+        base_index = dates.index(base_date)
+    except ValueError:
+        print(
+            f"Warning: {symbol!r} has no settled close on {base_date:%Y-%m-%d}, skipping",
+            file=sys.stderr,
+        )
+        return None
+    return symbol, dates, rebase(closes, base_index)
 
 
 def main(argv=None):
@@ -130,20 +185,14 @@ def main(argv=None):
 
     fetched = {}
     for symbol in args.symbols:
-        try:
-            meta, rows = fetch_closes(symbol, params)
-        except (requests.RequestException, ValueError, KeyError) as exc:
-            print(f"Warning: failed to fetch prices for {symbol!r}: {exc}", file=sys.stderr)
-            continue
-        if args.last:
-            rows = rows[-args.last:]
-        if not rows:
-            print(f"Warning: no settled price data found for {symbol!r}", file=sys.stderr)
-            continue
-        fetched[symbol] = rows
+        rows = load_closes(symbol, params, args.last)
+        if rows is not None:
+            fetched[symbol] = rows
 
     if not fetched:
         die("no price data found for any symbol")
+
+    benchmark_rows = load_closes(args.benchmark, params, args.last) if args.benchmark else None
 
     if base_date is None:
         first_symbol = args.symbols[0]
@@ -153,24 +202,18 @@ def main(argv=None):
 
     series = []
     for symbol, rows in fetched.items():
-        dates = [d for d, _ in rows]
-        closes = [c for _, c in rows]
-        try:
-            base_index = dates.index(base_date)
-        except ValueError:
-            print(
-                f"Warning: {symbol!r} has no settled close on {base_date:%Y-%m-%d}, skipping",
-                file=sys.stderr,
-            )
-            continue
-        values = rebase(closes, base_index)
-        series.append((symbol, dates, values))
-
+        rebased = rebase_rows(symbol, rows, base_date)
+        if rebased is not None:
+            series.append(rebased)
     if not series:
         die(f"no symbol has a settled close on {base_date:%Y-%m-%d}")
 
+    benchmark = None
+    if benchmark_rows is not None:
+        benchmark = rebase_rows(args.benchmark, benchmark_rows, base_date)
+
     try:
-        render_chart(series, base_date, args.output, args.show)
+        render_chart(series, base_date, args.output, args.show, benchmark)
     except ImportError:
         die("matplotlib is required (pip install matplotlib)")
 

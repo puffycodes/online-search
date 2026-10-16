@@ -26,9 +26,10 @@ class TestMain:
     def _capture_render(self, monkeypatch):
         calls = {}
 
-        def fake_render(series, base_date, out_path, show):
+        def fake_render(series, base_date, out_path, show, benchmark=None):
             calls["series"] = series
             calls["base_date"] = base_date
+            calls["benchmark"] = benchmark
 
         monkeypatch.setattr(src, "render_chart", fake_render)
         self.render_calls = calls
@@ -84,3 +85,106 @@ class TestMain:
         with pytest.raises(SystemExit) as exc:
             src.main(["AAA", "--last", "0"])
         assert exc.value.code == 2
+
+
+class TestBenchmark:
+    DATA = {
+        "AAA": [(dt.date(2024, 1, 2), 100.0), (dt.date(2024, 1, 3), 110.0)],
+        "^IDX": [(dt.date(2024, 1, 1), 40.0), (dt.date(2024, 1, 2), 50.0),
+                 (dt.date(2024, 1, 3), 55.0)],
+    }
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, monkeypatch):
+        calls = {}
+
+        def fake_render(series, base_date, out_path, show, benchmark=None):
+            calls.update(series=series, base_date=base_date, benchmark=benchmark)
+
+        fetched = []
+
+        def fetch(sym, params):
+            fetched.append(sym)
+            if sym not in self.DATA:
+                raise requests.RequestException("nope")
+            return ({}, list(self.DATA[sym]))
+
+        monkeypatch.setattr(src, "render_chart", fake_render)
+        monkeypatch.setattr(src, "fetch_closes", fetch)
+        self.calls, self.fetched = calls, fetched
+
+    def test_benchmark_rebased_and_passed_separately(self):
+        src.main(["AAA", "--benchmark", "^IDX"])
+        assert [name for name, _, _ in self.calls["series"]] == ["AAA"]
+        name, dates, values = self.calls["benchmark"]
+        assert name == "^IDX"
+        assert dates[0] == dt.date(2024, 1, 1)
+        assert values[1:] == [100.0, pytest.approx(110.0)]
+
+    def test_benchmark_does_not_set_default_base_date(self):
+        # The benchmark starts a day earlier; the base still comes from AAA.
+        src.main(["AAA", "--benchmark", "^IDX"])
+        assert self.calls["base_date"] == dt.date(2024, 1, 2)
+
+    def test_no_benchmark_by_default(self):
+        src.main(["AAA"])
+        assert self.calls["benchmark"] is None
+        assert self.fetched == ["AAA"]
+
+    def test_failed_benchmark_still_draws_chart(self, capsys):
+        src.main(["AAA", "--benchmark", "^NOPE"])
+        assert self.calls["benchmark"] is None
+        assert [name for name, _, _ in self.calls["series"]] == ["AAA"]
+        assert "failed to fetch prices for '^NOPE'" in capsys.readouterr().err
+
+    def test_benchmark_without_base_date_close_is_dropped(self, capsys):
+        # ^GAP was closed on AAA's first date (2024-01-02), e.g. a holiday.
+        self.DATA = {**self.DATA, "^GAP": [(dt.date(2024, 1, 3), 7.0)]}
+        src.main(["AAA", "--benchmark", "^GAP"])
+        assert self.calls["benchmark"] is None
+        assert [name for name, _, _ in self.calls["series"]] == ["AAA"]
+        assert "'^GAP' has no settled close on 2024-01-02" in capsys.readouterr().err
+
+    def test_benchmark_listed_as_symbol_is_drawn_once(self):
+        src.main(["AAA", "^idx", "--benchmark", "^IDX"])
+        assert [name for name, _, _ in self.calls["series"]] == ["AAA"]
+        assert self.calls["benchmark"][0] == "^IDX"
+        assert self.fetched == ["AAA", "^IDX"]
+
+    def test_only_the_benchmark_exits_2(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            src.main(["^IDX", "--benchmark", "^IDX"])
+        assert exc.value.code == 2
+        assert "at least one symbol besides the --benchmark" in capsys.readouterr().err
+        assert self.fetched == []
+
+    def test_benchmark_alone_with_data_is_not_enough(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            src.main(["ZZZ", "--benchmark", "^IDX"])
+        assert exc.value.code == 1
+        assert "no price data found for any symbol" in capsys.readouterr().err
+
+
+class TestRenderChart:
+    def test_benchmark_line_is_dashed_and_labelled(self, tmp_path, monkeypatch):
+        pytest.importorskip("matplotlib")
+        import matplotlib.pyplot as plt
+
+        lines = {}
+        real_close = plt.close
+
+        def grab(fig):
+            for line in fig.axes[0].get_lines():
+                lines[line.get_label()] = line
+            real_close(fig)
+
+        monkeypatch.setattr(plt, "close", grab)
+        dates = [dt.date(2024, 1, 1), dt.date(2024, 1, 2)]
+        out = tmp_path / "chart.png"
+        src.render_chart([("AAA", dates, [100.0, 110.0])], dates[0], str(out), False,
+                         benchmark=("^IDX", dates, [100.0, 105.0]))
+        assert out.exists()
+        bench = lines["^IDX (benchmark)"]
+        assert bench.get_linestyle() == "--"
+        assert bench.get_color() == src.BENCHMARK_COLOR
+        assert lines["AAA"].get_linestyle() == "-"

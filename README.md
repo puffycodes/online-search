@@ -1299,7 +1299,7 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ## stock_rebased_chart.py
 
-Fetches closing-price history for a series of stocks from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_price_history.py`](#stock_price_historypy) and [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) — rescales each series with [`indicators.py`](#indicatorspy)'s `rebase()` so its price on a common reference date reads as 100, and plots the rebased series together on one chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. This is a relative-performance comparison chart: it answers "which of these stocks has done better *since a given date*", not "which is priced higher". The chart is written to a PNG by default, or shown in an interactive window with `--show`.
+Fetches closing-price history for a series of stocks from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_price_history.py`](#stock_price_historypy) and [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) — rescales each series with [`indicators.py`](#indicatorspy)'s `rebase()` so its price on a common reference date reads as 100, and plots the rebased series together on one chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. This is a relative-performance comparison chart: it answers "which of these stocks has done better *since a given date*", not "which is priced higher". `--benchmark` adds an index (or any symbol) as a distinct dashed line to read the others against. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
 
 ### Requirements
 
@@ -1315,7 +1315,7 @@ pip install requests matplotlib
 ### Usage
 
 ```bash
-python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--range RANGE | --last N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--base-date YYYY-MM-DD] [-o OUTPUT] [--show]
+python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--range RANGE | --last N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--base-date YYYY-MM-DD] [--benchmark SYMBOL] [-o OUTPUT] [--show]
 ```
 
 | Flag | Default | Description |
@@ -1325,6 +1325,7 @@ python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--range RANGE | --last N] [-
 | `--last N` | — | Fetch only the most recent `N` sessions (mutually exclusive with `--range`) |
 | `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
 | `--base-date YYYY-MM-DD` | the first date in the **first** symbol's series | Reference date every series is rescaled to read 100 on |
+| `--benchmark SYMBOL` | — | One more symbol (typically an index such as `^GSPC`) rebased the same way but drawn as a heavier black dashed line labelled `SYMBOL (benchmark)`. It never sets the default base date; if it is also given as a positional symbol it is drawn once, as the benchmark |
 | `-o` / `--output` | `rebased_chart.png` | PNG path to write |
 | `--show` | off | Open an interactive matplotlib window instead of writing a file |
 
@@ -1342,16 +1343,24 @@ Wrote rebased_chart.png
 
 The chart draws one line per symbol against its actual session dates, all passing through 100 on `--base-date` (marked with a dashed horizontal guide line) — a line above 100 has risen since that date, below has fallen. Each symbol gets a distinct colour (from `COLOR_LINES`, cycled if there are more symbols than colours) and a legend entry; the title carries the resolved base date.
 
+To read the stocks against the market:
+
+```bash
+python3 stock_rebased_chart.py AAPL MSFT NVDA --range ytd --benchmark ^GSPC
+```
+
+The S&P 500 is drawn as a black dashed line behind the three stocks, so a stock above it has beaten the index since the base date and one below has lagged it.
+
 ### How it works
 
 Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_price_history.py` and `stock_candlestick_chart.py`. This script keeps its own row shaping, the rebasing step, and the render stage.
 
 1. **Build the query window** — `yahoo_finance.build_params()`: `--start/--end` become `period1`/`period2` epoch bounds (end padded a day so the final session is inclusive); `--last N` fetches a generous calendar window (`N*2 + 10` days) to be trimmed later; otherwise `range` is passed through. `interval` stays at the default `"1d"`.
-2. **Fetch each symbol independently** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint once per symbol. A symbol whose fetch fails (bad ticker, network error) or has no settled close in the window is dropped with a warning to stderr rather than aborting the whole run; the chart is drawn from whichever symbols succeed.
+2. **Fetch each symbol independently** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint once per symbol. A symbol whose fetch fails (bad ticker, network error) or has no settled close in the window is dropped with a warning to stderr rather than aborting the whole run; the chart is drawn from whichever symbols succeed. A `--benchmark` symbol is fetched the same way, after the others; at least one non-benchmark symbol must succeed.
 3. **Extract closes** — `yahoo_finance.extract_series()` pulls `timestamp`, `indicators.quote[0].close`, and `gmtoffset` into parallel lists per symbol; `fetch_closes()` here zips them into `(date, close)` pairs, skipping sessions with a `null` close. Each timestamp is shifted by `meta.gmtoffset` before taking the calendar date.
-4. **Resolve the base date** — If `--base-date` isn't given, it defaults to the first fetched date of the first symbol named on the command line (falling back to whichever symbol did fetch successfully if that one failed). This is a calendar date, not a numeric index, so it stays meaningful even if different symbols' sessions don't line up 1:1 (different exchange holidays, IPOs, etc.).
-5. **Rebase** — For each surviving symbol, finds the index of the base date in *that symbol's own* date list and calls `indicators.rebase(closes, index)`. A symbol with no settled close exactly on the base date is dropped with a warning rather than approximated to a nearby date.
-6. **Render** — Plots each symbol's rebased values against its own dates (so differing trading calendars aren't forced onto a shared x-index), adds a dashed guide line at 100, rotates the date tick labels, and either writes the figure to the `-o` path (150 dpi) or shows it interactively.
+4. **Resolve the base date** — If `--base-date` isn't given, it defaults to the first fetched date of the first symbol named on the command line (falling back to whichever symbol did fetch successfully if that one failed). The benchmark is never used for this. This is a calendar date, not a numeric index, so it stays meaningful even if different symbols' sessions don't line up 1:1 (different exchange holidays, IPOs, etc.).
+5. **Rebase** — For each surviving symbol, finds the index of the base date in *that symbol's own* date list and calls `indicators.rebase(closes, index)`. A symbol with no settled close exactly on the base date is dropped with a warning rather than approximated to a nearby date. The benchmark follows the same rule; if it is dropped, the chart is still drawn without it.
+6. **Render** — Plots each symbol's rebased values against its own dates (so differing trading calendars aren't forced onto a shared x-index), then the benchmark as a black dashed line behind them, adds a dashed guide line at 100, rotates the date tick labels, and either writes the figure to the `-o` path (150 dpi) or shows it interactively.
 
 ### Configuration
 
@@ -1362,6 +1371,7 @@ The constants at the top of this file are local; the shared fetch constants (`VA
 | `DEFAULT_RANGE` | this file | `"6mo"` | Window used when no `--range`, `--last`, or `--start` is given |
 | `DEFAULT_OUTPUT` | this file | `"rebased_chart.png"` | PNG path used when `-o` isn't passed |
 | `COLOR_LINES` | this file | 8 hues (blue, orange, green, red, purple, brown, pink, grey) | Per-symbol line colours, assigned in the order symbols are drawn and cycled if exhausted |
+| `BENCHMARK_COLOR` | this file | `"#000000"` (black) | Colour of the `--benchmark` line, which is also dashed and heavier; it takes no slot from `COLOR_LINES` |
 | `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
 | `REQUEST_TIMEOUT` | `yahoo_finance.py` | 15 | Request timeout in seconds |
 | `HEADERS` | `yahoo_finance.py` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
@@ -1369,9 +1379,11 @@ The constants at the top of this file are local; the shared fetch constants (`VA
 ### API reference
 
 - `fetch_closes(symbol, params)` — Returns `(meta, rows)` where `rows` is a list of `(date, close)` tuples, oldest first, for settled sessions only (`date` is a `datetime.date`). Calls `yahoo_finance.extract_series()` for the raw arrays.
-- `render_chart(series, base_date, out_path, show)` — Draws one line per `(symbol, dates, values)` tuple in `series`, a dashed guide line at 100, and a legend, then saves or shows the figure. Imports matplotlib lazily and selects the `Agg` backend unless `show`.
-- `parse_args(argv=None)` — Parses one-or-more positional `symbols` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--base-date`, `--output`, and `--show`.
-- `main(argv=None)` — Entry point; builds the shared query params via `yahoo_finance.build_params()`, fetches each symbol via `fetch_closes()` (warning and skipping on failure), resolves the base date, rebases each surviving series against its own date index via `indicators.rebase()`, and renders.
+- `load_closes(symbol, params, last)` — `fetch_closes()` trimmed to the last `last` rows, or `None` (with a stderr warning) if the fetch fails or there are no settled closes.
+- `rebase_rows(symbol, rows, base_date)` — `(symbol, dates, values)` rebased to 100 on `base_date`, or `None` (with a stderr warning) if `rows` has no close on that date.
+- `render_chart(series, base_date, out_path, show, benchmark=None)` — Draws one line per `(symbol, dates, values)` tuple in `series`, the optional `benchmark` tuple as a heavier black dashed line, a dashed guide line at 100, and a legend, then saves or shows the figure. Imports matplotlib lazily and selects the `Agg` backend unless `show`.
+- `parse_args(argv=None)` — Parses one-or-more positional `symbols` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--base-date`, `--benchmark`, `--output`, and `--show`. Removes the benchmark from `symbols` (case-insensitively) and exits 2 if nothing else is left.
+- `main(argv=None)` — Entry point; builds the shared query params via `yahoo_finance.build_params()`, loads each symbol and then the benchmark via `load_closes()`, resolves the base date, rebases each series via `rebase_rows()`, and renders.
 
 See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_history()`, and [`indicators.py`](#indicatorspy) for `rebase()`.
 
@@ -1382,6 +1394,8 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_histo
 - A symbol with no settled close exactly on the resolved base date prints a `Warning: …` to stderr and is dropped; if that leaves no symbols at all, the script prints `Error: no symbol has a settled close on <date>` and exits with status code 1.
 - An invalid `--range`, `--base-date`, `--start`, or `--end` is rejected (argument parsing exit code 2 for `--range`, or status code 1 with an explanatory message for a malformed date); passing both `--range` and `--last` is likewise rejected.
 - A `--last` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
+- A `--benchmark` that fails to fetch, has no settled close in the window, or has none on the base date prints a `Warning: …` and is left off; the chart is still drawn. A benchmark with data does not count as "price data for any symbol": if every positional symbol fails, the script still exits 1.
+- Giving only the benchmark (e.g. `^GSPC --benchmark ^GSPC`) is rejected by argument parsing (exit code 2), before any request is made.
 - If matplotlib isn't installed, it prints `Error: matplotlib is required (pip install matplotlib)` and exits with status code 1.
 
 ### Notes / limitations
@@ -1391,6 +1405,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_histo
 - Uses the raw (unadjusted) `close`, not `adj_close` — a split or large dividend inside the window will show up as a distortion relative to the other series. For spans that might cross one, consider whether the tickers involved have upcoming corporate actions.
 - Tickers must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, `.T`, …); currency is not normalized across symbols, so comparing a USD-denominated stock against a GBp-denominated one is still valid (rebasing is currency-agnostic — it's a ratio) but the two would need converting to compare absolute price levels.
 - Non-stock symbols work too, since the chart endpoint serves them the same way: indices (`^GSPC`, `^FTSE`), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), crypto (`BTC-USD`) and continuous front-month futures (`GC=F`, `CL=F`). Currency pairs always report `volume` 0; crypto has a row for every calendar day including weekends; futures jump at contract rolls and their volume is unreliable (Yahoo sometimes repeats a day's figure). Markets that trade around the clock usually include today's still-moving bar. Crypto's weekend rows mean a weekend base date drops every non-crypto symbol.
+- A benchmark from a different market is subject to the same exact-date rule: `D05.SI --benchmark ^GSPC` loses the benchmark whenever the first Singapore session falls on a US holiday. Pick a base date both markets traded, or a benchmark from the stocks' own market (`^STI`).
 - `--show` needs a working matplotlib GUI backend and a display; in a headless environment omit it and read the PNG.
 
 ---
@@ -1415,8 +1430,9 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`), and passes every one as a separate positional argument; if a ticker is uncertain it says so rather than guessing. Mixed exchanges, currencies and asset classes are fine — rebasing is a ratio.
 2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`.
 3. Chooses the base date: for a "since \<date>" that is also the window start it sets `--start` and lets `--base-date` default to the first date in the first symbol's series; it passes `--base-date` explicitly only when the reference date sits *inside* a longer window, picking a trading day (a symbol with no settled close on that exact date is dropped with a warning).
-4. Runs `python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] <window flags> [--base-date …] -o /tmp/rebased_<TICKERS>.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
-5. Reads the PNG to verify it rendered, then reports a two- to three-sentence summary — the tickers plotted, the period and resolved base date, which line ends furthest above 100 (best relative performer) and which furthest below, any notable crossover, and any requested ticker that was dropped — ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
+4. Passes `--benchmark` when the user compares stocks against a market or index ("vs the S&P 500", "against the market", "did they beat the FTSE?"): the named index, or for "the market" the main index of the stocks' own exchange (`^GSPC` for US stocks, `^FTSE` for London, `^STI` for Singapore, …). When the user simply compares two indices with each other, both stay plain symbols.
+5. Runs `python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] <window flags> [--base-date …] [--benchmark …] -o /tmp/rebased_<TICKERS>.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
+6. Reads the PNG to verify it rendered, then reports a two- to three-sentence summary — the tickers plotted, the period and resolved base date, which line ends furthest above 100 (best relative performer) and which furthest below, which stocks ended above or below the benchmark line when there is one, any notable crossover, and any requested ticker that was dropped — ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
 
 ### Configuration
 

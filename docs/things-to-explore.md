@@ -14,14 +14,12 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **Benchmark overlay** (Finance): a `--benchmark ^GSPC` option for
-   `stock_rebased_chart.py`, drawn distinct from the compared stocks; no new data source.
-2. **`url_metadata.py`** (Web pages): title, description, OpenGraph tags and canonical
+1. **`url_metadata.py`** (Web pages): title, description, OpenGraph tags and canonical
    URL, reusing the `url_*` validation and BeautifulSoup; `url-summary` could use it to
    label pages.
-3. **Less noise in comment searches** (Extending `hn_search.py`): agent guidance to add
+2. **Less noise in comment searches** (Extending `hn_search.py`): agent guidance to add
    context words or prefer `--story`; instructions-only, about 1 in 5 off-topic today.
-4. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
+3. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
    instructions-only change to the `hottest-tech-discussion-summary` agent, but it
    lengthens an already multi-step workflow. Open questions: search only or also read
    the top earlier thread, always on or on request, and how far back counts as earlier.
@@ -53,8 +51,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   10-K / 10-Q / 8-K filings for US companies.
 - [ ] **Macro data**: World Bank API (no key) or FRED (free key) for GDP, inflation,
   interest rates.
-- [ ] **Benchmark overlay**: option for `stock_rebased_chart.py` to add an index
-  (e.g. `^GSPC`) to the comparison automatically.
 
 ## Tech and news
 
