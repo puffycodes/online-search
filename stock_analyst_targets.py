@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Retrieve a stock's analyst price targets and recommendations from Yahoo
-Finance's public ``quoteSummary`` endpoint. No API key or authentication
+Retrieve a stock's analyst price targets, recommendations and recent
+upgrades / downgrades from Yahoo Finance's public ``quoteSummary`` endpoint. No API key or authentication
 required (a cookie + crumb are fetched automatically, via
 yahoo_finance.fetch_quote_summary()).
 
@@ -266,7 +266,8 @@ def build_json(symbol, data):
 # --------------------------------------------------------------------------- #
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Retrieve a stock's analyst price targets and recommendations from Yahoo Finance.",
+        description="Retrieve a stock's analyst price targets, recommendations and recent "
+                    "upgrades / downgrades from Yahoo Finance.",
     )
     parser.add_argument(
         "symbol", help="Ticker in Yahoo notation, e.g. AAPL, VOD.L, D05.SI, SAP.DE"

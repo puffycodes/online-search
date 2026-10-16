@@ -3,7 +3,7 @@
 ## Requirement
 
 - Use the scripts or agents in this project as much as possible.
-    - Use the stock_analyst_targets.py script to retrieve the analyst targets and ratings.
+    - Use the stock_analyst_targets.py script to retrieve the analyst targets, ratings and recent firm-level actions.
 
 ## Actions
 
