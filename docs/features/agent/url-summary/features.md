@@ -14,7 +14,7 @@
     - If it fails, retry at most once for a transient network error; otherwise keep it in the report as failed, with the reason.
 - Output:
     - For each URL, in the order given:
-        - {{URL}}
+        - {{Page Title}} and {{URL}} as the label; the URL alone when the page has no title. Never make up a title.
         - {{Summary}} of the main points of what the page actually says.
         - Note if the content was cut off, and offer to fetch more.
     - For several URLs, a short combined take, only if the pages are genuinely related.

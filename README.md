@@ -4095,13 +4095,13 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ## url_content.py
 
-Retrieves the raw content of a web page at a given URL, by making an HTTP GET request and returning the decoded body. This is a straight content fetch, not a scraper — by default it does not strip HTML tags, follow links, or render JavaScript; `content` is exactly what the server sent back. Pass `--text` to instead extract just the human-readable text of an HTML page via BeautifulSoup. No API key required (BeautifulSoup is only needed for `--text`).
+Retrieves the raw content of a web page at a given URL, by making an HTTP GET request and returning the decoded body. This is a straight content fetch, not a scraper — by default it does not strip HTML tags, follow links, or render JavaScript; `content` is exactly what the server sent back. Pass `--text` to instead extract just the human-readable text of an HTML page via BeautifulSoup, along with the page's title. No API key required (BeautifulSoup is only needed for `--text`).
 
 ### Requirements
 
 - `requests`
 - `beautifulsoup4` — only required for `--text`; the rest of the script works without it
-- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- the repo's own `cli_utils.py` and `url_metadata.py` modules (no install — run from the repo root so they import; `url_metadata.py` reads the `--text` title)
 
 ### Usage
 
@@ -4114,7 +4114,7 @@ python3 url_content.py URL [--timeout SECONDS] [--max-chars N] [--text] [--json]
 | `URL` (positional) | — | URL to fetch, e.g. `https://example.com`; must start with `http://` or `https://` |
 | `--timeout SECONDS` | 10 | Request timeout in seconds |
 | `--max-chars N` | 20000 | Maximum characters of content to return; longer bodies are truncated |
-| `--text` | off | Extract just the human-readable text of an HTML page (via BeautifulSoup), with markup and script/style content stripped, instead of returning the raw body. Requires `beautifulsoup4`. |
+| `--text` | off | Extract just the human-readable text of an HTML page (via BeautifulSoup), with markup and script/style content stripped, instead of returning the raw body, and report the page's title. Requires `beautifulsoup4`. |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
@@ -4144,6 +4144,7 @@ python3 url_content.py https://example.com --json
   "final_url": "https://example.com/",
   "status_code": 200,
   "content_type": "text/html; charset=UTF-8",
+  "title": null,
   "length": 1256,
   "truncated": false,
   "text_extracted": false,
@@ -4165,6 +4166,7 @@ python3 url_content.py https://example.com --text --json
   "final_url": "https://example.com/",
   "status_code": 200,
   "content_type": "text/html; charset=UTF-8",
+  "title": "Example Domain",
   "length": 142,
   "truncated": false,
   "text_extracted": true,
@@ -4172,14 +4174,14 @@ python3 url_content.py https://example.com --text --json
 }
 ```
 
-`content` is now plain text — markup, `<script>`/`<style>`/`<noscript>` content, and extra whitespace are all stripped, and every remaining text node is flattened into one space-separated run (no paragraph breaks are preserved). `length`/`truncated` are computed on this extracted text, not the raw HTML.
+`content` is now plain text — markup, `<script>`/`<style>`/`<noscript>` content, and extra whitespace are all stripped, and every remaining text node is flattened into one space-separated run (no paragraph breaks are preserved). `length`/`truncated` are computed on this extracted text, not the raw HTML. `title` is the page's `<title>`, else its `og:title`, read from the same download, so no second request is made. The title text also stays at the start of `content`, as before. `title` is `null` without `--text`, for non-HTML content (e.g. `text/plain`, JSON), or when the page has neither tag. The text report shows it as a `Title:` line.
 
 ### How it works
 
 1. **Validate the URL** — Rejects a URL that doesn't start with `http://` or `https://` before making any request.
 2. **Fetch** — Issues a `GET` with a browser-like `User-Agent`, following redirects.
 3. **Check the response** — A `4xx`/`5xx` status raises `requests.HTTPError`; a `Content-Type` that doesn't look textual (no `text/`, `json`, `xml`, or `javascript` marker) raises `ValueError` rather than returning a garbled/binary body.
-4. **Extract (if `--text`)** — Parses the body with BeautifulSoup (`html.parser`), removes `<script>`/`<style>`/`<noscript>` tags entirely, then collapses the remaining text into a single space-separated run via `" ".join(soup.get_text(separator=" ").split())`.
+4. **Extract (if `--text`)** — For an HTML page (or one with no `Content-Type`), `page_title()` first reads the title with [`url_metadata.py`](#url_metadatapy)'s `extract_metadata()`, the same rules as that script. Then the body is parsed with BeautifulSoup (`html.parser`), `<script>`/`<style>`/`<noscript>` tags are removed entirely, and the remaining text is collapsed into a single space-separated run via `" ".join(soup.get_text(separator=" ").split())`.
 5. **Truncate** — Cuts the (possibly extracted) text to `--max-chars` characters, along with the full untruncated length and a `truncated` flag.
 
 ### Configuration
@@ -4196,8 +4198,9 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - `is_text_content_type(content_type)` — Returns `True` if a `Content-Type` header value looks textual (`text/`, `json`, `xml`, or `javascript` substring, case-insensitive), or if the header is missing/empty.
 - `extract_text(html)` — Strips an HTML document down to its human-readable text via BeautifulSoup, dropping `<script>`/`<style>`/`<noscript>` content and collapsing all whitespace to single spaces. Raises `ImportError` if `beautifulsoup4` isn't installed (imported lazily, so the rest of the script works without it).
-- `fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=False)` — Issues the `GET` request and returns `{url, final_url, status_code, content_type, length, truncated, text_extracted, content}`. With `as_text=True`, runs the body through `extract_text()` before truncating. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-textual `Content-Type`, and `ImportError` if `as_text` is set but `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
-- `format_result(result)` — Renders a `fetch_content()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url` and a "(truncated)" marker when applicable.
+- `page_title(html, base_url)` — The page's `<title>`, falling back to its `og:title`, or `None`; via `url_metadata.extract_metadata()`.
+- `fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=False)` — Issues the `GET` request and returns `{url, final_url, status_code, content_type, title, length, truncated, text_extracted, content}`. With `as_text=True`, reads an HTML page's title with `page_title()` and runs the body through `extract_text()` before truncating. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-textual `Content-Type`, and `ImportError` if `as_text` is set but `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
+- `format_result(result)` — Renders a `fetch_content()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url`, a "Title:" line when there is a title, and a "(truncated)" marker when applicable.
 - `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--max-chars` / `--text` / `--json` CLI flags.
 - `main(argv=None)` — Entry point; validates the URL scheme, calls `fetch_content()`, handles top-level errors (including a missing `beautifulsoup4` for `--text`), and prints the result (either human-readable or JSON, depending on `--json`).
 
@@ -4253,7 +4256,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
-- Requires `url_content.py` (and its `requests` dependency) to be present and runnable from the repo root; `--text` additionally requires `beautifulsoup4`.
+- Requires `url_content.py` and the `url_metadata.py` / `cli_utils.py` modules it imports (and its `requests` dependency) to be present and runnable from the repo root; `--text` additionally requires `beautifulsoup4`.
 - Without `--text`, retrieves raw content only — no HTML-tag stripping, link-following, or JavaScript rendering; the agent says so if the user seems surprised by markup in the output or by sparse content from a JavaScript-heavy page.
 - `--text` extraction is blunt (drops script/style, flattens the rest to one line) — nav/footer/cookie-banner text comes through mixed in with the article text, with no paragraph breaks; the agent says so if the user expected clean article-only text.
 - Inherits all the limitations of [`url_content.py`](#url_contentpy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET, hard character-cutoff truncation).
@@ -4595,7 +4598,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 1. Adds a `https://` scheme itself to any URL the user gave as a bare domain or path (the underlying script requires one).
 2. Runs `python3 url_content.py "URL" --text --max-chars 6000 --json` for *every* URL given, one call per URL — `--text` for readable content rather than raw markup, and a smaller `--max-chars` than `url-content`'s default since this agent summarizes rather than reproduces the page.
 3. For each URL that fetched successfully, writes a concise summary of its actual content (not a full recap), noting if `truncated` is `true`.
-4. For a single URL, reports that one summary. For multiple URLs, reports each summary individually and labeled by its URL, adding a short combined take only when the pages are genuinely related — never forcing a synthesis across unrelated pages.
+4. Labels each summary with the page's `title` (from `url_content.py --text`) and its URL, or the URL alone when the page has no title. For a single URL, reports that one summary. For multiple URLs, reports each summary individually, adding a short combined take only when the pages are genuinely related — never forcing a synthesis across unrelated pages.
 5. Reports every URL given, even ones that failed to fetch — a failed URL is shown with its error reason alongside the successful summaries, never silently dropped. Retries a connection-level failure at most once when it looks transient; a missing-scheme, non-textual-content, or missing-dependency failure is not retried, since none of those change on retry.
 
 ### Configuration
@@ -4609,7 +4612,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
-- Requires `url_content.py` (and its `requests`/`beautifulsoup4` dependencies) to be present and runnable from the repo root.
+- Requires `url_content.py` and the `url_metadata.py` / `cli_utils.py` modules it imports (and its `requests`/`beautifulsoup4` dependencies) to be present and runnable from the repo root.
 - Fetches each URL's initial HTML response only — no JavaScript rendering, so a JavaScript-heavy page may summarize as little more than its shell.
 - `--text` extraction is blunt (drops script/style, flattens the rest to one line, no paragraph breaks) — the agent summarizes from that flattened text, so nav/footer/cookie-banner text mixed into the extracted content can occasionally bleed into a summary.
 - The combined "how these pages relate" take, when given multiple URLs, is a judgment call made by the agent itself, not a deterministic script — it's included only when a real relationship exists, and omitted rather than invented for unrelated pages.

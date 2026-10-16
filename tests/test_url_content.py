@@ -157,6 +157,49 @@ class TestFetchContent:
         assert result["text_extracted"] is False
 
 
+class TestTitle:
+    PAGE = "<html><head><title> My  Page </title></head><body><p>Body.</p></body></html>"
+
+    def _fetch(self, monkeypatch, text, headers=None, **kwargs):
+        response = FakeResponse(status_code=200, url="https://example.com/", text=text)
+        response.headers = {"Content-Type": "text/html"} if headers is None else headers
+        monkeypatch.setattr(uc.requests, "get", lambda url, **kw: response)
+        return uc.fetch_content("https://example.com", **kwargs)
+
+    def test_page_title_from_title_tag(self):
+        assert uc.page_title(self.PAGE, "https://x.test") == "My Page"
+
+    def test_page_title_falls_back_to_og_title(self):
+        html = '<head><meta property="og:title" content="OG Name"></head>'
+        assert uc.page_title(html, "https://x.test") == "OG Name"
+
+    def test_page_title_none_without_either(self):
+        assert uc.page_title("<p>no title</p>", "https://x.test") is None
+
+    def test_text_mode_reports_title(self, monkeypatch):
+        result = self._fetch(monkeypatch, self.PAGE, as_text=True)
+        assert result["title"] == "My Page"
+        assert result["content"] == "My Page Body."
+
+    def test_title_with_missing_content_type(self, monkeypatch):
+        assert self._fetch(monkeypatch, self.PAGE, headers={}, as_text=True)["title"] == "My Page"
+
+    def test_no_title_without_text_mode(self, monkeypatch):
+        assert self._fetch(monkeypatch, self.PAGE)["title"] is None
+
+    def test_no_title_for_non_html(self, monkeypatch):
+        result = self._fetch(monkeypatch, "<title>not a page</title>",
+                             headers={"Content-Type": "text/plain"}, as_text=True)
+        assert result["title"] is None
+
+    def test_title_in_report(self):
+        result = {"url": "https://example.com", "final_url": "https://example.com",
+                  "status_code": 200, "content_type": "text/html", "title": "My Page",
+                  "length": 5, "truncated": False, "text_extracted": True, "content": "Body."}
+        assert "Title: My Page" in uc.format_result(result)
+        assert "Title:" not in uc.format_result({**result, "title": None})
+
+
 class TestFormatResult:
     def test_no_redirect(self):
         result = {

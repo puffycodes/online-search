@@ -9,7 +9,8 @@ what the server sent back, decoded as text. Non-textual responses (images,
 PDFs, other binary payloads) are rejected rather than returned as garbled
 text. Pass --text to instead extract just the human-readable text of an
 HTML page (via BeautifulSoup), with script/style content and markup
-stripped out.
+stripped out; it also reports the page's title, read from the same download
+with url_metadata.py's extract_metadata() (the <title>, else og:title).
 
 Supports a --json flag for structured output, so this script can be
 called as a tool by an agent: it parses stdout instead of a human-
@@ -22,6 +23,7 @@ import json
 import requests
 
 from cli_utils import die, positive_int, use_utf8_output, validate_url_scheme
+from url_metadata import extract_metadata
 
 TIMEOUT_SECONDS = 10
 MAX_CHARS = 20000
@@ -61,16 +63,24 @@ def extract_text(html):
     return " ".join(soup.get_text(separator=" ").split())
 
 
+def page_title(html, base_url):
+    """The page's <title>, falling back to its og:title; None if it has neither."""
+    meta = extract_metadata(html, base_url)
+    return meta["title"] or meta["open_graph"].get("title")
+
+
 def fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=False):
     """GET `url` and return its decoded body.
 
     Returns a dict with url, final_url (after redirects), status_code,
-    content_type, length (full content length in characters, after
+    content_type, title, length (full content length in characters, after
     extraction if `as_text`), truncated (bool), text_extracted (bool,
     echoes `as_text`), and content (the body, cut to `max_chars`).
 
     With `as_text=True`, the body is run through `extract_text()` before
-    truncation, so `content` is plain text rather than raw HTML.
+    truncation, so `content` is plain text rather than raw HTML, and an HTML
+    page's (or a page with no Content-Type) `title` comes from
+    `page_title()`. Otherwise `title` is None.
 
     Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` if the
     response's Content-Type doesn't look textual, `ImportError` if
@@ -87,7 +97,10 @@ def fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=Fal
         raise ValueError(f"URL did not return text content (Content-Type: {content_type})")
 
     text = response.text
+    title = None
     if as_text:
+        if not content_type or "html" in content_type.lower():
+            title = page_title(text, response.url)
         text = extract_text(text)
     truncated = len(text) > max_chars
     return {
@@ -95,6 +108,7 @@ def fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=Fal
         "final_url": response.url,
         "status_code": response.status_code,
         "content_type": content_type,
+        "title": title,
         "length": len(text),
         "truncated": truncated,
         "text_extracted": as_text,
@@ -108,6 +122,8 @@ def format_result(result):
         lines.append(f"Redirected to: {result['final_url']}")
     lines.append(f"Status: {result['status_code']}")
     lines.append(f"Content-Type: {result['content_type']}")
+    if result.get("title"):
+        lines.append(f"Title: {result['title']}")
     length_line = f"Length: {result['length']} characters"
     if result["truncated"]:
         length_line += " (truncated)"
