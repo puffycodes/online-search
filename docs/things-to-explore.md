@@ -14,9 +14,7 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## Top picks
 
-1. **Less noise in comment searches** (Extending `hn_search.py`): agent guidance to add
-   context words or prefer `--story`; instructions-only, about 1 in 5 off-topic today.
-2. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
+1. **Earlier HN threads in the research summary** (Extending `hn_search.py`):
    instructions-only change to the `hottest-tech-discussion-summary` agent, but it
    lengthens an already multi-step workflow. Open questions: search only or also read
    the top earlier thread, always on or on request, and how far back counts as earlier.
@@ -53,10 +51,11 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### Extending `hn_search.py`
 
-- [ ] **Less noise in comment searches**: a bare `"bun"` comment search also finds
-  burger buns and job-post skill lists (about 1 in 5 of a recent sample). Options:
-  agent guidance to add context words, or dropping comments whose story is clearly
-  unrelated.
+- [ ] **Job-thread filter in `hn_search.py`**: the `hn-search` agent now drops comments
+  from the monthly "Who is hiring?" / "Who wants to be hired?" / "Freelancer?" threads
+  itself. A flag (or default) in the script would do it reliably and keep `--limit`
+  results on topic. In 50-comment samples that was 23 of `swift` and 24 of `swift ios`,
+  but 0 of `bun` or `zig`.
 - [ ] **Earlier HN threads in the research summary**: let the
   `hottest-tech-discussion-summary` agent run `hn_search.py` for each trending topic,
   to add how HN discussed it before.

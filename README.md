@@ -2614,6 +2614,7 @@ The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` defaul
 ### Notes / limitations
 
 - **Whole-word matching.** Typo tolerance and prefix matching are turned off, so `"bun"` doesn't also match "Bunch", "bundle" or "build" (with Algolia's defaults it does — 196,449 story matches for "bun" against 777). The flip side: `"kubernetes"` won't find "k8s", and a plural or other word form may need its own search. Every query word must match (in the title, URL, text or author).
+- **A word matches in any sense.** A comment search for `"swift"` also finds "a swift recovery", Taylor Swift and job posts listing Swift as a skill. In 50-comment samples (October 2026), 23 of `swift`'s relevance-sorted results came from the monthly "Who is hiring?" / "Who wants to be hired?" threads. A user whose name is the query word matches too. The script doesn't filter any of this; the [`hn-search`](#claude-code-agent-hn-search) agent does.
 - **"Relevance" ranks by text match first, then points.** A single-word query tends to put the biggest threads first; a multi-word query can rank a small story that matches all the words closely above a popular one. Use `--sort date` with `--min-points` for "the latest notable threads".
 - Comments have no public score in the API, hence no `--min-points` for them; comment results can't be ranked by popularity.
 - Story scores and comment counts are as of Algolia's last update of that item, which can lag HN slightly for recent stories.
@@ -2803,8 +2804,9 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Reduces the question to a few distinctive keywords (in the form people write them, since words match whole), and picks `--type` (stories for threads, comments for opinions, Ask/Show HN when asked), `--sort` (relevance for the big threads, date for "lately"), and any date window, minimum score or author from the user's wording.
 2. Runs `python3 hn_search.py "QUERY" [...] --json` from the repo root — for "what does HN think of X?", a story search to find the biggest threads and a comment search for recent views.
+   - Keeps comment searches on topic, because a word matches in any sense. It prefers searching inside the topic's own threads (`--story`), and gives an ambiguous name one context word that only fits the meaning wanted (`"swift xcode"`, `"bun node"`, `"golang"`), checking that the word hasn't brought in a meaning of its own (`"swift apple"` finds Taylor Swift). Because a context word also biases the sample towards its own topic (`"swift xcode"` finds Xcode complaints), it runs two such searches with different words for opinions, gives more weight to views found in both, and never reports a context word's topic as a finding. It drops comments from the monthly job threads unless the user asks about jobs, skips comments that use the word in another sense or matched on the author's name, and fetches extra results to make up for them.
 3. Reads a thread the user linked, or the biggest one or two a search found, with `python3 hn_thread.py ITEM [...] --json`; for "what did that thread say about X?", searches all of the thread's comments with `hn_search.py "X" --story ITEM` instead: the top comments in HN's ranked order with a few replies each, more for a very large thread.
-4. Reports threads as a compact list (title, score, comments, date, links), or summarizes the views in the comments it retrieved — for a thread, saying how many of its highest-ranked comments it read — grouping similar opinions, noting disagreement, linking its sources and saying how many comments it read — a sample, not a consensus. An exit code 2 means it fixes the arguments rather than retrying; a network-looking failure is retried at most once; an empty result is reported as such, with a broader search suggested or run.
+4. Reports threads as a compact list (title, score, comments, date, links), or summarizes the views in the comments it retrieved — for a thread, saying how many of its highest-ranked comments it read — grouping similar opinions, noting disagreement, linking its sources and saying how many comments it read and how many it skipped as off-topic — a sample, not a consensus. An exit code 2 means it fixes the arguments rather than retrying; a network-looking failure is retried at most once; an empty result is reported as such, with a broader search suggested or run.
 
 ### Configuration
 
@@ -2818,6 +2820,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 - Requires `hn_search.py`, `hn_thread.py`, their `hn.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
 - Inherits the limitations of [`hn_search.py`](#hn_searchpy) (whole-word matching, text-first relevance ranking, no comment scores, 100 results per search) and [`hn_thread.py`](#hn_threadpy) (a big thread is read as a sample of its highest-ranked comments).
 - A summary of "what HN thinks" is only as representative as the handful of comments retrieved.
+- Its off-topic filtering is the agent's own judgment, not a feature of the script, so an occasional off-topic comment can still get through, especially for names with many meanings.
 
 ---
 
