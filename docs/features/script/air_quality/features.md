@@ -15,13 +15,16 @@
     - If nothing matches, fail with "No location found matching '{{Location}}'."
 - Retrieve the current air quality at that place.
 - Map the US AQI to its EPA category: Good, Moderate, Unhealthy for Sensitive Groups, Unhealthy, Very Unhealthy or Hazardous.
+- Retrieve the current pollen count for alder, birch, grass, mugwort, olive and ragweed, in grains/m³.
+    - Pollen is only modelled for Europe; elsewhere every value is missing.
 - Never combine the US AQI and the European AQI; they use different scales.
 - Output:
     - {{Place Name}}, {{Region}}, {{Country}}
     - {{US AQI}} ({{US AQI Category}}) {{European AQI}}
     - {{PM2.5}} {{PM10}} {{Carbon Monoxide}} {{Nitrogen Dioxide}} {{Sulphur Dioxide}} {{Ozone}}, in µg/m³
+    - {{Alder Pollen}} {{Birch Pollen}} {{Grass Pollen}} {{Mugwort Pollen}} {{Olive Pollen}} {{Ragweed Pollen}}, in grains/m³, on one line; or "Pollen: not available (Europe only)" when every value is missing.
     - {{Observation Time}}
-    - With --json: {location, admin1, country, latitude, longitude, us_aqi, us_aqi_category, european_aqi, pm2_5, pm10, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, time}.
+    - With --json: {location, admin1, country, latitude, longitude, us_aqi, us_aqi_category, european_aqi, pm2_5, pm10, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, alder_pollen, birch_pollen, grass_pollen, mugwort_pollen, olive_pollen, ragweed_pollen, time}.
 - Support a --json option:
     - With it, skip any progress line and print the result as a single JSON value on stdout.
     - Without it, print a human-readable report.

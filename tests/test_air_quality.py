@@ -1,4 +1,4 @@
-"""Tests for air_quality: us_aqi_category, air quality assembly, formatting, and main()."""
+"""Tests for air_quality: us_aqi_category, air quality assembly, pollen and report formatting, and main()."""
 
 import json
 
@@ -59,6 +59,8 @@ class TestGetAirQuality:
             "nitrogen_dioxide": 10.5,
             "sulphur_dioxide": 2.3,
             "ozone": 60.0,
+            "birch_pollen": 12.5,
+            "grass_pollen": 0.0,
             "time": "2026-01-01T00:00",
         }
         monkeypatch.setattr(aq, "fetch_current_air_quality", lambda *a, **k: current)
@@ -68,7 +70,14 @@ class TestGetAirQuality:
         assert row["us_aqi_category"] == "Good"
         assert row["european_aqi"] == 20
         assert row["pm2_5"] == 8.1
+        assert row["birch_pollen"] == 12.5
+        assert row["grass_pollen"] == 0.0
+        assert row["alder_pollen"] is None
         assert row["time"] == "2026-01-01T00:00"
+
+    def test_requests_every_pollen_field(self):
+        for field in aq.POLLEN_FIELDS:
+            assert field in aq.CURRENT_FIELDS.split(",")
 
     def test_missing_us_aqi_gives_no_category(self, monkeypatch):
         monkeypatch.setattr(
@@ -78,6 +87,27 @@ class TestGetAirQuality:
         row = aq.get_air_quality("X")
         assert row["us_aqi"] is None
         assert row["us_aqi_category"] is None
+
+
+class TestFormatPollen:
+    def test_all_none_is_not_available(self):
+        row = {field: None for field in aq.POLLEN_FIELDS}
+        assert aq.format_pollen(row) == "Pollen: not available (Europe only)"
+
+    def test_missing_fields_count_as_none(self):
+        assert aq.format_pollen({}) == "Pollen: not available (Europe only)"
+
+    def test_lists_every_plant_in_order(self):
+        row = {field: 0.0 for field in aq.POLLEN_FIELDS}
+        row["birch_pollen"] = 12.5
+        assert aq.format_pollen(row) == (
+            "Pollen (grains/m³): alder 0.0, birch 12.5, grass 0.0, "
+            "mugwort 0.0, olive 0.0, ragweed 0.0"
+        )
+
+    def test_zero_counts_are_available(self):
+        row = {field: 0.0 for field in aq.POLLEN_FIELDS}
+        assert "not available" not in aq.format_pollen(row)
 
 
 class TestFormatAirQuality:
@@ -101,6 +131,7 @@ class TestFormatAirQuality:
         assert out.splitlines()[0] == "Air quality for X"
         assert "US AQI: 42 (Good)" in out
         assert "European AQI: 20" in out
+        assert "Pollen: not available (Europe only)" in out
         assert "2026-01-01T00:00" in out
 
 

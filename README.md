@@ -18,7 +18,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/weather-forecast.md`](#claude-code-agent-weather-forecast) — Claude Code subagent that calls `weather_forecast.py` and reports the upcoming multi-day forecast, UV index or sunrise / sunset for a named location
 - [`weather_history.py`](#weather_historypy) — past weather for a named location on a date or over a range (back to 1940), with a range summary, from Open-Meteo's archive, sharing `weather.py`'s geocoding
 - [`.claude/agents/weather-history.md`](#claude-code-agent-weather-history) — Claude Code subagent that calls `weather_history.py` and reports the weather on a past date or period at a named location
-- [`air_quality.py`](#air_qualitypy) — current air quality (US AQI, European AQI, and pollutant levels) for a named location, sharing `weather.py`'s geocoding
+- [`air_quality.py`](#air_qualitypy) — current air quality (US AQI, European AQI, pollutant levels, and pollen counts in Europe) for a named location, sharing `weather.py`'s geocoding
 - [`.claude/agents/air-quality.md`](#claude-code-agent-air-quality) — Claude Code subagent that calls `air_quality.py` and reports the current air quality / AQI for a named location
 
 **[Market & Stock Data](#market--stock-data)**
@@ -593,7 +593,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ## air_quality.py
 
-Prints the current air quality — US AQI, European AQI, and raw pollutant concentrations — for a named location, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and air quality APIs. No API key or authentication required.
+Prints the current air quality — US AQI, European AQI, raw pollutant concentrations, and pollen counts (Europe only) — for a named location, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and air quality APIs. No API key or authentication required.
 
 Requires `weather.py` to be present in the same directory — it imports `fetch_json`, `format_place`, and `geocode` directly from it rather than shelling out or duplicating that logic (the same sharing pattern [`weather_forecast.py`](#weather_forecastpy) uses). It also imports `die` from [`cli_utils.py`](#cli_utilspy).
 
@@ -634,6 +634,7 @@ Air quality for Singapore, Singapore
   Nitrogen dioxide: 12.1 µg/m³
   Sulphur dioxide: 6.8 µg/m³
   Ozone: 99.0 µg/m³
+  Pollen: not available (Europe only)
   As of: 2026-09-15T14:00
 ```
 
@@ -659,17 +660,25 @@ python3 air_quality.py "Beijing" --json
   "nitrogen_dioxide": 58.7,
   "sulphur_dioxide": 11.2,
   "ozone": 70.0,
+  "alder_pollen": null,
+  "birch_pollen": null,
+  "grass_pollen": null,
+  "mugwort_pollen": null,
+  "olive_pollen": null,
+  "ragweed_pollen": null,
   "time": "2026-09-15T14:00"
 }
 ```
 
 With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
 
+For a place in Europe, the pollen line lists each plant's count, e.g. `Pollen (grains/m³): alder 0.0, birch 0.0, grass 0.0, mugwort 0.0, olive 0.0, ragweed 0.0` (London in October, out of season).
+
 ### How it works
 
 1. **Geocode** — Calls `weather.geocode()` (shared with [`weather.py`](#weatherpy)) to resolve the free-text `LOCATION` to its top-matching place.
-2. **Fetch current air quality** — Calls Open-Meteo's air quality endpoint (`air-quality-api.open-meteo.com/v1/air-quality`) with `current=us_aqi,european_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone` (`CURRENT_FIELDS`) and `timezone=auto` at that location's coordinates.
-3. **Categorize and display** — Maps the numeric US AQI to its EPA category label via `us_aqi_category()` (`US_AQI_CATEGORIES`), and prints location, both AQI values, the raw pollutant concentrations, and the observation time (or the equivalent JSON object with `--json`).
+2. **Fetch current air quality** — Calls Open-Meteo's air quality endpoint (`air-quality-api.open-meteo.com/v1/air-quality`) with `current=us_aqi,european_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone` plus the six `<plant>_pollen` fields (`CURRENT_FIELDS`) and `timezone=auto` at that location's coordinates.
+3. **Categorize and display** — Maps the numeric US AQI to its EPA category label via `us_aqi_category()` (`US_AQI_CATEGORIES`), and prints location, both AQI values, the raw pollutant concentrations, the pollen counts on one line (via `format_pollen()`), and the observation time (or the equivalent JSON object with `--json`).
 
 ### Configuration
 
@@ -677,7 +686,8 @@ These are set as constants near the top of the file — edit them directly to ch
 
 | Constant | Default | Description |
 |---|---|---|
-| `CURRENT_FIELDS` | `us_aqi,european_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone` | The Open-Meteo `current=` parameter value |
+| `POLLEN_TYPES` | `alder`, `birch`, `grass`, `mugwort`, `olive`, `ragweed` | Plants to report pollen for; each becomes a `<plant>_pollen` field (`POLLEN_FIELDS`) |
+| `CURRENT_FIELDS` | `us_aqi,european_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone` + `POLLEN_FIELDS` | The Open-Meteo `current=` parameter value |
 | `US_AQI_CATEGORIES` | 6 EPA bands, `Good` through `Hazardous` | Upper-bound/label pairs used by `us_aqi_category()` |
 | `REQUEST_TIMEOUT` | 10 (from `weather.py`) | Per-request timeout in seconds |
 
@@ -685,7 +695,8 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - `us_aqi_category(us_aqi)` — Maps a US AQI value to its EPA category label (`Good`, `Moderate`, `Unhealthy for Sensitive Groups`, `Unhealthy`, `Very Unhealthy`, `Hazardous`); returns `None` if `us_aqi` is `None`.
 - `fetch_current_air_quality(latitude, longitude)` — Fetches the `current` object for a coordinate pair from Open-Meteo's air quality endpoint.
-- `get_air_quality(location)` — Orchestrates geocoding (via `weather.geocode()`) and the current-air-quality fetch; returns the flattened `{location, admin1, country, latitude, longitude, us_aqi, us_aqi_category, european_aqi, pm2_5, pm10, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, time}` record, or `None` if the location can't be found.
+- `get_air_quality(location)` — Orchestrates geocoding (via `weather.geocode()`) and the current-air-quality fetch; returns the flattened `{location, admin1, country, latitude, longitude, us_aqi, us_aqi_category, european_aqi, pm2_5, pm10, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, alder_pollen, birch_pollen, grass_pollen, mugwort_pollen, olive_pollen, ragweed_pollen, time}` record, or `None` if the location can't be found.
+- `format_pollen(row)` — Renders a record's pollen counts as one `Pollen (grains/m³): alder …, birch …` line, or `Pollen: not available (Europe only)` when every pollen value is `None` or missing.
 - `format_air_quality(row)` — Renders a `get_air_quality()` record as a multi-line human-readable string (its place line comes from `weather.format_place()`).
 - `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--json`.
 - `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
@@ -703,6 +714,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, and `format_plac
 - Reports only the current reading at a single instant — no forecast or historical air quality (Open-Meteo's air quality API supports both `hourly=` forecasts and archived history; this script only calls the `current` shortcut).
 - The US AQI and European AQI are **not directly comparable** — they use different pollutant breakpoints and scales (US AQI runs roughly 0-500, European AQI roughly 0-100+). Don't average or otherwise combine them.
 - Open-Meteo's air quality model (CAMS) is coarser-resolution than a dedicated ground-station network like WAQI/AirNow, so readings can differ somewhat from a country's own official monitoring stations, especially for hyper-local pollution sources.
+- Pollen counts come from Open-Meteo's CAMS European model, so they exist **only for Europe** — everywhere else all six are `null`. In Europe a `0.0` is a real reading, usually meaning the plant is out of season. They are raw counts in grains/m³; the script doesn't map them to low/moderate/high bands.
 - Results are a live snapshot; conditions will differ between runs.
 
 ---
@@ -713,7 +725,7 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer questions like "what's the air quality in Beijing?", "is the air bad in Singapore right now?", "AQI for Delhi", or "how polluted is it in Los Angeles today?" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+Lets Claude Code answer questions like "what's the air quality in Beijing?", "is the air bad in Singapore right now?", "AQI for Delhi", "how polluted is it in Los Angeles today?", or "what's the pollen count in London?" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
 
 ### How it's invoked
 
@@ -726,7 +738,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Passes the user's location text through to the tool mostly as-is, only adding a country/state qualifier itself when the name looks ambiguous and the user gave enough context to disambiguate.
 2. Runs `python3 air_quality.py "LOCATION" --json` from the repo root.
-3. Parses the JSON object (`us_aqi`, `us_aqi_category`, `european_aqi`, `pm2_5`, `pm10`, `carbon_monoxide`, `nitrogen_dioxide`, `sulphur_dioxide`, `ozone`, `time`) and leads with the US AQI and its category, mentioning the European AQI only when relevant and never combining the two scales. It calls out a specific pollutant only if the user asked for detail or one is notably elevated. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
+3. Parses the JSON object (`us_aqi`, `us_aqi_category`, `european_aqi`, `pm2_5`, `pm10`, `carbon_monoxide`, `nitrogen_dioxide`, `sulphur_dioxide`, `ozone`, the six `<plant>_pollen` counts, `time`) and leads with the US AQI and its category, mentioning the European AQI only when relevant and never combining the two scales. It calls out a specific pollutant only if the user asked for detail or one is notably elevated, and reports pollen only when asked about pollen, hay fever or allergies — saying it isn't available (rather than zero) when every count is `null` outside Europe. If the command fails, it surfaces the `{"error": "..."}` from stderr — a "no location found" result is reported as-is rather than retried, while a network-looking failure is retried at most once.
 
 ### Configuration
 
@@ -740,6 +752,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 ### Notes / limitations
 
 - Requires `air_quality.py` (and its `weather.py` and `requests` dependencies) to be present and runnable from the repo root.
+- Pollen counts exist only for places in Europe, and are raw grains/m³ with no low/high bands.
 - Reports current conditions only — there is no forecast or historical air quality to fall back on, so it says so rather than fabricating one.
 - Inherits all the limitations of [`air_quality.py`](#air_qualitypy) itself (geocoding takes only the top match for an ambiguous name, the two AQI scales aren't comparable, Open-Meteo's model resolution versus dedicated ground stations, live-snapshot results).
 

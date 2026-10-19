@@ -14,6 +14,10 @@ raw pollutant concentrations. The two indices use different breakpoints
 and are not directly comparable - see the module-level AQI_CATEGORIES
 comment for the US AQI band definitions.
 
+Also reports pollen counts (grains/m³) for six plant types. Open-Meteo
+only models pollen for Europe: elsewhere every pollen value is None, and
+in Europe out of season they are 0.0.
+
 Supports a --json flag for structured output, so this script can be
 called as a tool by an agent: it parses stdout instead of a human-
 readable report.
@@ -29,6 +33,11 @@ from weather import fetch_json, format_place, geocode, place_fields
 
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
+# Plant types Open-Meteo reports pollen for, each as "<type>_pollen" in
+# grains/m³. Europe only (CAMS European model); None elsewhere.
+POLLEN_TYPES = ["alder", "birch", "grass", "mugwort", "olive", "ragweed"]
+POLLEN_FIELDS = [f"{plant}_pollen" for plant in POLLEN_TYPES]
+
 CURRENT_FIELDS = ",".join(
     [
         "us_aqi",
@@ -39,6 +48,7 @@ CURRENT_FIELDS = ",".join(
         "nitrogen_dioxide",
         "sulphur_dioxide",
         "ozone",
+        *POLLEN_FIELDS,
     ]
 )
 
@@ -96,8 +106,19 @@ def get_air_quality(location):
         "nitrogen_dioxide": current.get("nitrogen_dioxide"),
         "sulphur_dioxide": current.get("sulphur_dioxide"),
         "ozone": current.get("ozone"),
+        **{field: current.get(field) for field in POLLEN_FIELDS},
         "time": current.get("time"),
     }
+
+
+def format_pollen(row):
+    """Render a record's pollen counts as one line, or say they aren't
+    available when every value is None (outside Europe)."""
+    values = [row.get(field) for field in POLLEN_FIELDS]
+    if all(value is None for value in values):
+        return "Pollen: not available (Europe only)"
+    counts = ", ".join(f"{plant} {value}" for plant, value in zip(POLLEN_TYPES, values))
+    return f"Pollen (grains/m³): {counts}"
 
 
 def format_air_quality(row):
@@ -114,6 +135,7 @@ def format_air_quality(row):
         f"  Nitrogen dioxide: {row['nitrogen_dioxide']} µg/m³",
         f"  Sulphur dioxide: {row['sulphur_dioxide']} µg/m³",
         f"  Ozone: {row['ozone']} µg/m³",
+        f"  {format_pollen(row)}",
         f"  As of: {row['time']}",
     ]
     return "\n".join(lines)

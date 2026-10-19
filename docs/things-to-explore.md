@@ -21,8 +21,6 @@ None chosen right now; pick the next ones from the sections below.
 All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()`,
 `fetch_json()` and `place_fields()`.
 
-- [ ] **Pollen levels**: part of the Open-Meteo air-quality API (Europe only). Could be
-  added to `air_quality.py`.
 - [ ] **Marine forecast** (Open-Meteo marine API): wave height, swell, sea temperature
   for coastal places.
 - [ ] **River flood forecast** (Open-Meteo flood API): river discharge levels.

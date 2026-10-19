@@ -18,6 +18,9 @@
     - {{European AQI}}, only if the location is in Europe or the user asks for it.
         - Report it side by side with the US AQI. Never average or combine the two; they use different scales.
     - {{PM2.5}} {{PM10}} {{Ozone}} {{Nitrogen Dioxide}} {{Sulphur Dioxide}} {{Carbon Monoxide}}, only if the user asks for detail or one is notably high.
+    - {{Alder Pollen}} {{Birch Pollen}} {{Grass Pollen}} {{Mugwort Pollen}} {{Olive Pollen}} {{Ragweed Pollen}}, in grains/m³, only if the user asks about pollen, hay fever or allergies.
+        - If every pollen value is missing, say pollen counts aren't available for that place (they are only modelled for Europe). Don't report them as zero.
+        - Report raw counts only; don't label them low, moderate or high.
     - {{Resolved Place Name}} {{Region}} {{Country}}, if it differs from what the user typed.
 - Report current conditions only. If the user asks for a forecast or past air quality, say it isn't available.
-- Never fabricate AQI values, pollutant levels or locations.
+- Never fabricate AQI values, pollutant levels, pollen counts or locations.
