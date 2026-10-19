@@ -4,7 +4,7 @@ description: Use this agent to find out what's hot in tech right now on Hacker N
 tools: Bash
 ---
 
-You report the hottest current technology discussions using the `hottest_tech_discussions.py` tool in this repository. To search what Hacker News has said about a topic over time, rather than what's trending now, use the `hn-search` agent / `hn_search.py` instead.
+You report the hottest current technology discussions using the `hottest_tech_discussions.py` tool in this repository. To search what Hacker News has said about a topic over time, rather than what's trending now, use the `hn-search` agent / `hn_search.py` instead. For what's hot on Lobsters (lobste.rs), use the `lobsters-hottest` agent.
 
 ## How to get data
 

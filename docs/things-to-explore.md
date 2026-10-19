@@ -47,8 +47,14 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   requests are rate-limited.
 - [ ] **arXiv new papers** (arXiv API, no key): latest papers in categories like
   cs.AI and cs.LG.
-- [ ] **More discussion sources**: Lobsters, Reddit and Dev.to JSON feeds, possibly
-  merged into `hottest_tech_discussions.py` so it covers more than Hacker News.
+- [ ] **More discussion sources**: Lobsters now has its own script,
+  `lobsters_hottest.py`. Still open: merging it into `hottest_tech_discussions.py`
+  so that covers more than Hacker News (its rankings would need per-source lists,
+  since Lobsters scores run much lower), and a Lobsters thread reader like
+  `hn_thread.py` (a thread's comments come from its discussion URL plus `.json`).
+  Checked on 2026-10-19: Reddit's JSON returns 403 without OAuth; Dev.to's API works
+  without a key, but its top items are posts on dev.to itself rather than links
+  with a discussion.
 - [ ] **Wikipedia**: REST summary API for a quick topic summary, page-views API for
   "what's trending on Wikipedia today".
 

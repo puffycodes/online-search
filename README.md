@@ -53,6 +53,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`hn.py`](#hnpy) — shared helper module for the Hacker News scripts: JSON fetching, one-item fetch from the official HN API, HN page links, posting times, and HTML-to-text cleanup, used by `hottest_tech_discussions.py`, `hn_search.py` and `hn_thread.py`
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — the hottest Hacker News discussions (top 10 by default, `--limit N` for more)
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
+- [`lobsters_hottest.py`](#lobsters_hottestpy) — the hottest discussions on Lobsters (lobste.rs), with their tags (top 10 by default, `--limit N` for more, `--exclude-tag` to leave out e.g. site `meta` posts)
+- [`.claude/agents/lobsters-hottest.md`](#claude-code-agent-lobsters-hottest) — Claude Code subagent that calls `lobsters_hottest.py` and reports the results in chat
 - [`hn_search.py`](#hn_searchpy) — searches past Hacker News stories and comments for a query, by relevance or date, with date, score and author filters, leaving out HN's monthly job threads by default, via the Algolia HN Search API (no API key)
 - [`hn_thread.py`](#hn_threadpy) — reads one Hacker News thread: the story and its top comments in HN's ranked order, with a few replies under each, trimmed to a set size (no API key)
 - [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` and `hn_thread.py` to find HN threads about a topic, read them, and summarize what people said
@@ -2616,6 +2618,162 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 - Requires `hottest_tech_discussions.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Inherits all the limitations of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) itself (score-based "hottest" definition, no tech-specific keyword filtering, live-snapshot results).
+
+---
+
+## lobsters_hottest.py
+
+Prints the hottest discussions (10 by default, set with `--limit`) currently on [Lobsters](https://lobste.rs/), a smaller, computing-focused link-sharing community, using the site's public JSON feeds. No API key or authentication required. It is the Lobsters counterpart of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy), kept as a separate script for now. The backlog item "More discussion sources" is about merging the two.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 lobsters_hottest.py [--limit N] [--exclude-tag TAG ...] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--limit N` | 10 | Number of stories to return (must be 1 or more) |
+| `--exclude-tag TAG` | none | Leave out stories carrying this Lobsters tag, ignoring case — e.g. `meta` for posts about the site itself. Repeatable |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Fetching the hottest discussions from Lobsters...
+
+1. It's enough - vibecoding tag crossed from useless to harmful
+   Score: 260  |  Comments: 252  |  Posted: 2026-10-18 10:35 UTC
+   Tags: meta, vibecoding
+   Link: https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from
+   Discussion: https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from
+
+2. Men in tech #YesAllMen
+   Score: 57  |  Comments: 6  |  Posted: 2026-10-18 18:35 UTC
+   Tags: culture, video
+   Link: https://media.ccc.de/v/emf2026-240-1-men-in-tech-yesallmen
+   Discussion: https://lobste.rs/s/mp8qye/men_tech_yesallmen
+
+...
+```
+
+The first story is a text post, so its link is its own discussion page.
+
+#### Tool usage (`--json`)
+
+```bash
+python3 lobsters_hottest.py --json --limit 1 --exclude-tag meta
+```
+
+```json
+[
+  {
+    "rank": 1,
+    "title": "Men in tech #YesAllMen",
+    "score": 57,
+    "comments": 6,
+    "posted": "2026-10-18 18:35 UTC",
+    "url": "https://media.ccc.de/v/emf2026-240-1-men-in-tech-yesallmen",
+    "discussion_url": "https://lobste.rs/s/mp8qye/men_tech_yesallmen",
+    "tags": [
+      "culture",
+      "video"
+    ]
+  }
+]
+```
+
+With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Fetch candidate pool** — Fetches Lobsters' front page (`hottest.json`, already ordered by the site's own hotness) and, if needed, later pages (`page/N.json`; `hottest.json` ignores a `?page=` parameter), 25 stories a page, until there are `limit × CANDIDATE_POOL_FACTOR` candidates (40, i.e. 2 pages, for the default 10). It stops early at an empty page, caps the requests at `MAX_PAGES`, and skips a story already seen, since the front page can shift between requests.
+2. **Filter and rank** — Drops stories carrying any `--exclude-tag`, then sorts the rest by `score` descending.
+3. **Display top N** — Prints the top `--limit` stories, each with rank, title, score, comment count, posting time (converted to UTC from Lobsters' local time with offset), tags, the external link (or the discussion page for a text post), and the discussion link.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `CANDIDATE_POOL_FACTOR` | 4 | Front-page stories to consider, per requested result, before ranking (pool = `limit × 4`) |
+| `STORIES_PER_PAGE` | 25 | Stories on one Lobsters front page, used to work out how many pages to fetch |
+| `MAX_PAGES` | 10 | Most pages fetched for one run, however large `--limit` is |
+| `RESULTS_TO_SHOW` | 10 | Default for `--limit` |
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
+| `HEADERS` | `User-Agent: online-search/1.0 (lobsters_hottest.py)` | Identifies the script to the site |
+
+### API reference
+
+- `fetch_page(page)` — One front page as a list of raw story dicts: `hottest.json` for page 1, `page/N.json` after that. Raises `requests.HTTPError` on an error status and `ValueError` if the body isn't a JSON list.
+- `get_lobsters_hottest(limit=10, exclude_tags=())` — Fetches the candidate pool, drops repeats and excluded tags, and returns the top `limit` raw stories by score.
+- `posted_at(story)` — The story's `created_at` as a `YYYY-MM-DD HH:MM UTC` string (the same format as `hn.posted_at()`), or `None` if missing or unreadable.
+- `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url, tags}` record used for **both** output modes.
+- `format_story(row)` — Renders a `story_to_dict()` record as a multi-line human-readable string.
+- `parse_args(argv=None)` — Parses `--limit`, `--exclude-tag` and `--json`.
+- `main(argv=None)` — Entry point; fetches, handles top-level network and bad-response errors, and prints results (either human-readable or JSON, depending on `--json`).
+
+### Error handling
+
+- If a page request fails (network error, timeout, non-2xx response) or returns something other than a JSON list, the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- A `--limit` that isn't a positive integer is rejected by argparse (exit code 2) before any network call.
+- If no stories are left after filtering, the script prints `"No stories found."` (or `[]` with `--json`) and exits normally.
+
+### Notes / limitations
+
+- The JSON feeds are public but not a documented API, so they could change without notice.
+- Lobsters is much smaller than Hacker News: top stories score in the tens to low hundreds, so scores from the two sites aren't comparable.
+- Some of the front page is about Lobsters itself (tagged `meta`, often with `announce`); use `--exclude-tag meta` to leave those out.
+- "Hottest" is the highest score among the front page's first `limit × 4` stories, as in `hottest_tech_discussions.py`.
+- Results reflect a live snapshot; scores and rankings will differ between runs.
+
+---
+
+## Claude Code agent: `lobsters-hottest`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/lobsters-hottest.md`. It doesn't call any external API itself — it shells out to [`lobsters_hottest.py`](#lobsters_hottestpy) via the `Bash` tool and reports the results conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "what's trending on Lobsters?" or "top lobste.rs discussions tagged rust" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent when the user names Lobsters or lobste.rs, based on the `description` field in its frontmatter. General "what's trending in tech" questions still go to [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions).
+- **Explicitly** — via the `Agent` tool with `subagent_type: "lobsters-hottest"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Runs `python3 lobsters_hottest.py --json --limit N` (default `N=10`, or whatever count the user asked for) from the repo root, adding `--exclude-tag` only when the user wants a kind of story left out (e.g. `meta` for posts about the site).
+2. Parses the JSON array of stories.
+3. Reports them as a concise list — title, score, comment count, tags and links — without fabricating data or comparing scores with Hacker News. If the command fails, it surfaces the `{"error": "..."}` from stderr, retrying at most once for a transient-looking network error.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`lobsters_hottest.py`](#lobsters_hottestpy) |
+
+### Notes / limitations
+
+- Requires `lobsters_hottest.py` (and its `requests` dependency) to be present and runnable from the repo root.
+- Inherits all the limitations of [`lobsters_hottest.py`](#lobsters_hottestpy) itself (undocumented feeds, a smaller site with lower scores, score-based "hottest" definition, live-snapshot results).
 
 ---
 
