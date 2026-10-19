@@ -52,7 +52,7 @@ The JSON endpoint can also be called directly:
 curl "http://127.0.0.1:8001/api/discussions?limit=10"
 # {"limit": 10, "fetched_at": "2026-10-01 06:53 UTC",
 #  "discussions": [{"rank": 1, "title": ..., "score": ..., "comments": ..., "posted": ...,
-#                   "url": ..., "discussion_url": ...}, ...]}
+#                   "url": ..., "discussion_url": ..., "tags": [], "source": "hn"}, ...]}
 ```
 
 ## How it works

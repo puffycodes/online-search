@@ -3,7 +3,8 @@
 ## Requirement
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
-- Use market_top_volume.py's get_movers() and hottest_tech_discussions.py's get_hottest_tech_discussions(), imported directly (not run as separate processes).
+- Use market_top_volume.py's get_movers() and hottest_tech_discussions.py's get_hottest_tech_discussions() (Hacker News only), imported directly (not run as separate processes).
+- Use hn.py's discussion_url().
 
 ## Actions
 
