@@ -6,7 +6,7 @@
 - Use the Brave Search API.
 - Read BRAVE_API_KEY from the environment, or from a .env file at the repo root via cli_utils.load_dotenv() (a real environment variable wins).
     - If the key is missing, fail before making any request.
-- Use cli_utils.py's load_dotenv(), require_env(), format_result() and print_results().
+- Use cli_utils.py's load_dotenv(), require_env() and print_results() (which renders each row with format_result()).
 
 ## Actions
 
@@ -20,7 +20,7 @@
     - {{Rank}} {{Title}}
     - {{URL}}
     - {{Snippet}}
-    - With --json: an array of {rank, title, url, snippet}, the same shape as the other web_search_*.py scripts (via cli_utils.format_result()).
+    - With --json: an array of {rank, title, url, snippet}, the same shape as the other web_search_*.py scripts (printed by cli_utils.print_results(), which also renders the text report through format_result()).
 - If no results are returned, say so.
 - Support a --json option:
     - With it, skip any progress line and print the result as a single JSON value on stdout.

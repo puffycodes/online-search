@@ -5,7 +5,7 @@
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the ddgs package (or the older duckduckgo_search package), which scrapes DuckDuckGo's results; no API key.
     - If neither package is installed, fail before searching.
-- Use cli_utils.py's format_result() and print_results().
+- Use cli_utils.py's print_results() (which renders each row with format_result()).
 
 ## Actions
 
@@ -19,7 +19,7 @@
     - {{Rank}} {{Title}}
     - {{URL}}
     - {{Snippet}}
-    - With --json: an array of {rank, title, url, snippet}, the same shape as the other web_search_*.py scripts (via cli_utils.format_result()).
+    - With --json: an array of {rank, title, url, snippet}, the same shape as the other web_search_*.py scripts (printed by cli_utils.print_results(), which also renders the text report through format_result()).
 - If no results are returned, say so.
 - Support a --json option:
     - With it, skip any progress line and print the result as a single JSON value on stdout.

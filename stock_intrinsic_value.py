@@ -484,7 +484,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--growth", type=float, metavar="G",
         help="Forecast-stage annual FCF growth as a fraction, e.g. 0.08. "
-        "Default: the analyst 5-year EPS growth estimate, else 0.05",
+        "Default: the analyst 5-year EPS growth estimate, else the 1-year one, else 0.05",
     )
     parser.add_argument(
         "--terminal-growth", type=float, default=DEFAULT_TERMINAL_GROWTH, metavar="G",
