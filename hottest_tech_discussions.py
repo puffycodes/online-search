@@ -35,7 +35,7 @@ RESULTS_TO_SHOW = 10
 
 def get_hottest_tech_discussions(limit=RESULTS_TO_SHOW):
     """The top `limit` Hacker News stories, as raw HN items. Hacker News
-    only, for stock_tech_buzz_agent.py and the hottest discussions web app."""
+    only, for stock_tech_buzz_agent.py (the web app uses get_rows())."""
     return hn.fetch_hottest(limit)
 
 

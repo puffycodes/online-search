@@ -2639,10 +2639,10 @@ The candidate pool factors, page sizes, request timeouts and API URLs live in [`
 ### API reference
 
 - Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices.
-- `get_hottest_tech_discussions(limit=10)` — The top `limit` Hacker News stories as raw HN item dicts (through `hn.fetch_hottest()`). Hacker News only, kept importable for [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) and the [hottest discussions web app](#apphottest_discussions).
+- `get_hottest_tech_discussions(limit=10)` — The top `limit` Hacker News stories as raw HN item dicts (through `hn.fetch_hottest()`). Hacker News only, kept importable for [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy).
 - `story_to_dict(rank, story)` — Flattens one raw HN story into the `{rank, title, score, comments, posted, url, discussion_url, tags, source}` record used for **both** output modes (`tags` is `[]`, `source` is `"hn"`).
 - `lobsters_story_to_dict(rank, story)` — The same record for one raw Lobsters story, with its `tags` and `source` `"lobsters"`; a text post's `url` falls back to its discussion page.
-- `get_rows(sources, limit=10, exclude_tags=())` — `{source: [record, ...]}` for each requested source, in output order. The first source to fail raises `SourceError`, so no partial result is returned.
+- `get_rows(sources, limit=10, exclude_tags=())` — `{source: [record, ...]}` for each requested source, in output order. The first source to fail raises `SourceError`, so no partial result is returned. Also used, with `SOURCE_NAMES` and `SourceError`, by the [hottest discussions web app](#apphottest_discussions).
 - `SourceError` — A source's `requests.RequestException` or `ValueError`, with a message naming the source (`"Lobsters: ..."`).
 - `format_story(row)` — Renders a record as a multi-line human-readable string, with a `Tags:` line for Lobsters.
 - `parse_args(argv=None)` — Parses `--source`, `--limit`, `--exclude-tag` and `--json`, putting the sources in output order and rejecting `--exclude-tag` without Lobsters.

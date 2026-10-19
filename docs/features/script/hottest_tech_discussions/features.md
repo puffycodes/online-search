@@ -9,7 +9,8 @@
 - Keep each source's fetching in its shared module, so other scripts can reuse it:
     - hn.py: fetch_json(), fetch_story(), discussion_url(), posted_at(), and the hottest-stories fetch.
     - lobsters.py: the hottest-stories fetch, posted_at(), HEADERS and LOBSTERS_BASE (also used by lobsters_thread.py).
-- Keep get_hottest_tech_discussions() and story_to_dict() importable and Hacker News only, for stock_tech_buzz_agent.py and the hottest discussions web app.
+- Keep get_hottest_tech_discussions() and story_to_dict() importable and Hacker News only, for stock_tech_buzz_agent.py.
+- Keep get_rows(), SourceError and SOURCE_NAMES importable, for the hottest discussions web app.
 - Use cli_utils.py's die(), positive_int and use_utf8_output().
 
 ## Actions
