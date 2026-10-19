@@ -50,12 +50,12 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail; plus a feature spec (`features.md`) for every [script](docs/features/script/) and [agent](docs/features/agent/)
 
 **[Tech News & Discussions](#tech-news--discussions)**
-- [`hn.py`](#hnpy) — shared helper module for the Hacker News scripts: JSON fetching, one-item fetch from the official HN API, HN page links, posting times, and HTML-to-text cleanup, used by `hottest_tech_discussions.py`, `hn_search.py` and `hn_thread.py`
-- [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — the hottest Hacker News discussions (top 10 by default, `--limit N` for more)
-- [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
-- [`lobsters_hottest.py`](#lobsters_hottestpy) — the hottest discussions on Lobsters (lobste.rs), with their tags (top 10 by default, `--limit N` for more, `--exclude-tag` to leave out e.g. site `meta` posts)
+- [`hn.py`](#hnpy) — shared helper module for the Hacker News scripts: JSON fetching, one-item and hottest-stories fetches from the official HN API, HN page links, posting times, and HTML-to-text cleanup, used by `hottest_tech_discussions.py`, `hn_search.py` and `hn_thread.py`
+- [`lobsters.py`](#lobsterspy) — shared helper module for the Lobsters scripts: the site's base URL and headers, the hottest-stories fetch from its front-page feeds, and posting times in UTC, used by `hottest_tech_discussions.py` and `lobsters_thread.py`
+- [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — the hottest discussions on Hacker News (the default), Lobsters (lobste.rs) or both, one section per site (top 10 per site by default, `--limit N` for more, `--source` to pick sites, `--exclude-tag` to leave out e.g. Lobsters' site `meta` posts)
+- [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports what's hot on HN, Lobsters or both in chat
 - [`lobsters_thread.py`](#lobsters_threadpy) — reads one Lobsters thread: the story and its top comments in Lobsters' display order, with a few replies under each, trimmed to a set size (no API key)
-- [`.claude/agents/lobsters-hottest.md`](#claude-code-agent-lobsters-hottest) — Claude Code subagent that calls `lobsters_hottest.py` and `lobsters_thread.py` to report what's hot on Lobsters and summarize what people said in a thread
+- [`.claude/agents/lobsters-thread.md`](#claude-code-agent-lobsters-thread) — Claude Code subagent that calls `lobsters_thread.py` to summarize what people said in a Lobsters thread
 - [`hn_search.py`](#hn_searchpy) — searches past Hacker News stories and comments for a query, by relevance or date, with date, score and author filters, leaving out HN's monthly job threads by default, via the Algolia HN Search API (no API key)
 - [`hn_thread.py`](#hn_threadpy) — reads one Hacker News thread: the story and its top comments in HN's ranked order, with a few replies under each, trimmed to a set size (no API key)
 - [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` and `hn_thread.py` to find HN threads about a topic, read them, and summarize what people said
@@ -2435,7 +2435,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ## hn.py
 
-Shared helper module for the Hacker News scripts: [`hottest_tech_discussions.py`](#hottest_tech_discussionspy), [`hn_search.py`](#hn_searchpy) and [`hn_thread.py`](#hn_threadpy). It holds what they have in common — JSON fetching, fetching one item from the official [Hacker News API](https://github.com/HackerNews/API), the item's HN page link, its posting time, and converting HN's HTML comment and self-post text to plain text — so links, times and text look the same in all three. Each script keeps its own endpoints, record shaping and output stage. Not a CLI — it is imported, not run.
+Shared helper module for the Hacker News scripts: [`hottest_tech_discussions.py`](#hottest_tech_discussionspy), [`hn_search.py`](#hn_searchpy) and [`hn_thread.py`](#hn_threadpy). It holds what they have in common — JSON fetching, fetching one item and the current hottest stories from the official [Hacker News API](https://github.com/HackerNews/API), the item's HN page link, its posting time, and converting HN's HTML comment and self-post text to plain text — so links, times and text look the same in all three. Each script keeps its own endpoints, record shaping and output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -2446,17 +2446,20 @@ Shared helper module for the Hacker News scripts: [`hottest_tech_discussions.py`
 
 | Constant | Default | Description |
 |---|---|---|
-| `HN_API_BASE` | `https://hacker-news.firebaseio.com/v0` | Official Hacker News API base URL (`hottest_tech_discussions.py` builds `topstories.json` from it) |
+| `HN_API_BASE` | `https://hacker-news.firebaseio.com/v0` | Official Hacker News API base URL |
 | `HN_ITEM_URL` | `{HN_API_BASE}/item/{item_id}.json` | One item from the official API, used by `fetch_story()` |
+| `TOP_STORIES_URL` | `{HN_API_BASE}/topstories.json` | HN's current top story ids, already ranked by its own hotness, used by `fetch_hottest()` |
+| `CANDIDATE_POOL_FACTOR` | 4 | Top stories `fetch_hottest()` fetches details for, per requested result, before ranking (pool = `limit × 4`: 40 for 10, 200 for 50) |
 | `REQUEST_TIMEOUT` | 10 | Default request timeout in seconds for `fetch_json()` |
 | `TEXT_CHARS` | 600 | Default length `clean_text()` cuts text to; also the default for `--max-chars` in `hn_search.py` and `hn_thread.py` |
 
 ### API reference
 
 - `fetch_json(url, params=None, timeout=REQUEST_TIMEOUT)` — GETs the URL and returns parsed JSON. On an error status it raises `requests.HTTPError`; when the Algolia API explains a rejected request (`{"message": ...}`), the error is `"<status>: <message>"` rather than a bare status line. Used by all three scripts (`hn_thread.py` passes a 30-second timeout for big comment trees).
-- `fetch_story(item_id)` — One item from the official HN API, or `None` if the request or JSON parsing fails (so one bad item doesn't sink a batch) or the item doesn't exist. Used by `hottest_tech_discussions.py` for story details and by `hn_thread.py` for HN's ranked comment order (an item's `kids`).
+- `fetch_story(item_id)` — One item from the official HN API, or `None` if the request or JSON parsing fails (so one bad item doesn't sink a batch) or the item doesn't exist. Used by `fetch_hottest()` for story details and by `hn_thread.py` for HN's ranked comment order (an item's `kids`).
+- `fetch_hottest(limit)` — The top `limit` stories by score, as raw HN items: it takes the first `limit × CANDIDATE_POOL_FACTOR` ids from `topstories.json`, fetches their details 10 at a time with `fetch_story()`, drops anything that failed to fetch or isn't a `story` (e.g. jobs), and sorts by `score`. A failure of the `topstories.json` request itself raises. Used by `hottest_tech_discussions.py`.
 - `parse_item_id(value)` — An item id from a number (`48843352`) or an HN item link (`https://news.ycombinator.com/item?id=48843352`, other query parameters allowed); raises `ValueError` otherwise. Used by `hn_thread.py`'s `ITEM` and `hn_search.py`'s `--story`.
-- `discussion_url(story)` — The `https://news.ycombinator.com/item?id=<id>` page for an item (any dict with an `id`).
+- `discussion_url(story)` — The `https://news.ycombinator.com/item?id=<id>` page for an item (any dict with an `id`). Also used by [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy).
 - `posted_at(story)` — An item's `time` (Unix seconds) as `YYYY-MM-DD HH:MM UTC`; a missing time gives the Unix epoch.
 - `clean_text(raw, max_chars=TEXT_CHARS)` — Plain text from HN's HTML: `<p>` becomes a blank line, other tags are dropped (a link keeps its visible text), entities are decoded, extra blank lines are collapsed, and the result is cut to `max_chars` with `...` (0 = no limit). Returns `None` for empty input.
 
@@ -2464,19 +2467,56 @@ Shared helper module for the Hacker News scripts: [`hottest_tech_discussions.py`
 
 - `fetch_story()` hides *why* an item couldn't be fetched; callers that need to tell failure from a missing item should use `fetch_json()` directly.
 - `clean_text()` is a regex-based cleanup for HN's small HTML subset (`<p>`, `<i>`, `<a>`, `<pre><code>`), not a general HTML parser. Code blocks lose their `<pre>` formatting but keep their line breaks.
-- Changing a helper here changes the output of all three scripts.
+- Changing a helper here changes the output of all three scripts, and `fetch_hottest()` also what [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) and the [hottest discussions web app](#apphottest_discussions) see.
 
 ---
 
-## hottest_tech_discussions.py
+## lobsters.py
 
-Prints the hottest technology discussions (10 by default, set with `--limit`) currently on [Hacker News](https://news.ycombinator.com/), using the public [Hacker News API](https://github.com/HackerNews/API). No API key or authentication required.
+Shared helper module for the [Lobsters](https://lobste.rs/) scripts: [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) (its `lobsters` source) and [`lobsters_thread.py`](#lobsters_threadpy). It holds the site's base URL and request headers, fetching the hottest stories from the front-page JSON feeds, and a story's posting time in UTC, so times and requests match in both. Each script keeps its own record shaping and output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `hn.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+### Configuration
+
+| Constant | Default | Description |
+|---|---|---|
+| `LOBSTERS_BASE` | `https://lobste.rs` | Site base URL (`lobsters_thread.py` builds `s/<id>.json` from it) |
+| `HOTTEST_URL` / `PAGE_URL` | `{LOBSTERS_BASE}/hottest.json` / `{LOBSTERS_BASE}/page/{page}.json` | The front page, and later front pages (`hottest.json` ignores a `?page=` parameter) |
+| `HEADERS` | `User-Agent: online-search/1.0 (lobsters.py)` | Identifies the repo's scripts to the site |
+| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds for the front pages |
+| `STORIES_PER_PAGE` | 25 | Stories on one front page, used to work out how many pages to fetch |
+| `CANDIDATE_POOL_FACTOR` | 4 | Front-page stories to consider, per requested result, before ranking (pool = `limit × 4`: 40, i.e. 2 pages, for 10) |
+| `MAX_PAGES` | 10 | Most pages fetched for one call, however large the limit is |
+
+### API reference
+
+- `fetch_page(page)` — One front page as a list of raw story dicts: `hottest.json` for page 1, `page/N.json` after that. Raises `requests.HTTPError` on an error status and `ValueError` if the body isn't a JSON list.
+- `fetch_hottest(limit, exclude_tags=())` — The top `limit` raw stories by score: fetches pages until there are `limit × CANDIDATE_POOL_FACTOR` candidates (stopping early at an empty page, at most `MAX_PAGES`), skips a story already seen (the front page can shift between requests), drops stories carrying any of `exclude_tags` (ignoring case), and sorts by `score`.
+- `posted_at(story)` — The story's `created_at` (local time with an offset) as a `YYYY-MM-DD HH:MM UTC` string, the same format as `hn.posted_at()`, or `None` if missing or unreadable.
+
+### Notes / limitations
+
+- The JSON feeds are public but not a documented API, so they could change without notice.
+- Tags are excluded *within* the candidate pool, so excluding a common tag with a small limit can return fewer or lower-scored stories than the same limit without it.
+- Changing a helper here changes both scripts' output.
+
+---
+
+## hottest_tech_discussions.py
+
+Prints the hottest technology discussions (10 per source by default, set with `--limit`) currently on [Hacker News](https://news.ycombinator.com/), using the public [Hacker News API](https://github.com/HackerNews/API), and on [Lobsters](https://lobste.rs/), a smaller, computing-focused link-sharing community, using its public JSON feeds. Hacker News is the default; `--source` picks one or both. No API key or authentication required.
+
+Each source is ranked on its own and reported in its own section. Lobsters is much smaller (its top stories score in the tens to low hundreds), so the scores aren't comparable: stories from different sites are never ranked against each other, and the same story on both sites is never combined into one entry.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `hn.py`, `lobsters.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests
@@ -2485,15 +2525,19 @@ pip install requests
 ### Usage
 
 ```bash
-python3 hottest_tech_discussions.py [--limit N] [--json]
+python3 hottest_tech_discussions.py [--source hn|lobsters ...] [--limit N] [--exclude-tag TAG ...] [--json]
 ```
 
 | Flag | Default | Description |
 |---|---|---|
-| `--limit N` | 10 | Number of stories to return (must be 1 or more) |
+| `--source SOURCE` | `hn` | Where to look: `hn` (Hacker News) or `lobsters`. Repeatable, one section per source. Sources always come out Hacker News first, whatever order they're given in, and a repeated source counts once |
+| `--limit N` | 10 | Number of stories to return from **each** source (must be 1 or more), so two sources give up to 2N |
+| `--exclude-tag TAG` | none | Leave out Lobsters stories carrying this tag, ignoring case — e.g. `meta` for posts about the site itself. Repeatable. Needs `--source lobsters`, since Hacker News stories have no tags |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
+
+With Hacker News alone (the default), the report has no heading, as before Lobsters was added:
 
 ```
 Fetching the hottest technology discussions from Hacker News...
@@ -2511,43 +2555,73 @@ Fetching the hottest technology discussions from Hacker News...
 ...
 ```
 
+With more than one source, or Lobsters alone, each source gets a heading, and Lobsters entries show their tags:
+
+```
+$ python3 hottest_tech_discussions.py --source hn --source lobsters --limit 1
+Fetching the hottest technology discussions from Hacker News and Lobsters...
+
+Hacker News
+===========
+
+1. Someone behind the software
+   Score: 394  |  Comments: 157  |  Posted: 2026-10-18 16:32 UTC
+   Link: https://karrisaarinen.com/posts/someone-behind-the-software/
+   Discussion: https://news.ycombinator.com/item?id=50142573
+
+Lobsters
+========
+
+1. It's enough - vibecoding tag crossed from useless to harmful
+   Score: 272  |  Comments: 256  |  Posted: 2026-10-18 10:35 UTC
+   Tags: meta, vibecoding
+   Link: https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from
+   Discussion: https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from
+```
+
+The Lobsters story is a text post, so its link is its own discussion page.
+
 #### Tool usage (`--json`)
 
 ```bash
-python3 hottest_tech_discussions.py --json --limit 2
+python3 hottest_tech_discussions.py --json --limit 1 --source hn --source lobsters --exclude-tag meta
 ```
 
 ```json
 [
   {
     "rank": 1,
-    "title": "Some Story Title",
-    "score": 512,
-    "comments": 234,
-    "posted": "2026-08-21 09:15 UTC",
-    "url": "https://example.com/article",
-    "discussion_url": "https://news.ycombinator.com/item?id=12345678"
+    "title": "Someone behind the software",
+    "score": 394,
+    "comments": 157,
+    "posted": "2026-10-18 16:32 UTC",
+    "url": "https://karrisaarinen.com/posts/someone-behind-the-software/",
+    "discussion_url": "https://news.ycombinator.com/item?id=50142573",
+    "tags": [],
+    "source": "hn"
   },
   {
-    "rank": 2,
-    "title": "Another Story Title",
-    "score": 480,
-    "comments": 190,
-    "posted": "2026-08-21 07:42 UTC",
-    "url": "https://example.com/other-article",
-    "discussion_url": "https://news.ycombinator.com/item?id=12345679"
+    "rank": 1,
+    "title": "ARP! Tell your network to explain itself",
+    "score": 36,
+    "comments": 13,
+    "posted": "2026-10-18 12:48 UTC",
+    "url": "https://benjcal.space/blog/arp-tell-your-network-to-explain-itself/",
+    "discussion_url": "https://lobste.rs/s/mmvhup/arp_tell_your_network_explain_itself",
+    "tags": ["networking"],
+    "source": "lobsters"
   }
 ]
 ```
 
-With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+With `--json`, the leading progress line is suppressed and results print as a single JSON array on stdout, grouped by source (Hacker News first), with `rank` restarting at 1 for each source. `source` is `"hn"` or `"lobsters"`, and `tags` is always `[]` for Hacker News. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
 
 ### How it works
 
-1. **Fetch candidate pool** — Calls `topstories.json` on the HN API to get the current top story IDs (already ranked by HN's own hotness algorithm) and takes the first `limit × CANDIDATE_POOL_FACTOR` of them (4× the requested count: 40 for the default 10, 200 for `--limit 50`).
-2. **Fetch story details concurrently** — Uses a `ThreadPoolExecutor` (10 workers) to fetch the full item data (`item/{id}.json`) for each candidate in parallel, since each is a separate HTTP request.
-3. **Filter and rank** — Discards anything that failed to fetch or isn't a `story` (e.g. jobs, polls get excluded implicitly since only `type == "story"` is kept), then sorts the remaining stories by `score` descending.
-4. **Display top N** — Prints the top `--limit` stories (default 10, `RESULTS_TO_SHOW`), each with rank, title, score, comment count, posting time (UTC), the external article link, and a link to the HN discussion thread.
+1. **Choose the sources** — `--source` defaults to `hn`. The sources are put in a fixed order (Hacker News, then Lobsters) with repeats dropped, and `--exclude-tag` without Lobsters is rejected before any network call.
+2. **Hacker News** — [`hn.fetch_hottest()`](#hnpy) takes the first `limit × 4` ids from `topstories.json` (already ranked by HN's own hotness), fetches their details 10 at a time, drops anything that failed to fetch or isn't a `story`, and keeps the top `limit` by score.
+3. **Lobsters** — [`lobsters.fetch_hottest()`](#lobsterspy) reads front pages (`hottest.json`, then `page/N.json`), 25 stories a page, until there are `limit × 4` candidates (at most 10 pages), skipping repeats, drops stories carrying an excluded tag, and keeps the top `limit` by score.
+4. **Shape and display** — Each source's stories become records ranked from 1 within that source. If any source fails, the run stops with that source's error and prints nothing else. The report prints one section per source (no heading when Hacker News is the only one), each entry with rank, title, score, comment count, posting time (UTC), tags for Lobsters, the external article link (or the discussion page when there is none), and the discussion link.
 
 ### Configuration
 
@@ -2555,32 +2629,38 @@ These are set as constants near the top of the file — edit them directly to ch
 
 | Constant | Default | Description |
 |---|---|---|
-| `CANDIDATE_POOL_FACTOR` | 4 | Top stories to fetch details for, per requested result, before ranking (pool = `limit × 4`) |
-| `RESULTS_TO_SHOW` | 10 | Default for `--limit` (number of stories to display) |
+| `SOURCES` | `("hn", "lobsters")` | The `--source` choices, in output order |
+| `SOURCE_NAMES` | `Hacker News`, `Lobsters` | Section headings and the names used in errors |
+| `DEFAULT_SOURCES` | `("hn",)` | Sources used when `--source` isn't given |
+| `RESULTS_TO_SHOW` | 10 | Default for `--limit` (number of stories per source) |
 
-The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the API base URL live in [`hn.py`](#hnpy).
+The candidate pool factors, page sizes, request timeouts and API URLs live in [`hn.py`](#hnpy) and [`lobsters.py`](#lobsterspy).
 
 ### API reference
 
-- Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices (e.g. why the candidate pool is 4× the limit).
-- `get_hottest_tech_discussions(limit=10)` — Orchestrates fetching, filtering, and ranking; returns a list of raw HN story dicts.
-- `fetch_json`, `fetch_story`, `discussion_url` and `posted_at` come from [`hn.py`](#hnpy); `fetch_story()` returns `None` for a story that fails to fetch, so one bad story doesn't kill the whole batch. [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) uses `discussion_url` through this module.
-- `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url}` record used for **both** output modes.
-- `format_story(row)` — Renders a `story_to_dict()` record as a multi-line human-readable string.
-- `parse_args(argv=None)` — Parses `--limit` and `--json` CLI flags.
-- `main(argv=None)` — Entry point; fetches, handles top-level network errors, and prints results (either human-readable or JSON, depending on `--json`).
+- Functions and script structure are documented via a docstring at the top of the file and inline comments explaining non-obvious choices.
+- `get_hottest_tech_discussions(limit=10)` — The top `limit` Hacker News stories as raw HN item dicts (through `hn.fetch_hottest()`). Hacker News only, kept importable for [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) and the [hottest discussions web app](#apphottest_discussions).
+- `story_to_dict(rank, story)` — Flattens one raw HN story into the `{rank, title, score, comments, posted, url, discussion_url, tags, source}` record used for **both** output modes (`tags` is `[]`, `source` is `"hn"`).
+- `lobsters_story_to_dict(rank, story)` — The same record for one raw Lobsters story, with its `tags` and `source` `"lobsters"`; a text post's `url` falls back to its discussion page.
+- `get_rows(sources, limit=10, exclude_tags=())` — `{source: [record, ...]}` for each requested source, in output order. The first source to fail raises `SourceError`, so no partial result is returned.
+- `SourceError` — A source's `requests.RequestException` or `ValueError`, with a message naming the source (`"Lobsters: ..."`).
+- `format_story(row)` — Renders a record as a multi-line human-readable string, with a `Tags:` line for Lobsters.
+- `parse_args(argv=None)` — Parses `--source`, `--limit`, `--exclude-tag` and `--json`, putting the sources in output order and rejecting `--exclude-tag` without Lobsters.
+- `main(argv=None)` — Entry point; fetches, handles a source's failure, and prints results (either human-readable or JSON, depending on `--json`).
 
 ### Error handling
 
-- If the initial `topstories.json` request fails (network error, timeout, non-2xx response), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
-- If an individual story's detail fetch fails, that story is silently dropped from consideration rather than aborting the whole run.
-- A `--limit` that isn't a positive integer is rejected by argparse (exit code 2) before any network call.
-- If no stories are found after filtering, the script prints `"No stories found."` (or `[]` with `--json`) and exits normally.
+- If any requested source fails — the HN `topstories.json` request or a Lobsters page request fails (network error, timeout, non-2xx response), or a response isn't the expected shape — the whole run fails: the script prints an error naming the source (e.g. `Error: Lobsters: 503 Server Error ...`) and exits with status code 1, with nothing printed for the other sources. The error is plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- If an individual HN story's detail fetch fails, that story is silently dropped from consideration rather than aborting the whole run.
+- An unknown `--source`, a `--limit` that isn't a positive integer, or `--exclude-tag` without `--source lobsters` is rejected by argparse (exit code 2) before any network call.
+- If a source has no stories after filtering, its section says `"No stories found."` (with `--json`, it contributes no rows) and the script exits normally.
 
 ### Notes / limitations
 
-- "Hottest" is defined here as *highest score* among HN's current top stories — it does not itself factor in comment velocity or recency beyond what HN's own top-stories ranking already provides.
-- No filtering is applied for "tech" specifically — it relies on Hacker News' general subject matter (predominantly tech) rather than keyword filtering.
+- "Hottest" is defined here as *highest score* among each site's current front-page stories (the first `limit × 4`) — it does not itself factor in comment velocity or recency beyond what each site's own ranking already provides.
+- No filtering is applied for "tech" specifically — it relies on the sites' general subject matter (predominantly tech) rather than keyword filtering. Some of the Lobsters front page is about Lobsters itself (tagged `meta`, often with `announce`); use `--exclude-tag meta` to leave those out.
+- The same story often appears on both sites under different links (the original announcement on one, a blog post about it on the other), and even the same link isn't combined; each section lists it separately.
+- The Lobsters feeds are public but not a documented API, so they could change without notice.
 - Results reflect a live snapshot; scores and rankings will differ between runs.
 
 ---
@@ -2591,20 +2671,21 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer questions like "what's trending in tech today?" or "top HN discussions" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+Lets Claude Code answer questions like "what's trending in tech today?", "top HN discussions", "what's trending on Lobsters?" or "what's hot on HN and Lobsters?" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for tech-news/trends questions, based on the `description` field in its frontmatter. Questions about what HN has said about a topic over time go to [`hn-search`](#claude-code-agent-hn-search).
+- **Automatically** — Claude Code selects this subagent on its own for tech-news/trends questions on Hacker News, Lobsters or both, based on the `description` field in its frontmatter. Questions about what HN has said about a topic over time, or about one HN thread, go to [`hn-search`](#claude-code-agent-hn-search), and a Lobsters thread goes to [`lobsters-thread`](#claude-code-agent-lobsters-thread).
 - **Explicitly** — via the `Agent` tool with `subagent_type: "hottest-tech-discussions"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 
 ### What it does
 
-1. Runs `python3 hottest_tech_discussions.py --json --limit N` (default `N=10`, or whatever count the user asked for) from the repo root.
-2. Parses the JSON array of stories.
-3. Reports them as a concise list — title, score, comment count, and links — without fabricating data. If the command fails, it surfaces the `{"error": "..."}` from stderr instead of retrying repeatedly or inventing results.
+1. Picks the sources from the request: Hacker News when no site is named, Lobsters when the user names Lobsters or lobste.rs, both when the user names both or asks across sites.
+2. Runs `python3 hottest_tech_discussions.py --json --limit N` with a `--source` for each (default `N=10` per source, or whatever count the user asked for) from the repo root, adding `--exclude-tag` (Lobsters only) when the user wants a kind of story left out (e.g. `meta` for posts about the site).
+3. Parses the JSON array of stories.
+4. Reports them as a concise list per source — title, score, comment count, tags for Lobsters, and links — without fabricating data, comparing scores across sites or merging the lists into one ranking. If the command fails, it surfaces the `{"error": "..."}` from stderr (which names the failed source) instead of retrying repeatedly or inventing results.
 
 ### Configuration
 
@@ -2618,126 +2699,8 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 ### Notes / limitations
 
 - Requires `hottest_tech_discussions.py` (and its `requests` dependency) to be present and runnable from the repo root.
-- Inherits all the limitations of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) itself (score-based "hottest" definition, no tech-specific keyword filtering, live-snapshot results).
-
----
-
-## lobsters_hottest.py
-
-Prints the hottest discussions (10 by default, set with `--limit`) currently on [Lobsters](https://lobste.rs/), a smaller, computing-focused link-sharing community, using the site's public JSON feeds. No API key or authentication required. It is the Lobsters counterpart of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy), kept as a separate script for now. The backlog item "More discussion sources" is about merging the two.
-
-### Requirements
-
-- Python 3.7+
-- [`requests`](https://pypi.org/project/requests/)
-- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
-
-```bash
-pip install requests
-```
-
-### Usage
-
-```bash
-python3 lobsters_hottest.py [--limit N] [--exclude-tag TAG ...] [--json]
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--limit N` | 10 | Number of stories to return (must be 1 or more) |
-| `--exclude-tag TAG` | none | Leave out stories carrying this Lobsters tag, ignoring case — e.g. `meta` for posts about the site itself. Repeatable |
-| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
-
-#### Example output
-
-```
-Fetching the hottest discussions from Lobsters...
-
-1. It's enough - vibecoding tag crossed from useless to harmful
-   Score: 260  |  Comments: 252  |  Posted: 2026-10-18 10:35 UTC
-   Tags: meta, vibecoding
-   Link: https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from
-   Discussion: https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from
-
-2. Men in tech #YesAllMen
-   Score: 57  |  Comments: 6  |  Posted: 2026-10-18 18:35 UTC
-   Tags: culture, video
-   Link: https://media.ccc.de/v/emf2026-240-1-men-in-tech-yesallmen
-   Discussion: https://lobste.rs/s/mp8qye/men_tech_yesallmen
-
-...
-```
-
-The first story is a text post, so its link is its own discussion page.
-
-#### Tool usage (`--json`)
-
-```bash
-python3 lobsters_hottest.py --json --limit 1 --exclude-tag meta
-```
-
-```json
-[
-  {
-    "rank": 1,
-    "title": "Men in tech #YesAllMen",
-    "score": 57,
-    "comments": 6,
-    "posted": "2026-10-18 18:35 UTC",
-    "url": "https://media.ccc.de/v/emf2026-240-1-men-in-tech-yesallmen",
-    "discussion_url": "https://lobste.rs/s/mp8qye/men_tech_yesallmen",
-    "tags": [
-      "culture",
-      "video"
-    ]
-  }
-]
-```
-
-With `--json`, the leading progress line is suppressed and results print as a JSON array on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
-
-### How it works
-
-1. **Fetch candidate pool** — Fetches Lobsters' front page (`hottest.json`, already ordered by the site's own hotness) and, if needed, later pages (`page/N.json`; `hottest.json` ignores a `?page=` parameter), 25 stories a page, until there are `limit × CANDIDATE_POOL_FACTOR` candidates (40, i.e. 2 pages, for the default 10). It stops early at an empty page, caps the requests at `MAX_PAGES`, and skips a story already seen, since the front page can shift between requests.
-2. **Filter and rank** — Drops stories carrying any `--exclude-tag`, then sorts the rest by `score` descending.
-3. **Display top N** — Prints the top `--limit` stories, each with rank, title, score, comment count, posting time (converted to UTC from Lobsters' local time with offset), tags, the external link (or the discussion page for a text post), and the discussion link.
-
-### Configuration
-
-These are set as constants near the top of the file — edit them directly to change behavior:
-
-| Constant | Default | Description |
-|---|---|---|
-| `CANDIDATE_POOL_FACTOR` | 4 | Front-page stories to consider, per requested result, before ranking (pool = `limit × 4`) |
-| `STORIES_PER_PAGE` | 25 | Stories on one Lobsters front page, used to work out how many pages to fetch |
-| `MAX_PAGES` | 10 | Most pages fetched for one run, however large `--limit` is |
-| `RESULTS_TO_SHOW` | 10 | Default for `--limit` |
-| `REQUEST_TIMEOUT` | 10 | Per-request timeout in seconds |
-| `HEADERS` | `User-Agent: online-search/1.0 (lobsters_hottest.py)` | Identifies the script to the site |
-
-### API reference
-
-- `fetch_page(page)` — One front page as a list of raw story dicts: `hottest.json` for page 1, `page/N.json` after that. Raises `requests.HTTPError` on an error status and `ValueError` if the body isn't a JSON list.
-- `get_lobsters_hottest(limit=10, exclude_tags=())` — Fetches the candidate pool, drops repeats and excluded tags, and returns the top `limit` raw stories by score.
-- `posted_at(story)` — The story's `created_at` as a `YYYY-MM-DD HH:MM UTC` string (the same format as `hn.posted_at()`), or `None` if missing or unreadable.
-- `story_to_dict(rank, story)` — Flattens one raw story into the `{rank, title, score, comments, posted, url, discussion_url, tags}` record used for **both** output modes.
-- `format_story(row)` — Renders a `story_to_dict()` record as a multi-line human-readable string.
-- `parse_args(argv=None)` — Parses `--limit`, `--exclude-tag` and `--json`.
-- `main(argv=None)` — Entry point; fetches, handles top-level network and bad-response errors, and prints results (either human-readable or JSON, depending on `--json`).
-
-### Error handling
-
-- If a page request fails (network error, timeout, non-2xx response) or returns something other than a JSON list, the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
-- A `--limit` that isn't a positive integer is rejected by argparse (exit code 2) before any network call.
-- If no stories are left after filtering, the script prints `"No stories found."` (or `[]` with `--json`) and exits normally.
-
-### Notes / limitations
-
-- The JSON feeds are public but not a documented API, so they could change without notice.
-- Lobsters is much smaller than Hacker News: top stories score in the tens to low hundreds, so scores from the two sites aren't comparable.
-- Some of the front page is about Lobsters itself (tagged `meta`, often with `announce`); use `--exclude-tag meta` to leave those out.
-- "Hottest" is the highest score among the front page's first `limit × 4` stories, as in `hottest_tech_discussions.py`.
-- Results reflect a live snapshot; scores and rankings will differ between runs.
+- Inherits all the limitations of [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) itself (score-based "hottest" definition per site, no tech-specific keyword filtering, undocumented Lobsters feeds, live-snapshot results).
+- It doesn't read threads; that's [`hn-search`](#claude-code-agent-hn-search) for Hacker News and [`lobsters-thread`](#claude-code-agent-lobsters-thread) for Lobsters.
 
 ---
 
@@ -2745,13 +2708,13 @@ These are set as constants near the top of the file — edit them directly to ch
 
 Reads one [Lobsters](https://lobste.rs/) thread: the story and its comments, in the order Lobsters shows them, trimmed to a readable size. It is the Lobsters counterpart of [`hn_thread.py`](#hn_threadpy). The story and all its comments come from the story's JSON feed (`lobste.rs/s/<short id>.json`) in a single request. No API key or authentication required.
 
-Requires [`lobsters_hottest.py`](#lobsters_hottestpy) to be present in the same directory — it imports `posted_at`, `HEADERS` and `LOBSTERS_BASE` from it, so times and requests match the front-page script. It also imports `die`, `bounded_int` and `non_negative_int` from [`cli_utils.py`](#cli_utilspy).
+Requires [`lobsters.py`](#lobsterspy) to be present in the same directory — it imports `posted_at`, `HEADERS` and `LOBSTERS_BASE` from it, so times and requests match `hottest_tech_discussions.py`'s Lobsters source. It also imports `die`, `bounded_int` and `non_negative_int` from [`cli_utils.py`](#cli_utilspy).
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `lobsters_hottest.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+- the repo's own `lobsters.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests
@@ -2885,29 +2848,28 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
-## Claude Code agent: `lobsters-hottest`
+## Claude Code agent: `lobsters-thread`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/lobsters-hottest.md`. It doesn't call any external API itself — it shells out to [`lobsters_hottest.py`](#lobsters_hottestpy) and [`lobsters_thread.py`](#lobsters_threadpy) via the `Bash` tool and reports the results conversationally.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/lobsters-thread.md`. It doesn't call any external API itself — it shells out to [`lobsters_thread.py`](#lobsters_threadpy) via the `Bash` tool and summarizes the thread conversationally. It is the Lobsters counterpart of the thread-reading half of [`hn-search`](#claude-code-agent-hn-search); Lobsters has no search script yet.
 
 ### Purpose
 
-Lets Claude Code answer questions like "what's trending on Lobsters?", "top lobste.rs discussions tagged rust" or "what are people saying in the top Lobsters thread?" by running the scripts and summarizing its JSON output, instead of guessing or using stale training data.
+Lets Claude Code answer questions like "summarize the comments on https://lobste.rs/s/ggpwfi" or "what are people saying in this Lobsters thread?" by reading the thread and summarizing what its comments say, instead of guessing or using stale training data.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent when the user names Lobsters or lobste.rs, based on the `description` field in its frontmatter. General "what's trending in tech" questions still go to [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions), and HN threads to [`hn-search`](#claude-code-agent-hn-search).
-- **Explicitly** — via the `Agent` tool with `subagent_type: "lobsters-hottest"`.
+- **Automatically** — Claude Code selects this subagent when the user gives a Lobsters story link or id and wants to know what was said in it, based on the `description` field in its frontmatter. What's trending on Lobsters goes to [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions), and HN threads to [`hn-search`](#claude-code-agent-hn-search).
+- **Explicitly** — via the `Agent` tool with `subagent_type: "lobsters-thread"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
 
 ### What it does
 
-1. Runs `python3 lobsters_hottest.py --json --limit N` (default `N=10`, or whatever count the user asked for) from the repo root, adding `--exclude-tag` only when the user wants a kind of story left out (e.g. `meta` for posts about the site).
-2. Parses the JSON array of stories.
-3. Reports them as a concise list — title, score, comment count, tags and links — without fabricating data or comparing scores with Hacker News.
-4. To summarize a thread — one the user links, or one from the hot list — runs `python3 lobsters_thread.py "STORY" --json` (raising `--top` or using `--max-chars 0` for a fuller picture) and summarizes the views in the comments it read: grouped, with disagreement noted, linking the comments it draws on, and saying how many of the thread's comments it read, since a sample isn't a consensus.
+1. Takes the thread's short id or `lobste.rs/s/` link. If the request names a thread only by its place in a hot list ("the top Lobsters thread") with no link, it asks for the link rather than looking up the hot list itself — the caller has it from the list it just showed.
+2. Runs `python3 lobsters_thread.py "STORY" --json` from the repo root, raising `--top` or using `--max-chars 0` for a fuller picture.
+3. Summarizes the views in the comments it read: grouped, with disagreement noted, linking the comments it draws on, and saying how many of the thread's comments it read, since a sample isn't a consensus.
 
-If a command fails, it surfaces the `{"error": "..."}` from stderr, retrying at most once for a transient-looking network error; a missing story is reported as-is.
+If the command fails, it surfaces the `{"error": "..."}` from stderr, retrying at most once for a transient-looking network error; a missing story is reported as-is.
 
 ### Configuration
 
@@ -2916,12 +2878,13 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
-| Underlying scripts | [`lobsters_hottest.py`](#lobsters_hottestpy), [`lobsters_thread.py`](#lobsters_threadpy) |
+| Underlying script | [`lobsters_thread.py`](#lobsters_threadpy) |
 
 ### Notes / limitations
 
-- Requires `lobsters_hottest.py` and `lobsters_thread.py` (and their `requests` dependency) to be present and runnable from the repo root.
-- Inherits all the limitations of the two scripts (undocumented feeds, a smaller site with lower scores, score-based "hottest" definition, live-snapshot results, comment text as Markdown source).
+- Requires `lobsters_thread.py` (and its `requests` dependency) to be present and runnable from the repo root.
+- Inherits the limitations of [`lobsters_thread.py`](#lobsters_threadpy) (an undocumented feed, Lobsters' own comment order, comment text as Markdown source).
+- It can't find threads about a topic, since there's no Lobsters search script; see the backlog in [`docs/things-to-explore.md`](docs/things-to-explore.md).
 
 ---
 
@@ -3321,13 +3284,13 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 An agent script that combines [`market_top_volume.py`](#market_top_volumepy) and [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): it pulls the top 10 highest-volume stocks on **both** NYSE and Nasdaq (20 stocks total), pulls the 50 hottest tech discussions from Hacker News (`--discussion-limit`, default 50; the underlying script ranks 4× that many top stories), and reports which of those stocks are actually being talked about — pairing each matched stock with the discussion(s) that mention it. No API key or authentication required.
 
-Requires `market_top_volume.py` and `hottest_tech_discussions.py` to be present in the same directory — it imports them directly rather than shelling out.
+Requires `market_top_volume.py` and `hottest_tech_discussions.py` to be present in the same directory — it imports them directly rather than shelling out — plus `discussion_url()` from [`hn.py`](#hnpy). It uses only the Hacker News source.
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- the repo's own `hn.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests
@@ -5138,7 +5101,7 @@ Small helpers shared by the command-line scripts: UTF-8 output, uniform error ex
 - `require_env(name, script, as_json=False)` — Returns environment variable `name`, or calls `die()` (status code 1) with `"<name> environment variable must be set. See the module docstring in <script> for how to obtain one."` if it is unset or empty. Used by the six `web_search_*.py` scripts that need an API key, each calling `load_dotenv()` first so a `.env` value counts.
 - `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the four `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`, `url_metadata.py`), which all take a URL positional and reject a bare domain/path before making any request.
 - `response_text(response)` — A `requests` response's body as text, decoded correctly. When the `Content-Type` header names no charset, `requests` falls back to ISO-8859-1 for `text/*`, which garbles UTF-8 pages ("—" comes out as "â€”"). In that case this uses the encoding `requests` detects from the bytes; a charset the server names is left alone. Used by `url_content.py`, `url_links.py` and `url_metadata.py` (not `url_availability.py`, which never reads the body).
-- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py`, `lobsters_hottest.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
+- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
 - `non_negative_int(value)` — Like `positive_int`, but `0` is allowed; for options where 0 means "none" or "no limit": `--replies` / `--max-chars` (`hn_thread.py`, `lobsters_thread.py`) and `hn_search.py`'s `--max-chars` and `--min-points`.
 - `bounded_int(maximum)` — Returns an argparse `type` callable for an integer from `1` to `maximum` (rejected as `positive_int` does, or with `must be at most <maximum>`); wired to `--top` / `--depth` in `hn_thread.py` and `lobsters_thread.py`.
 - `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).

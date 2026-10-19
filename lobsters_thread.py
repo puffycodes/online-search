@@ -8,7 +8,7 @@ The story and all its comments come from the story's JSON feed
 are one flat list, already in the site's display order (each comment
 after its parent, siblings in Lobsters' own ranking), with a depth and a
 parent id; this script nests them back into a tree. Like the front-page
-feeds used by lobsters_hottest.py, it is public but not a documented API.
+feeds read by lobsters.py, it is public but not a documented API.
 
 No API key required.
 
@@ -24,7 +24,7 @@ import re
 import requests
 
 from cli_utils import bounded_int, die, non_negative_int, use_utf8_output
-from lobsters_hottest import HEADERS, LOBSTERS_BASE, posted_at
+from lobsters import HEADERS, LOBSTERS_BASE, posted_at
 
 STORY_URL = f"{LOBSTERS_BASE}/s/{{story_id}}.json"
 # A 250-comment thread is a few hundred KB.

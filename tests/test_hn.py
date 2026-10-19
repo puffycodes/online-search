@@ -1,4 +1,4 @@
-"""Tests for hn: JSON fetching, HN item fetch, item ids, link/time helpers, and HTML text cleanup."""
+"""Tests for hn: JSON fetching, HN item fetch, hottest stories, item ids, link/time helpers, and HTML text cleanup."""
 
 import pytest
 import requests
@@ -77,6 +77,54 @@ class TestFetchStory:
 
         monkeypatch.setattr(hn, "fetch_json", boom)
         assert hn.fetch_story(1) is None
+
+
+class TestFetchHottest:
+    def _wire(self, monkeypatch, stories_by_id, ids=None):
+        ids = ids if ids is not None else sorted(stories_by_id)
+        monkeypatch.setattr(hn, "fetch_json", lambda url: list(ids))
+        monkeypatch.setattr(hn, "fetch_story", lambda i: stories_by_id.get(i))
+
+    def test_filters_non_story_types(self, monkeypatch):
+        self._wire(monkeypatch, {
+            1: {"id": 1, "type": "story", "score": 10},
+            2: {"id": 2, "type": "job", "score": 99},
+            3: {"id": 3, "type": "story", "score": 5},
+        })
+        out = hn.fetch_hottest(limit=10)
+        assert [s["id"] for s in out] == [1, 3]
+
+    def test_skips_items_that_failed_to_fetch(self, monkeypatch):
+        self._wire(monkeypatch, {1: {"id": 1, "type": "story", "score": 10}}, ids=[1, 2])
+        assert [s["id"] for s in hn.fetch_hottest(limit=10)] == [1]
+
+    def test_sorts_by_score_desc_and_limits(self, monkeypatch):
+        self._wire(monkeypatch, {
+            1: {"id": 1, "type": "story", "score": 10},
+            2: {"id": 2, "type": "story", "score": 50},
+            3: {"id": 3, "type": "story", "score": 30},
+        })
+        out = hn.fetch_hottest(limit=2)
+        assert [s["id"] for s in out] == [2, 3]
+
+    def test_only_inspects_candidate_pool(self, monkeypatch):
+        stories = {i: {"id": i, "type": "story", "score": i} for i in range(1, 60)}
+        # id 99 has the top score but sits past the candidate pool slice
+        stories[99] = {"id": 99, "type": "story", "score": 9999}
+        ids = list(range(1, 60)) + [99]
+        self._wire(monkeypatch, stories, ids=ids)
+        out = hn.fetch_hottest(limit=5)
+        assert 99 not in [s["id"] for s in out]
+
+    def test_candidate_pool_scales_with_limit(self, monkeypatch):
+        fetched = []
+        stories = {i: {"id": i, "type": "story", "score": i} for i in range(1, 301)}
+        monkeypatch.setattr(hn, "fetch_json", lambda url: list(range(1, 301)))
+        monkeypatch.setattr(hn, "fetch_story", lambda i: fetched.append(i) or stories[i])
+        out = hn.fetch_hottest(limit=50)
+        assert len(fetched) == 50 * hn.CANDIDATE_POOL_FACTOR
+        # 50 results, not capped at a fixed pool: the top scores in the first 200.
+        assert [s["id"] for s in out] == list(range(200, 150, -1))
 
 
 class TestParseItemId:

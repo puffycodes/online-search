@@ -47,18 +47,15 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   requests are rate-limited.
 - [ ] **arXiv new papers** (arXiv API, no key): latest papers in categories like
   cs.AI and cs.LG.
-- [ ] **More discussion sources**: Lobsters now has its own script,
-  `lobsters_hottest.py`. Still open: merging it into `hottest_tech_discussions.py`
-  so that covers more than Hacker News (its rankings would need per-source lists,
-  since Lobsters scores run much lower). Threads can be read with
-  `lobsters_thread.py`.
-  Checked on 2026-10-19: Reddit's JSON returns 403 without OAuth; Dev.to's API works
-  without a key, but its top items are posts on dev.to itself rather than links
-  with a discussion.
+- [ ] **More discussion sources** beyond Hacker News and Lobsters: each would be a new
+  `--source` in `hottest_tech_discussions.py`, with its fetch in a helper module like
+  `hn.py` and `lobsters.py`. Checked on 2026-10-19: Reddit's JSON returns 403 without
+  OAuth; Dev.to's API works without a key, but its top items are posts on dev.to
+  itself rather than links with a discussion.
 - [ ] **Lobsters search** (`lobsters_search.py`): find past Lobsters stories and
   comments about a topic, the counterpart of `hn_search.py`, so "what does Lobsters
   think of X?" can be answered without a link. Not checked yet whether Lobsters has a
-  usable search feed (JSON or otherwise). If built, the planned `lobsters-thread`
+  usable search feed (JSON or otherwise). If built, the `lobsters-thread`
   agent would grow into a `lobsters-search` agent, as `hn-search` covers both
   searching and reading HN threads.
 - [ ] **Wikipedia**: REST summary API for a quick topic summary, page-views API for
