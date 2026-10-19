@@ -1,6 +1,6 @@
 """Tests for cli_utils: dotenv loading, result formatting/printing, the
 die() error-exit helper, require_env, URL-scheme validation, response_text() decoding, the
-positive_int argparse type, and UTF-8 output."""
+positive_int / non_negative_int / bounded_int argparse types, and UTF-8 output."""
 
 import argparse
 import io
@@ -11,9 +11,11 @@ import sys
 import pytest
 
 from cli_utils import (
+    bounded_int,
     die,
     format_result,
     load_dotenv,
+    non_negative_int,
     positive_int,
     print_results,
     require_env,
@@ -92,6 +94,36 @@ class TestPositiveInt:
         with pytest.raises(argparse.ArgumentTypeError, match="expected an integer"):
             positive_int(raw)
 
+
+
+class TestNonNegativeInt:
+    @pytest.mark.parametrize("raw,expected", [("0", 0), ("1", 1), ("600", 600)])
+    def test_accepts(self, raw, expected):
+        assert non_negative_int(raw) == expected
+
+    def test_rejects_negative(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="0 or greater"):
+            non_negative_int("-1")
+
+    @pytest.mark.parametrize("raw", ["abc", "1.5", ""])
+    def test_rejects_non_integer(self, raw):
+        with pytest.raises(argparse.ArgumentTypeError, match="expected an integer"):
+            non_negative_int(raw)
+
+
+class TestBoundedInt:
+    @pytest.mark.parametrize("raw,expected", [("1", 1), ("10", 10)])
+    def test_accepts_within_range(self, raw, expected):
+        assert bounded_int(10)(raw) == expected
+
+    def test_rejects_above_maximum(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="at most 10, got 11"):
+            bounded_int(10)("11")
+
+    @pytest.mark.parametrize("raw,match", [("0", "positive integer"), ("x", "expected an integer")])
+    def test_rejects_like_positive_int(self, raw, match):
+        with pytest.raises(argparse.ArgumentTypeError, match=match):
+            bounded_int(10)(raw)
 
 class TestRequireEnv:
     def test_returns_value_when_set(self, monkeypatch):

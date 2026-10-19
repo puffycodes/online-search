@@ -54,7 +54,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) — the hottest Hacker News discussions (top 10 by default, `--limit N` for more)
 - [`.claude/agents/hottest-tech-discussions.md`](#claude-code-agent-hottest-tech-discussions) — Claude Code subagent that calls `hottest_tech_discussions.py` and reports the results in chat
 - [`lobsters_hottest.py`](#lobsters_hottestpy) — the hottest discussions on Lobsters (lobste.rs), with their tags (top 10 by default, `--limit N` for more, `--exclude-tag` to leave out e.g. site `meta` posts)
-- [`.claude/agents/lobsters-hottest.md`](#claude-code-agent-lobsters-hottest) — Claude Code subagent that calls `lobsters_hottest.py` and reports the results in chat
+- [`lobsters_thread.py`](#lobsters_threadpy) — reads one Lobsters thread: the story and its top comments in Lobsters' display order, with a few replies under each, trimmed to a set size (no API key)
+- [`.claude/agents/lobsters-hottest.md`](#claude-code-agent-lobsters-hottest) — Claude Code subagent that calls `lobsters_hottest.py` and `lobsters_thread.py` to report what's hot on Lobsters and summarize what people said in a thread
 - [`hn_search.py`](#hn_searchpy) — searches past Hacker News stories and comments for a query, by relevance or date, with date, score and author filters, leaving out HN's monthly job threads by default, via the Algolia HN Search API (no API key)
 - [`hn_thread.py`](#hn_threadpy) — reads one Hacker News thread: the story and its top comments in HN's ranked order, with a few replies under each, trimmed to a set size (no API key)
 - [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` and `hn_thread.py` to find HN threads about a topic, read them, and summarize what people said
@@ -83,7 +84,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script, helper module and web app (see [`tests/README.md`](tests/README.md))
-- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`use_utf8_output()` for UTF-8 stdout/stderr on every platform, `die()` uniform error-exit, `validate_url_scheme()` and `response_text()` (charset-aware page decoding) for the `url_*.py` scripts, `positive_int` argparse type, `.env` loading and `require_env()` for API keys, result-list formatting/printing) imported by the command-line scripts
+- [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`use_utf8_output()` for UTF-8 stdout/stderr on every platform, `die()` uniform error-exit, `validate_url_scheme()` and `response_text()` (charset-aware page decoding) for the `url_*.py` scripts, `positive_int` / `non_negative_int` / `bounded_int` argparse types, `.env` loading and `require_env()` for API keys, result-list formatting/printing) imported by the command-line scripts
 
 ---
 
@@ -2740,17 +2741,161 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ---
 
+## lobsters_thread.py
+
+Reads one [Lobsters](https://lobste.rs/) thread: the story and its comments, in the order Lobsters shows them, trimmed to a readable size. It is the Lobsters counterpart of [`hn_thread.py`](#hn_threadpy). The story and all its comments come from the story's JSON feed (`lobste.rs/s/<short id>.json`) in a single request. No API key or authentication required.
+
+Requires [`lobsters_hottest.py`](#lobsters_hottestpy) to be present in the same directory — it imports `posted_at`, `HEADERS` and `LOBSTERS_BASE` from it, so times and requests match the front-page script. It also imports `die`, `bounded_int` and `non_negative_int` from [`cli_utils.py`](#cli_utilspy).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `lobsters_hottest.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 lobsters_thread.py STORY [--top N] [--replies N] [--depth N] [--max-chars N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `STORY` (positional) | — | A story's short id (`ggpwfi`) or its link (`https://lobste.rs/s/ggpwfi`, with or without the slug). A comment link (`lobste.rs/c/...`) is rejected |
+| `--top N` | 20 | Top-level comments to show, 1–200 |
+| `--replies N` | 3 | Replies to show under each shown comment; 0 for none |
+| `--depth N` | 2 | Comment levels to show: 1 = top-level only, 2 = plus their replies, up to 10 |
+| `--max-chars N` | 600 | Cut each comment (and a text post's body) to this many characters; 0 for no limit |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+Reading Lobsters thread ggpwfi...
+
+It's enough - vibecoding tag crossed from useless to harmful
+   Score: 260  |  Comments: 252  |  Posted: 2026-10-18 10:35 UTC  |  By: viraptor
+   Tags: meta, vibecoding
+   Link: https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from
+   Discussion: https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from
+
+   The vibecoding tag has been getting more and more useless for a while now. ...
+
+Showing 5 of 252 comments (54 top-level), in Lobsters' order.
+
+   1. hyperpape | 123 points | 2026-10-18 12:44 UTC | https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from#c_n3ahgg
+      I agree with the reasons the OP stated, but what bothers me even more is how the discussion on lobsters has degraded. ...
+
+      1.1. dvogel | 42 points | 2026-10-18 16:31 UTC | https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from#c_6kkdwr
+         > Lobsters has gotten much more content free, ...
+         (+2 more replies, 3 comments below this one in all)
+...
+```
+
+(`--top 2 --replies 2 --max-chars 200`; texts shortened here.)
+
+#### Tool usage (`--json`)
+
+```bash
+python3 lobsters_thread.py ggpwfi --top 1 --replies 1 --json
+```
+
+```json
+{
+  "id": "ggpwfi",
+  "title": "It's enough - vibecoding tag crossed from useless to harmful",
+  "author": "viraptor",
+  "posted": "2026-10-18 10:35 UTC",
+  "score": 260,
+  "url": "https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from",
+  "discussion_url": "https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from",
+  "tags": ["meta", "vibecoding"],
+  "text": "The vibecoding tag has been getting more and more useless for a while now. ...",
+  "total_comments": 252,
+  "top_level_comments": 54,
+  "shown_comments": 2,
+  "comments": [
+    {
+      "id": "n3ahgg",
+      "author": "hyperpape",
+      "posted": "2026-10-18 12:44 UTC",
+      "depth": 1,
+      "score": 123,
+      "url": "https://lobste.rs/s/ggpwfi/it_s_enough_vibecoding_tag_crossed_from#c_n3ahgg",
+      "text": "I agree with the reasons the OP stated, ...",
+      "reply_count": 1,
+      "total_replies": 4,
+      "replies": [ { "id": "6kkdwr", "author": "dvogel", "depth": 2, "...": "..." } ]
+    }
+  ]
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Fetch the story** — One request to `lobste.rs/s/<id>.json` returns the story and every comment as a flat list, already in the site's display order: each comment after its parent, siblings in Lobsters' own ranking (not raw score), with a `depth` and a `parent_comment` id.
+2. **Nest and prune** — `build_tree()` nests the list back into a tree in one pass, keeping that order. `prune()` then drops deleted or moderated comments with no remaining replies, at any depth; one that still has replies stays, shown as `[deleted]` or `[removed by a moderator]`.
+3. **Trim and display** — Keeps the first `--top` top-level comments, the first `--replies` replies under each, down to `--depth` levels, cuts each text to `--max-chars`, and notes under a comment how many replies were left out and how many comments sit below it in all. `total_comments` is the site's own count, which leaves out deleted comments.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `TOP_COMMENTS` | 20 | Default for `--top` |
+| `REPLIES_PER_COMMENT` | 3 | Default for `--replies` |
+| `DEPTH` | 2 | Default for `--depth` |
+| `MAX_TOP_COMMENTS` / `MAX_DEPTH` | 200 / 10 | Upper limits for `--top` / `--depth` |
+| `TEXT_CHARS` | 600 | Default for `--max-chars` |
+| `STORY_TIMEOUT` | 30 | Timeout in seconds for the story request (a 250-comment thread is a few hundred KB) |
+
+### API reference
+
+- `parse_story_id(value)` — A short id from the id itself or a `lobste.rs/s/<id>[/slug]` link; raises `ValueError` otherwise.
+- `fetch_story(story_id)` — The story with its `comments` list, or `None` on a 404. Raises `requests.HTTPError` on another error status and `ValueError` if the body isn't a JSON object.
+- `build_tree(comments)` — Nests the flat list into `[{"comment": raw, "children": [...]}]`, keeping its order; a comment whose parent isn't in the list goes at the top.
+- `prune(nodes)` — Drops removed comments with no remaining replies, bottom-up.
+- `count_comments(node)` — Number of comments below a node, at any depth.
+- `clip(text, max_chars)` — Normalizes line endings, collapses runs of blank lines and cuts to `max_chars` with a trailing `...`; `None` if empty.
+- `comment_text(comment, max_chars)` — `[deleted]`, `[removed by a moderator]`, the clipped `comment_plain`, or `[empty]`.
+- `username(user)` — A user name from the feed's plain string (or an object with `username`).
+- `comment_to_dict(node, level, replies, depth, max_chars)` / `thread_to_dict(story, top, replies, depth, max_chars)` — Build the `{id, title, author, posted, score, url, discussion_url, tags, text, total_comments, top_level_comments, shown_comments, comments}` record used for **both** output modes; each comment is `{id, author, posted, depth, score, url, text, reply_count, total_replies, replies}`.
+- `format_thread(thread)` — Renders a `thread_to_dict()` record as a human-readable report.
+- `parse_args(argv=None)` / `main(argv=None)` — CLI parsing and the entry point.
+
+### Error handling
+
+- A `STORY` that isn't a short id or a `lobste.rs/s/` link, or a number out of range, is rejected by argparse (exit code 2) before any network call.
+- A story that doesn't exist (HTTP 404) prints `Error: No Lobsters story with id <id>.` (or `{"error": "..."}` with `--json`) to stderr and exits with status code 1.
+- Any other request failure, or a body that isn't a JSON object, prints an error and exits with status code 1.
+
+### Notes / limitations
+
+- The story feed is public but not a documented API, so it could change without notice.
+- Comments are in Lobsters' own display order, which ranks siblings by the site's own measure rather than raw score, so a higher-scored comment can appear below a lower one.
+- The whole thread comes in one request, so raising `--top` costs nothing extra (unlike `hn_thread.py`, which fetches HN's ranked order per comment).
+- Comment text is the feed's `comment_plain` (Markdown source, e.g. `>` quotes), not rendered HTML.
+
+---
+
 ## Claude Code agent: `lobsters-hottest`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/lobsters-hottest.md`. It doesn't call any external API itself — it shells out to [`lobsters_hottest.py`](#lobsters_hottestpy) via the `Bash` tool and reports the results conversationally.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/lobsters-hottest.md`. It doesn't call any external API itself — it shells out to [`lobsters_hottest.py`](#lobsters_hottestpy) and [`lobsters_thread.py`](#lobsters_threadpy) via the `Bash` tool and reports the results conversationally.
 
 ### Purpose
 
-Lets Claude Code answer questions like "what's trending on Lobsters?" or "top lobste.rs discussions tagged rust" by running the script and summarizing its JSON output, instead of guessing or using stale training data.
+Lets Claude Code answer questions like "what's trending on Lobsters?", "top lobste.rs discussions tagged rust" or "what are people saying in the top Lobsters thread?" by running the scripts and summarizing its JSON output, instead of guessing or using stale training data.
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent when the user names Lobsters or lobste.rs, based on the `description` field in its frontmatter. General "what's trending in tech" questions still go to [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions).
+- **Automatically** — Claude Code selects this subagent when the user names Lobsters or lobste.rs, based on the `description` field in its frontmatter. General "what's trending in tech" questions still go to [`hottest-tech-discussions`](#claude-code-agent-hottest-tech-discussions), and HN threads to [`hn-search`](#claude-code-agent-hn-search).
 - **Explicitly** — via the `Agent` tool with `subagent_type: "lobsters-hottest"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -2759,7 +2904,10 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Runs `python3 lobsters_hottest.py --json --limit N` (default `N=10`, or whatever count the user asked for) from the repo root, adding `--exclude-tag` only when the user wants a kind of story left out (e.g. `meta` for posts about the site).
 2. Parses the JSON array of stories.
-3. Reports them as a concise list — title, score, comment count, tags and links — without fabricating data or comparing scores with Hacker News. If the command fails, it surfaces the `{"error": "..."}` from stderr, retrying at most once for a transient-looking network error.
+3. Reports them as a concise list — title, score, comment count, tags and links — without fabricating data or comparing scores with Hacker News.
+4. To summarize a thread — one the user links, or one from the hot list — runs `python3 lobsters_thread.py "STORY" --json` (raising `--top` or using `--max-chars 0` for a fuller picture) and summarizes the views in the comments it read: grouped, with disagreement noted, linking the comments it draws on, and saying how many of the thread's comments it read, since a sample isn't a consensus.
+
+If a command fails, it surfaces the `{"error": "..."}` from stderr, retrying at most once for a transient-looking network error; a missing story is reported as-is.
 
 ### Configuration
 
@@ -2768,12 +2916,12 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
-| Underlying script | [`lobsters_hottest.py`](#lobsters_hottestpy) |
+| Underlying scripts | [`lobsters_hottest.py`](#lobsters_hottestpy), [`lobsters_thread.py`](#lobsters_threadpy) |
 
 ### Notes / limitations
 
-- Requires `lobsters_hottest.py` (and its `requests` dependency) to be present and runnable from the repo root.
-- Inherits all the limitations of [`lobsters_hottest.py`](#lobsters_hottestpy) itself (undocumented feeds, a smaller site with lower scores, score-based "hottest" definition, live-snapshot results).
+- Requires `lobsters_hottest.py` and `lobsters_thread.py` (and their `requests` dependency) to be present and runnable from the repo root.
+- Inherits all the limitations of the two scripts (undocumented feeds, a smaller site with lower scores, score-based "hottest" definition, live-snapshot results, comment text as Markdown source).
 
 ---
 
@@ -2781,7 +2929,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 Searches past [Hacker News](https://news.ycombinator.com/) stories and comments for a query, using the [Algolia HN Search API](https://hn.algolia.com/api) — the same index behind the search box on HN. Where [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) only sees the current front page, this searches the whole archive: stories (or just Ask HN / Show HN posts) or comments, ranked by relevance or newest first, optionally limited to a date window, a minimum score or one author. HN's monthly job threads ("Who is hiring?", "Who wants to be hired?", "Freelancer? Seeking freelancer?") are left out by default, since their comments list technologies as skills rather than discussing them. No API key or authentication required.
 
-Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it, so links, times and text look the same as in the other HN scripts. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
+Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it, so links, times and text look the same as in the other HN scripts. It also imports `die`, `positive_int` and `non_negative_int` from [`cli_utils.py`](#cli_utilspy).
 
 ### Requirements
 
@@ -2973,7 +3121,7 @@ The request timeout (`REQUEST_TIMEOUT`, 10 seconds) and the `--max-chars` defaul
 
 Reads one [Hacker News](https://news.ycombinator.com/) thread — a story (or a comment) and its comments — in the order HN itself ranks them, trimmed to a readable size: the top N top-level comments, a few replies under each, down to a set depth. Built for summarizing a big discussion found with [`hn_search.py`](#hn_searchpy). Uses the [Algolia HN API](https://hn.algolia.com/api) for the comment tree and the official [Hacker News API](https://github.com/HackerNews/API) for the ranking. No API key or authentication required.
 
-Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `fetch_story`, `parse_item_id`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it. It also imports `die` and `positive_int` from [`cli_utils.py`](#cli_utilspy).
+Requires [`hn.py`](#hnpy) to be present in the same directory — it imports `fetch_json`, `fetch_story`, `parse_item_id`, `clean_text`, `discussion_url`, `posted_at` and `TEXT_CHARS` from it. It also imports `die`, `bounded_int` and `non_negative_int` from [`cli_utils.py`](#cli_utilspy).
 
 ### Requirements
 
@@ -4989,7 +5137,9 @@ Small helpers shared by the command-line scripts: UTF-8 output, uniform error ex
 - `require_env(name, script, as_json=False)` — Returns environment variable `name`, or calls `die()` (status code 1) with `"<name> environment variable must be set. See the module docstring in <script> for how to obtain one."` if it is unset or empty. Used by the six `web_search_*.py` scripts that need an API key, each calling `load_dotenv()` first so a `.env` value counts.
 - `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the four `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`, `url_metadata.py`), which all take a URL positional and reject a bare domain/path before making any request.
 - `response_text(response)` — A `requests` response's body as text, decoded correctly. When the `Content-Type` header names no charset, `requests` falls back to ISO-8859-1 for `text/*`, which garbles UTF-8 pages ("—" comes out as "â€”"). In that case this uses the encoding `requests` detects from the bytes; a charset the server names is left alone. Used by `url_content.py`, `url_links.py` and `url_metadata.py` (not `url_availability.py`, which never reads the body).
-- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
+- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py`, `lobsters_hottest.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
+- `non_negative_int(value)` — Like `positive_int`, but `0` is allowed; for options where 0 means "none" or "no limit": `--replies` / `--max-chars` (`hn_thread.py`, `lobsters_thread.py`) and `hn_search.py`'s `--max-chars` and `--min-points`.
+- `bounded_int(maximum)` — Returns an argparse `type` callable for an integer from `1` to `maximum` (rejected as `positive_int` does, or with `must be at most <maximum>`); wired to `--top` / `--depth` in `hn_thread.py` and `lobsters_thread.py`.
 - `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).
 - `format_result(row)` — Renders a `{rank, title, url, snippet}` record (the shape every `web_search_*.py` script but `web_search_perplexity.py` produces) as a multi-line human-readable string.
 - `print_results(rows, as_json)` — Prints a list of `{rank, title, url, snippet}` records: the list as JSON with `as_json=True`; otherwise `"No results found."` for an empty list, or each row through `format_result()` separated by a blank line. This is the shared tail of each of those scripts' `main()`.

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
-from cli_utils import die, positive_int, use_utf8_output
+from cli_utils import bounded_int, die, non_negative_int, use_utf8_output
 from hn import (
     TEXT_CHARS,
     clean_text,
@@ -225,25 +225,6 @@ def format_thread(thread):
     return "\n".join(lines)
 
 
-def _non_negative_int(value):
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}")
-    if number < 0:
-        raise argparse.ArgumentTypeError(f"must be 0 or greater, got {number}")
-    return number
-
-
-def _bounded(maximum):
-    def check(value):
-        number = positive_int(value)
-        if number > maximum:
-            raise argparse.ArgumentTypeError(f"must be at most {maximum}, got {number}")
-        return number
-    return check
-
-
 def _item_id(value):
     try:
         return parse_item_id(value)
@@ -262,25 +243,25 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--top",
-        type=_bounded(MAX_TOP_COMMENTS),
+        type=bounded_int(MAX_TOP_COMMENTS),
         default=TOP_COMMENTS,
         help=f"Top-level comments to show, 1-{MAX_TOP_COMMENTS} (default: {TOP_COMMENTS})",
     )
     parser.add_argument(
         "--replies",
-        type=_non_negative_int,
+        type=non_negative_int,
         default=REPLIES_PER_COMMENT,
         help=f"Replies to show under each comment (default: {REPLIES_PER_COMMENT})",
     )
     parser.add_argument(
         "--depth",
-        type=_bounded(MAX_DEPTH),
+        type=bounded_int(MAX_DEPTH),
         default=DEPTH,
         help=f"Comment levels to show, 1 = top-level only, up to {MAX_DEPTH} (default: {DEPTH})",
     )
     parser.add_argument(
         "--max-chars",
-        type=_non_negative_int,
+        type=non_negative_int,
         default=TEXT_CHARS,
         help=f"Cut each comment to this many characters, 0 for no limit (default: {TEXT_CHARS})",
     )

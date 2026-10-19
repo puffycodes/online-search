@@ -156,3 +156,24 @@ def positive_int(value):
     if number < 1:
         raise argparse.ArgumentTypeError(f"must be a positive integer, got {number}")
     return number
+
+
+def non_negative_int(value):
+    """argparse ``type`` for an integer that must be 0 or greater."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}")
+    if number < 0:
+        raise argparse.ArgumentTypeError(f"must be 0 or greater, got {number}")
+    return number
+
+
+def bounded_int(maximum):
+    """argparse ``type`` for an integer from 1 to ``maximum``."""
+    def check(value):
+        number = positive_int(value)
+        if number > maximum:
+            raise argparse.ArgumentTypeError(f"must be at most {maximum}, got {number}")
+        return number
+    return check

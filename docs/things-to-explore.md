@@ -50,8 +50,8 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 - [ ] **More discussion sources**: Lobsters now has its own script,
   `lobsters_hottest.py`. Still open: merging it into `hottest_tech_discussions.py`
   so that covers more than Hacker News (its rankings would need per-source lists,
-  since Lobsters scores run much lower), and a Lobsters thread reader like
-  `hn_thread.py` (a thread's comments come from its discussion URL plus `.json`).
+  since Lobsters scores run much lower). Threads can be read with
+  `lobsters_thread.py`.
   Checked on 2026-10-19: Reddit's JSON returns 403 without OAuth; Dev.to's API works
   without a key, but its top items are posts on dev.to itself rather than links
   with a discussion.
