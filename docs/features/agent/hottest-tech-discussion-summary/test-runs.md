@@ -71,9 +71,21 @@ Save the report as `tmp/hottest-discussions-<date>[-n].md` (git-ignored), choosi
 ### 4. A page that is mostly a sign-in wall
 
 - **Rule:** step 2d's "a page that is mostly a sign-in wall counts as dropped too" (commit `6c4d704`).
-- **Topic:** none yet. The case needs a topic whose searches return a page that is mostly a login prompt with a few headlines or teasers around it, such as a LinkedIn profile or a Medium author page. A full LinkedIn post that comes through around the sign-in links is real content and doesn't count; that is what happened in the "Someone behind the software" run.
-- **A correct run:** the walled page is marked as dropped, not "used, partially", and is replaced from the engine's spares.
-- **Last checked:** never run.
+- **Topic:** "Someone behind the software", with a **fixed subject phrase**, `Karri Saarinen`. This bends step 2b on purpose: profile pages only reach an engine's first 3 results when the search is just a person's name, which the agent's own, longer phrases never are. With the name alone, Brave returns Karri Saarinen's LinkedIn profile as result 1.
+- **Row:**
+  ```json
+  {"rank": 1, "title": "Someone behind the software", "score": 399, "comments": 158, "posted": "2026-10-18 16:32 UTC", "url": "https://karrisaarinen.com/posts/someone-behind-the-software/", "discussion_url": "https://news.ycombinator.com/item?id=50142573", "tags": [], "source": "hn"}
+  ```
+- **Prompt:** the template, plus "This is a targeted test run. In step 2b, use exactly this subject phrase instead of choosing your own: `Karri Saarinen`. Change nothing else." Skipping 2f is fine, since it isn't being tested. Ask in run note (c) for every page considered as possibly walled, what it contained, and why it was dropped or kept.
+- **A correct run:**
+  - The LinkedIn profile, when it comes back as sign-in prompts around a profile summary and "Articles by …" teasers, is marked as dropped, not "used, partially", and is replaced from the engine's spares. That holds even though some full post text gets past the wall at the end.
+  - The X profile (`x.com/karrisaarinen`) is kept: its login prompts are a small part of a page that is mostly the bio and several posts' text.
+  - Pages with only a "Sign in" navigation link (the podcast and company pages) are kept.
+- **Caveats:**
+  - LinkedIn's response varies. On 2026-10-19 this profile came back walled with teasers in the passing run, but as status 999 with no content in a direct check an hour earlier, which the agent treats as an empty page instead. Check the raw fetch to see which one a run got: a 999 run proves nothing about this rule.
+  - Medium author pages, Quora, ResearchGate and Crunchbase all refused the fetch with 403 when checked, so they aren't usable for this case.
+  - A full LinkedIn *post* that comes through around the sign-in links is real content and doesn't count; that is what happened in the ordinary "Someone behind the software" run.
+- **Last checked:** 2026-10-19, passed (LinkedIn returned the walled profile, which was dropped and replaced by the First Round podcast page).
 
 ### 5. Lobsters topics and a story shared with Hacker News
 
