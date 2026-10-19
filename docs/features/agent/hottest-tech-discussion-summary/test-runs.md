@@ -74,3 +74,24 @@ Save the report as `tmp/hottest-discussions-<date>[-n].md` (git-ignored), choosi
 - **Topic:** none yet. The case needs a topic whose searches return a page that is mostly a login prompt with a few headlines or teasers around it, such as a LinkedIn profile or a Medium author page. A full LinkedIn post that comes through around the sign-in links is real content and doesn't count; that is what happened in the "Someone behind the software" run.
 - **A correct run:** the walled page is marked as dropped, not "used, partially", and is replaced from the engine's spares.
 - **Last checked:** never run.
+
+### 5. Lobsters topics and a story shared with Hacker News
+
+- **Rules:** step 1b's "combine stories shared between sources", step 2a's per-site thread script, and Step 3's source tags (commit `3ec9b51`).
+- **Topics:** three rows, as if step 1 had run with `--source hn --source lobsters`. HN's "Claude reveals ECDSA curve origins" and Lobsters' "The NIST Elliptic Curves Seeds Bounty Has Been Claimed" are the same story under different links. Lobsters' ARP post is unrelated and must stay its own topic.
+- **Prompt:** this case gives several rows, so replace the template's first paragraph with: "Produce your researched, sourced summary for these specific rows instead of the top N. Skip step 1 and use these rows as its output, as if both sources had been asked for:", followed by the rows as one JSON array. Add "(d) which rows you combined and why" to the run notes.
+- **Rows:**
+  ```json
+  [
+    {"rank": 1, "title": "Claude reveals ECDSA curve origins", "score": 1051, "comments": 388, "posted": "2026-10-16 18:55 UTC", "url": "https://www.anthropic.com/research/ecdsa-curve-origins", "discussion_url": "https://news.ycombinator.com/item?id=50122800", "tags": [], "source": "hn"},
+    {"rank": 1, "title": "The NIST Elliptic Curves Seeds Bounty Has Been Claimed", "score": 135, "comments": 38, "posted": "2026-10-16 20:18 UTC", "url": "https://words.filippo.io/seeds-solved/", "discussion_url": "https://lobste.rs/s/ddtqtn/nist_elliptic_curves_seeds_bounty_has", "tags": ["cryptography", "vibecoding"], "source": "lobsters"},
+    {"rank": 2, "title": "ARP! Tell your network to explain itself", "score": 36, "comments": 13, "posted": "2026-10-18 12:48 UTC", "url": "https://benjcal.space/blog/arp-tell-your-network-to-explain-itself/", "discussion_url": "https://lobste.rs/s/mmvhup/arp_tell_your_network_explain_itself", "tags": ["networking"], "source": "lobsters"}
+  ]
+  ```
+- **A correct run:**
+  - Two topics, not three: the ECDSA story combined, tagged `[HN] [Lobsters]`, at the HN position; the ARP post on its own, tagged `[Lobsters]`. The report says one story was combined.
+  - The HN thread is read with `hn_thread.py` and both Lobsters threads with `lobsters_thread.py`; no thread is fetched with `url_content.py`.
+  - Both of the combined topic's articles are fetched, and its discussion summary keeps HN's and Lobsters' commenters apart, without comparing the two sites' scores.
+  - The combined topic's web search skips both articles and both threads as own links.
+  - Lobsters' topic tags (`cryptography`, `networking`) appear only on the Lobsters lines, never inside the source-tag brackets.
+- **Last checked:** never run.
