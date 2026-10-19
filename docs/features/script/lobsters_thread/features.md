@@ -4,7 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Lobsters story JSON feed (no API key): lobste.rs/s/{{Story}}.json, the story and all its comments in one request.
-- Use lobsters_hottest.py's posted_at(), HEADERS and LOBSTERS_BASE.
+- Use lobsters.py's posted_at(), HEADERS and LOBSTERS_BASE.
 - Use cli_utils.py's die(), bounded_int, non_negative_int and use_utf8_output().
 
 ## Actions

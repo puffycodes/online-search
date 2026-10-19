@@ -55,6 +55,12 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   Checked on 2026-10-19: Reddit's JSON returns 403 without OAuth; Dev.to's API works
   without a key, but its top items are posts on dev.to itself rather than links
   with a discussion.
+- [ ] **Lobsters search** (`lobsters_search.py`): find past Lobsters stories and
+  comments about a topic, the counterpart of `hn_search.py`, so "what does Lobsters
+  think of X?" can be answered without a link. Not checked yet whether Lobsters has a
+  usable search feed (JSON or otherwise). If built, the planned `lobsters-thread`
+  agent would grow into a `lobsters-search` agent, as `hn-search` covers both
+  searching and reading HN threads.
 - [ ] **Wikipedia**: REST summary API for a quick topic summary, page-views API for
   "what's trending on Wikipedia today".
 
