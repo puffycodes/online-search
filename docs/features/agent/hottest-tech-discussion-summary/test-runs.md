@@ -94,4 +94,4 @@ Save the report as `tmp/hottest-discussions-<date>[-n].md` (git-ignored), choosi
   - Both of the combined topic's articles are fetched, and its discussion summary keeps HN's and Lobsters' commenters apart, without comparing the two sites' scores.
   - The combined topic's web search skips both articles and both threads as own links.
   - Lobsters' topic tags (`cryptography`, `networking`) appear only on the Lobsters lines, never inside the source-tag brackets.
-- **Last checked:** never run.
+- **Last checked:** 2026-10-19, passed.
