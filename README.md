@@ -60,7 +60,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`hn_thread.py`](#hn_threadpy) — reads one Hacker News thread: the story and its top comments in HN's ranked order, with a few replies under each, trimmed to a set size (no API key)
 - [`.claude/agents/hn-search.md`](#claude-code-agent-hn-search) — Claude Code subagent that calls `hn_search.py` and `hn_thread.py` to find HN threads about a topic, read them, and summarize what people said
 - [`stock_tech_buzz_agent.py`](#stock_tech_buzz_agentpy) — agent combining two of the above: top-volume stocks that are being talked about on Hacker News
-- [`app/hottest_discussions/`](#apphottest_discussions) — small local web app for `hottest_tech_discussions.py`: a page with a "Show" drop-down and Refresh button that runs the script through a local server
+- [`app/hottest_discussions/`](#apphottest_discussions) — small local web app for `hottest_tech_discussions.py`: a page with "From" (Hacker News / Lobsters / All Sources) and "Show" drop-downs and a Refresh button that runs the script through a local server, one section per site
 - [`.claude/agents/hottest-tech-discussion-summary.md`](#claude-code-agent-hottest-tech-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, `hn_thread.py` / `lobsters_thread.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions on HN, Lobsters or both, with cited sources, plus `hn_search.py` for earlier HN threads on request
 
 **[Web Search](#web-search)**
@@ -3405,7 +3405,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ## app/hottest_discussions/
 
-A small local web app at `app/hottest_discussions/hottest_discussions_server.py`, separate from the CLI scripts above. It serves a page that starts **empty**, with a "Show" drop-down (10 / 25 / 50, default 10) and a **Refresh** button. Refresh calls the server's `/api/discussions` endpoint, which runs [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) directly (`get_hottest_tech_discussions()` + `story_to_dict()`) and returns the same rows as that script's `--json`, so the page and the CLI always rank the same way. See [`app/hottest_discussions/README.md`](app/hottest_discussions/README.md) for the full walkthrough and [`app/hottest_discussions/docs/features.md`](app/hottest_discussions/docs/features.md) for the feature spec.
+A small local web app at `app/hottest_discussions/hottest_discussions_server.py`, separate from the CLI scripts above. It serves a page that starts **empty**, with a "From" drop-down (Hacker News / Lobsters / All Sources, default Hacker News), a "Show" drop-down (10 / 25 / 50 per site, default 10) and a **Refresh** button. Refresh calls the server's `/api/discussions` endpoint, which runs [`hottest_tech_discussions.py`](#hottest_tech_discussionspy) directly (`get_rows()`) and returns the same rows as that script's `--json`, so the page and the CLI always rank the same way. The page shows one section per site, Hacker News first, never a merged ranking, since the sites' scores aren't comparable. See [`app/hottest_discussions/README.md`](app/hottest_discussions/README.md) for the full walkthrough and [`app/hottest_discussions/docs/features.md`](app/hottest_discussions/docs/features.md) for the feature spec.
 
 ### Requirements
 
@@ -3430,40 +3430,42 @@ python3 app/hottest_discussions/hottest_discussions_server.py
 # Serving Hottest Tech Discussions at http://127.0.0.1:8001/ (Ctrl+C to stop)
 ```
 
-Open <http://127.0.0.1:8001/>, pick a count from **Show**, and click **Refresh**. The page calls `GET /api/discussions?limit=N`, which returns JSON: `{limit, fetched_at, discussions: [{rank, title, score, comments, posted, url, discussion_url, tags, source}, ...]}` (`tags` is always `[]` and `source` `"hn"`, since the app shows Hacker News only).
+Open <http://127.0.0.1:8001/>, pick a site from **From** and a count from **Show**, and click **Refresh**. The page calls `GET /api/discussions?limit=N&source=S` (`S` is `hn`, the default, `lobsters` or `all`), which returns JSON: `{limit, source, sites: [{id, name}, ...], fetched_at, discussions: [{rank, title, score, comments, posted, url, discussion_url, tags, source}, ...]}`, with `discussions` grouped by site in the order of `sites` and `rank` restarting at 1 for each.
 
 ### How it works
 
 1. `GET /` serves the inline HTML page with no discussions.
-2. On Refresh, the page calls `GET /api/discussions?limit=N`.
-3. The handler checks `limit` is 10, 25 or 50 (missing means 10), then calls `hottest_tech_discussions.get_hottest_tech_discussions(limit)` and flattens each story with `story_to_dict()`.
-4. The page renders the rows as cards (rank, linked title, points, comments, posted time, HN discussion link) and shows the fetch time in the footer.
+2. On Refresh, the page calls `GET /api/discussions?limit=N&source=S`.
+3. The handler checks `limit` is 10, 25 or 50 (missing means 10) and `source` is `hn`, `lobsters` or `all` (missing means `hn`), then calls `hottest_tech_discussions.get_rows()` with that choice's sites, which ranks each site on its own.
+4. The page renders one section per site, headed with its name, with its rows as cards (rank, linked title, points, comments, posted time, a "discuss on HN" or "discuss on Lobsters" link, and tags for Lobsters), and shows the fetch time and site names in the footer. A site with no rows says "No discussions found." in its section.
 
 ### Configuration
 
 | Constant | Default | Description |
 |---|---|---|
-| `LIMIT_OPTIONS` | `(10, 25, 50)` | The drop-down's and the API's allowed counts; the first entry is `RESULTS_TO_SHOW`, imported from `hottest_tech_discussions.py` |
+| `LIMIT_OPTIONS` | `(10, 25, 50)` | The **Show** drop-down's and the API's allowed counts, per site; the first entry is `RESULTS_TO_SHOW`, imported from `hottest_tech_discussions.py` |
+| `SOURCE_OPTIONS` / `DEFAULT_SOURCE` | `hn`, `lobsters`, `all` / `hn` | The **From** drop-down's and the API's choices, each with its label and the script's sources (`all` is both) |
 | `DEFAULT_PORT` | `8001` | Port when `--port` isn't passed |
 
 ### API reference
 
-- `render_limit_options(selected=10)` / `render_page()` — Build the drop-down options and the page.
-- `parse_limit(value)` — Returns `value` as an int from `LIMIT_OPTIONS`, else raises `ValueError`.
-- `get_discussions(limit)` — Runs the script and returns `{limit, fetched_at, discussions}`.
+- `render_limit_options(selected=10)` / `render_source_options(selected="hn")` / `render_page()` — Build the two drop-downs' options and the page.
+- `parse_limit(value)` / `parse_source(value)` — Return `value` (as an int, for the limit) if it's one of the allowed choices, else raise `ValueError`.
+- `get_discussions(limit, source="hn")` — Runs the script for that choice's sites and returns `{limit, source, sites, fetched_at, discussions}`; raises the script's `SourceError`, naming the site, if any selected site fails.
 - `HottestDiscussionsHandler` — Serves `/` and `/api/discussions`.
 - `parse_args(argv=None)` / `main(argv=None)` — `--host`/`--port` parsing and the serve loop.
 
 ### Error handling
 
-- `limit` other than 10/25/50 → HTTP 400; Hacker News unreachable or a malformed response → HTTP 502. Either way the page shows `Refresh failed: <message>` and keeps the current list.
+- `limit` other than 10/25/50, or `source` other than `hn`/`lobsters`/`all` → HTTP 400; a selected site unreachable or a malformed response → HTTP 502, with the error naming the site (`failed to fetch discussions from Lobsters: …`). Either way the page shows `Refresh failed: <message>` and clears the list, so no partial results are shown.
 - Bad `--port` is rejected by argparse (exit code 2).
 
 ### Notes / limitations
 
-- Inherits the same "hottest" definition as [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): highest score among the first 4× N of HN's current top stories, no tech-specific keyword filtering, live-snapshot results that differ between clicks.
+- Inherits the same "hottest" definition as [`hottest_tech_discussions.py`](#hottest_tech_discussionspy): highest score among the first 4× N of each site's current front page, no tech-specific keyword filtering, live-snapshot results that differ between clicks.
+- There's no Lobsters tag filter on the page, and a story on both sites is listed in each site's section, never combined.
 - Nothing appears until Refresh is clicked — no polling or auto-refresh.
-- Needs the server running (it replaced the earlier static `generate_page.py` / `index.html`, whose JavaScript copy of the ranking had drifted from the script). Choosing 50 fetches 200 stories' details, so it's slower than 10.
+- Needs the server running (it replaced the earlier static `generate_page.py` / `index.html`, whose JavaScript copy of the ranking had drifted from the script). Choosing 50 fetches 200 HN stories' details, so it's slower than 10.
 - Binds to localhost by default; `--host 0.0.0.0` exposes it with no authentication.
 
 ---
