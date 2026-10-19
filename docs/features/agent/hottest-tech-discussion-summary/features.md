@@ -13,7 +13,7 @@
     - Make a summary of the discussion.
         - Read the HN thread's top comments with the hn_thread.py script (HN refuses ordinary page fetches).
         - Retrieve the linked article's content, if it has one, up to 15,000 characters.
-        - Treat a page that comes back with almost no content (just a site name, a JavaScript or sign-in wall) as not retrieved.
+        - Treat a page that comes back with almost no content (just a site name, a JavaScript or sign-in wall) as not retrieved. A page that is mostly a sign-in wall counts as not retrieved even when some headlines or teaser lines show around it.
         - Produce a summary of what the article says and what HN commenters said, with how many comments were read.
     - Identify the subject of the discussion and express it as a single phase.
     - Provide more information on the subject of discussion.
