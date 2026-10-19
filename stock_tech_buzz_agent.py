@@ -23,7 +23,6 @@ import requests
 import hottest_tech_discussions as hn
 import market_top_volume as market
 from cli_utils import die, positive_int, use_utf8_output
-from hn import discussion_url
 
 STOCK_LIMIT_PER_EXCHANGE = 10
 DISCUSSION_LIMIT = 50
@@ -111,7 +110,7 @@ def result_to_dict(result):
                 "title": d.get("title", "(no title)"),
                 "score": d.get("score", 0),
                 "comments": d.get("descendants", 0),
-                "discussion_url": discussion_url(d),
+                "discussion_url": hn.discussion_url(d),
             }
             for d in result["discussions"]
         ],

@@ -2,33 +2,24 @@
 """
 Shared Hacker News helpers for hottest_tech_discussions.py, hn_search.py
 and hn_thread.py: JSON fetching (surfacing the Algolia API's own error
-message), fetching one item, and the current hottest stories, from the
-official Hacker News API (https://github.com/HackerNews/API), reading an
-item id from a number or an HN link, the item's HN page link, its posting
-time, and converting HN's HTML comment / self-post text to plain text.
+message), fetching one item from the official Hacker News API
+(https://github.com/HackerNews/API), reading an item id from a number or
+an HN link, the item's HN page link, its posting time, and converting HN's
+HTML comment / self-post text to plain text.
 
 Not a CLI itself - this module is imported, not run.
 """
 
 import html
 import re
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import requests
 
 HN_API_BASE = "https://hacker-news.firebaseio.com/v0"
 HN_ITEM_URL = f"{HN_API_BASE}/item/{{item_id}}.json"
-TOP_STORIES_URL = f"{HN_API_BASE}/topstories.json"
 REQUEST_TIMEOUT = 10
 TEXT_CHARS = 600
-
-# How many of the current top stories to inspect per requested result,
-# before ranking them by score. HN's topstories list is already ranked by
-# its own "hotness" algorithm (score + age decay), so pulling details for
-# the first 4x is enough to reliably surface the top N by score (40 for
-# the default 10), and it scales so a limit of 50 isn't capped at a fixed pool.
-CANDIDATE_POOL_FACTOR = 4
 
 
 def fetch_json(url, params=None, timeout=REQUEST_TIMEOUT):
@@ -57,21 +48,6 @@ def fetch_story(item_id):
         return fetch_json(HN_ITEM_URL.format(item_id=item_id))
     except (requests.RequestException, ValueError):
         return None
-
-
-def fetch_hottest(limit):
-    """The top `limit` stories by score among HN's first
-    limit x CANDIDATE_POOL_FACTOR top stories, fetched 10 at a time.
-    Items that fail to fetch, and anything that isn't a story (e.g. jobs),
-    are skipped."""
-    story_ids = fetch_json(TOP_STORIES_URL)[:max(limit, 0) * CANDIDATE_POOL_FACTOR]
-
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        stories = list(pool.map(fetch_story, story_ids))
-
-    stories = [s for s in stories if s and s.get("type") == "story"]
-    stories.sort(key=lambda s: s.get("score", 0), reverse=True)
-    return stories[:limit]
 
 
 def parse_item_id(value):

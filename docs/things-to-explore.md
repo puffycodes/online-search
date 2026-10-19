@@ -47,17 +47,20 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   requests are rate-limited.
 - [ ] **arXiv new papers** (arXiv API, no key): latest papers in categories like
   cs.AI and cs.LG.
-- [ ] **More discussion sources** beyond Hacker News and Lobsters: each would be a new
-  `--source` in `hottest_tech_discussions.py`, with its fetch in a helper module like
-  `hn.py` and `lobsters.py`. Checked on 2026-10-19: Reddit's JSON returns 403 without
-  OAuth; Dev.to's API works without a key, but its top items are posts on dev.to
-  itself rather than links with a discussion.
-- [ ] **Lobsters search** (`lobsters_search.py`): find past Lobsters stories and
-  comments about a topic, the counterpart of `hn_search.py`, so "what does Lobsters
-  think of X?" can be answered without a link. Not checked yet whether Lobsters has a
-  usable search feed (JSON or otherwise). If built, the `lobsters-thread`
-  agent would grow into a `lobsters-search` agent, as `hn-search` covers both
-  searching and reading HN threads.
+- [ ] **More discussion sources** beyond Hacker News: check the site's robots.txt
+  and terms before building anything (see CLAUDE.md). Checked on 2026-10-19:
+  - **Lobsters: ruled out.** It was added (`8dbf161`) and removed the same day
+    (`107e24a` was the last commit with it). Its robots.txt disallows the whole site
+    (`User-agent: *` / `Disallow: /`, with a comment asking clients to follow the
+    standard honestly), disallows `/search` and `/page/` even for the named search
+    engines it allows, and declares `Content-Signal: ai-input=no, ai-train=no`. The
+    repo fetched its JSON feeds and fed them to an AI model, so all Lobsters support
+    (`lobsters.py`, `lobsters_thread.py`, the `--source lobsters` option, the
+    `lobsters-thread` agent, and Lobsters in the summary agent and web app) was
+    removed, and a Lobsters search script was dropped before it was built.
+  - **Reddit:** its JSON returns 403 without OAuth.
+  - **Dev.to:** its API works without a key, but its top items are posts on dev.to
+    itself rather than links with a discussion.
 - [ ] **Wikipedia**: REST summary API for a quick topic summary, page-views API for
   "what's trending on Wikipedia today".
 

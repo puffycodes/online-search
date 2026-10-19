@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """
-Serve a small local web page for the hottest technology discussions on
-Hacker News, Lobsters or both.
+Serve a small local web page for the hottest technology discussions.
 
-The page starts empty. One drop-down picks where to look (Hacker News,
-Lobsters or All Sources, default Hacker News), another how many
-discussions to retrieve from each site (10/25/50, default 10), and
-clicking Refresh calls this server's /api/discussions endpoint. That runs
-hottest_tech_discussions.py (at the repository root) directly: its
-get_rows() ranks each site on its own and returns the same records that
-script prints with --json. The page shows one section per site, never a
-merged ranking, since the sites' scores aren't comparable.
+The page starts empty. A drop-down picks how many discussions to retrieve
+(10/25/50, default 10), and clicking Refresh calls this server's
+/api/discussions endpoint, which runs hottest_tech_discussions.py (at the
+repository root) directly: get_hottest_tech_discussions() for the
+ranking and story_to_dict() for each row, the same records that script
+prints with --json.
 
 A server is used (rather than a static page) so the page runs the
 script itself instead of a JavaScript copy of its logic.
@@ -33,25 +30,17 @@ from urllib.parse import parse_qs, urlparse
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+import requests  # noqa: E402
+
 import hottest_tech_discussions as hn  # noqa: E402
 
 DEFAULT_HOST = "127.0.0.1"
 # 8001 so it can run alongside app/stock_information (default 8000).
 DEFAULT_PORT = 8001
 
-# Choices for the page's "how many discussions to retrieve" drop-down,
-# per site. RESULTS_TO_SHOW (from hottest_tech_discussions.py) is the
-# default of 10.
+# Choices for the page's "how many discussions to retrieve" drop-down.
+# RESULTS_TO_SHOW (from hottest_tech_discussions.py) is the default of 10.
 LIMIT_OPTIONS = (hn.RESULTS_TO_SHOW, 25, 50)
-
-# Choices for the page's "where to look" drop-down: value -> (label,
-# the script's sources).
-SOURCE_OPTIONS = {
-    "hn": ("Hacker News", ("hn",)),
-    "lobsters": ("Lobsters", ("lobsters",)),
-    "all": ("All Sources", ("hn", "lobsters")),
-}
-DEFAULT_SOURCE = "hn"
 
 PAGE_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -112,7 +101,7 @@ PAGE_HTML = """<!DOCTYPE html>
     color: #fff4ea;
     font-size: 0.85rem;
   }
-  #limit-select, #source-select {
+  #limit-select {
     padding: 0.35rem 0.6rem;
     border: 1px solid #fff;
     border-radius: 999px;
@@ -121,7 +110,7 @@ PAGE_HTML = """<!DOCTYPE html>
     font-size: 0.85rem;
     cursor: pointer;
   }
-  #limit-select option, #source-select option {
+  #limit-select option {
     color: #1a1a1a;
     background: #fff;
   }
@@ -172,24 +161,16 @@ PAGE_HTML = """<!DOCTYPE html>
     min-width: 1.75rem;
     text-align: right;
   }
-  section.site h2 {
-    margin: 1.25rem 0 0.6rem;
-    font-size: 1.15rem;
-    color: var(--accent);
-  }
-  section.site:first-child h2 {
-    margin-top: 0;
-  }
-  .story-body h3 {
+  .story-body h2 {
     margin: 0 0 0.3rem;
     font-size: 1.05rem;
     line-height: 1.35;
   }
-  .story-body h3 a {
+  .story-body h2 a {
     color: var(--text);
     text-decoration: none;
   }
-  .story-body h3 a:hover {
+  .story-body h2 a:hover {
     text-decoration: underline;
   }
   .meta {
@@ -198,11 +179,6 @@ PAGE_HTML = """<!DOCTYPE html>
   }
   .meta a {
     color: var(--muted);
-  }
-  .tags {
-    color: var(--muted);
-    font-size: 0.8rem;
-    margin-top: 0.2rem;
   }
   .empty {
     text-align: center;
@@ -220,17 +196,12 @@ PAGE_HTML = """<!DOCTYPE html>
 <body>
 <header>
   <h1>Hottest Tech Discussions</h1>
-  <p>Top stories on Hacker News and Lobsters right now</p>
+  <p>Top stories on Hacker News right now</p>
   <div class="controls">
-    <label for="source-select">From</label>
-    <select id="source-select">
-__SOURCE_OPTIONS__
-    </select>
     <label for="limit-select">Show</label>
     <select id="limit-select">
 __LIMIT_OPTIONS__
     </select>
-    <label for="limit-select">per site</label>
     <button id="refresh-btn" type="button">&#8635; Refresh</button>
   </div>
   <p id="refresh-status"></p>
@@ -239,7 +210,7 @@ __LIMIT_OPTIONS__
   <div id="discussions">
   <p class="empty">No discussions loaded yet &mdash; click Refresh above to fetch the top discussions.</p>
   </div>
-  <footer id="fetched-at">Sources: Hacker News and Lobsters, via hottest_tech_discussions.py</footer>
+  <footer id="fetched-at">Source: Hacker News API, via hottest_tech_discussions.py</footer>
 </main>
 <script>
 (function () {
@@ -248,9 +219,6 @@ __LIMIT_OPTIONS__
   var container = document.getElementById("discussions");
   var footer = document.getElementById("fetched-at");
   var limitSelect = document.getElementById("limit-select");
-  var sourceSelect = document.getElementById("source-select");
-  // Link text for each site's discussion page.
-  var DISCUSS_ON = { hn: "discuss on HN", lobsters: "discuss on Lobsters" };
 
   function fetchJson(url) {
     return fetch(url).then(function (response) {
@@ -282,73 +250,51 @@ __LIMIT_OPTIONS__
     var body = document.createElement("div");
     body.className = "story-body";
 
-    var h3 = document.createElement("h3");
-    h3.appendChild(newTabLink(row.url, row.title));
+    var h2 = document.createElement("h2");
+    h2.appendChild(newTabLink(row.url, row.title));
 
     var meta = document.createElement("div");
     meta.className = "meta";
     meta.appendChild(document.createTextNode(
       row.score + " points · " + row.comments + " comments · posted " + row.posted + " · "
     ));
-    meta.appendChild(newTabLink(row.discussion_url, DISCUSS_ON[row.source] || "discuss"));
+    meta.appendChild(newTabLink(row.discussion_url, "discuss on HN"));
 
-    body.appendChild(h3);
+    body.appendChild(h2);
     body.appendChild(meta);
-    if (row.source === "lobsters") {
-      var tags = document.createElement("div");
-      tags.className = "tags";
-      tags.textContent = "Tags: " + (row.tags.length ? row.tags.join(", ") : "(none)");
-      body.appendChild(tags);
-    }
     li.appendChild(rankSpan);
     li.appendChild(body);
     return li;
   }
 
-  // One section per site, in the order the server lists them; the sites'
-  // scores aren't comparable, so their rows are never merged or re-ranked.
-  function renderSections(sites, rows) {
+  function renderStories(rows) {
     container.innerHTML = "";
-    sites.forEach(function (site) {
-      var section = document.createElement("section");
-      section.className = "site";
-      var heading = document.createElement("h2");
-      heading.textContent = site.name;
-      section.appendChild(heading);
-
-      var siteRows = rows.filter(function (row) { return row.source === site.id; });
-      if (!siteRows.length) {
-        var empty = document.createElement("p");
-        empty.className = "empty";
-        empty.textContent = "No discussions found.";
-        section.appendChild(empty);
-      } else {
-        var ol = document.createElement("ol");
-        siteRows.forEach(function (row) {
-          ol.appendChild(buildStoryEl(row));
-        });
-        section.appendChild(ol);
-      }
-      container.appendChild(section);
+    if (!rows.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "No discussions found.";
+      container.appendChild(empty);
+      return;
+    }
+    var ol = document.createElement("ol");
+    rows.forEach(function (row) {
+      ol.appendChild(buildStoryEl(row));
     });
+    container.appendChild(ol);
   }
 
   function refresh() {
     button.disabled = true;
     status.textContent = "Refreshing…";
 
-    fetchJson("/api/discussions?limit=" + encodeURIComponent(limitSelect.value) +
-              "&source=" + encodeURIComponent(sourceSelect.value))
+    fetchJson("/api/discussions?limit=" + encodeURIComponent(limitSelect.value))
       .then(function (data) {
-        renderSections(data.sites, data.discussions);
-        var names = data.sites.map(function (site) { return site.name; }).join(" and ");
+        renderStories(data.discussions);
         footer.textContent = "Fetched " + data.fetched_at +
-          " · Source: " + names + ", via hottest_tech_discussions.py";
+          " · Source: Hacker News API, via hottest_tech_discussions.py";
         status.textContent = "Updated just now";
       })
       .catch(function (err) {
-        // Show no discussions when any selected site failed.
-        container.innerHTML = "";
         status.textContent = "Refresh failed: " + err.message;
       })
       .finally(function () {
@@ -374,21 +320,9 @@ def render_limit_options(selected=hn.RESULTS_TO_SHOW):
     )
 
 
-def render_source_options(selected=DEFAULT_SOURCE):
-    """Return the source drop-down's <option> tags, with ``selected`` pre-selected."""
-    return "\n".join(
-        '      <option value="{v}"{sel}>{label}</option>'.format(
-            v=value, label=label, sel=" selected" if value == selected else ""
-        )
-        for value, (label, _) in SOURCE_OPTIONS.items()
-    )
-
-
 def render_page():
-    """Return the page: an empty shell with the drop-downs at their defaults
-    (Hacker News, 10)."""
-    return (PAGE_HTML.replace("__LIMIT_OPTIONS__", render_limit_options())
-            .replace("__SOURCE_OPTIONS__", render_source_options()))
+    """Return the page: an empty shell with the drop-down defaulting to 10."""
+    return PAGE_HTML.replace("__LIMIT_OPTIONS__", render_limit_options())
 
 
 def parse_limit(value):
@@ -403,32 +337,20 @@ def parse_limit(value):
     return limit
 
 
-def parse_source(value):
-    """Return ``value`` if it is one of SOURCE_OPTIONS, or raise ValueError."""
-    if value not in SOURCE_OPTIONS:
-        options = ", ".join(SOURCE_OPTIONS)
-        raise ValueError(f"source must be one of {options}, got {value!r}")
-    return value
-
-
-def get_discussions(limit, source=DEFAULT_SOURCE):
+def get_discussions(limit):
     """Run hottest_tech_discussions.py's ranking and shape it for the page.
 
-    Returns ``{limit, source, sites, fetched_at, discussions}``: ``sites``
-    is ``[{id, name}]`` for each site fetched, in the script's order
-    (Hacker News first); ``discussions`` is the same rows that script
-    prints with --json, grouped by site and ranked from 1 within each;
-    ``fetched_at`` is the UTC time of the fetch. Raises the script's
-    SourceError, naming the site, when any selected site can't be
-    fetched, so there are no partial results.
+    Returns ``{limit, fetched_at, discussions}``, where ``discussions`` is
+    the same list of ``story_to_dict()`` rows that script prints with
+    --json, and ``fetched_at`` is the UTC time of the fetch. Raises
+    requests.RequestException (or ValueError on a malformed response)
+    when Hacker News can't be reached.
     """
-    rows = hn.get_rows(SOURCE_OPTIONS[source][1], limit=limit)
+    stories = hn.get_hottest_tech_discussions(limit=limit)
     return {
         "limit": limit,
-        "source": source,
-        "sites": [{"id": s, "name": hn.SOURCE_NAMES[s]} for s in rows],
         "fetched_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "discussions": [row for s in rows for row in rows[s]],
+        "discussions": [hn.story_to_dict(rank, s) for rank, s in enumerate(stories, start=1)],
     }
 
 
@@ -456,21 +378,19 @@ class HottestDiscussionsHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
 
-        query = parse_qs(url.query)
+        raw = parse_qs(url.query).get("limit", [str(hn.RESULTS_TO_SHOW)])[0]
         try:
-            limit = parse_limit(query.get("limit", [str(hn.RESULTS_TO_SHOW)])[0])
-            source = parse_source(query.get("source", [DEFAULT_SOURCE])[0])
+            limit = parse_limit(raw)
         except ValueError as exc:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
 
         try:
-            payload = get_discussions(limit, source)
-        except hn.SourceError as exc:
-            # The message already names the site, e.g. "Lobsters: 503 ...".
+            payload = get_discussions(limit)
+        except (requests.RequestException, ValueError) as exc:
             self._send_json(
                 HTTPStatus.BAD_GATEWAY,
-                {"error": f"failed to fetch discussions from {exc}"},
+                {"error": f"failed to fetch discussions from Hacker News: {exc}"},
             )
             return
         self._send_json(HTTPStatus.OK, payload)
@@ -478,7 +398,7 @@ class HottestDiscussionsHandler(BaseHTTPRequestHandler):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Serve a local web page showing the hottest tech discussions on Hacker News and Lobsters."
+        description="Serve a local web page showing the hottest tech discussions."
     )
     parser.add_argument(
         "--host", default=DEFAULT_HOST, help=f"Interface to bind (default: {DEFAULT_HOST})"
