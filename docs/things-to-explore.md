@@ -1,8 +1,9 @@
 # Things to explore
 
 A backlog of data sources and features that could be added on top of the existing
-scripts. Nothing here is implemented yet, and none of the API claims below have
-been verified. Check the endpoint, its terms, its robots.txt and whether it needs a
+scripts. The open `[ ]` items aren't implemented yet, and their API claims haven't
+been verified; entries without a checkbox are kept as the record of a source check
+(see OSV.dev under "Tech and news", and Lobsters). Check the endpoint, its terms, its robots.txt and whether it needs a
 key before building on it (see the Lobsters note under "More discussion sources"
 for why).
 
@@ -18,13 +19,10 @@ both READMEs in the same change. Then remove the item from this list.
 Chosen on 2026-10-19, in suggested order. Each is described in full in its section
 below; remove it from both places when it's done.
 
-1. **Vulnerability lookup via OSV.dev** (Tech and news): the most useful new source.
-   Its robots.txt-and-terms check passed on 2026-10-20 (see the entry below), so it
-   is ready to build, crediting each advisory's source.
-2. **Broken-link checker** (Combining existing scripts): joins `url_links.py` and
+1. **Broken-link checker** (Combining existing scripts): joins `url_links.py` and
    `url_availability.py`; the main design question is staying polite on big pages (a
    cap on links, a delay, each host checked sparingly).
-3. **Targeted test runs for `web-search`** (Repo and tooling): every research flow
+2. **Targeted test runs for `web-search`** (Repo and tooling): every research flow
    depends on it, and its fallback rules (missing key, quota message, transient
    error) have never been tested on purpose.
 
@@ -94,9 +92,9 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### New sources
 
-- [ ] **Vulnerability lookup** (OSV.dev, no key): known vulnerabilities for a package
-  and version across PyPI, npm, Go, crates.io and other ecosystems. Checked on
-  2026-10-20: **cleared to build**, with attribution.
+- **Vulnerability lookup (OSV.dev): checked and built.** Checked on 2026-10-20 and
+  built the same day as `osv_vulnerabilities.py` and the `package-vulnerabilities`
+  agent. The check, kept for the record:
   - **robots.txt:** `osv.dev/robots.txt` is only a `Sitemap:` line, with no
     `Disallow` rules for any client. `api.osv.dev` has no robots.txt (404).
   - **AI signals:** none found. There is no `Content-Signal` line, no `X-Robots-Tag`

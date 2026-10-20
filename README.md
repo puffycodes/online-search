@@ -62,6 +62,10 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`app/hottest_discussions/`](#apphottest_discussions) — small local web app for `hottest_tech_discussions.py`: a page with a "Show" drop-down and Refresh button that runs the script through a local server
 - [`.claude/agents/hottest-tech-discussion-summary.md`](#claude-code-agent-hottest-tech-discussion-summary) — Claude Code subagent that chains `hottest_tech_discussions.py`, `hn_thread.py`, two `web_search_*.py` engines, and `url_content.py` to research and summarize the top N (default 3) hottest discussions with cited sources, plus `hn_search.py` for earlier HN threads on request
 
+**[Software Security](#software-security)**
+- [`osv_vulnerabilities.py`](#osv_vulnerabilitiespy) — known security vulnerabilities of a package (optionally at one version) across PyPI, npm, Go, crates.io, Maven and other ecosystems, from OSV.dev (no API key), with duplicate advisories merged and each one's source credited
+- [`.claude/agents/package-vulnerabilities.md`](#claude-code-agent-package-vulnerabilities) — Claude Code subagent that calls `osv_vulnerabilities.py` and reports a named package's known vulnerabilities, their severity and the versions that fix them
+
 **[Web Search](#web-search)**
 - [`web_search_brave.py`](#web_search_bravepy) — top web search results for a query, via the Brave Search API (requires a free `BRAVE_API_KEY`)
 - [`web_search_duckduckgo.py`](#web_search_duckduckgopy) — top web search results for a query, by scraping DuckDuckGo via the `ddgs` package (no API key, but unofficial and rate-limit-prone)
@@ -3477,6 +3481,207 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running scri
 
 ---
 
+# Software Security
+
+---
+
+## osv_vulnerabilities.py
+
+Looks up the known security vulnerabilities of a package, optionally at one version, in [OSV.dev](https://osv.dev): Google's open vulnerability database, which aggregates advisories for PyPI, npm, Go, crates.io, Maven, NuGet, RubyGems, Packagist, Linux distributions and more. It uses the public query endpoint (`api.osv.dev/v1/query`). No API key or authentication required.
+
+OSV often holds the same vulnerability more than once, e.g. a GitHub advisory (`GHSA-…`) and a PyPI one (`PYSEC-…`) that list each other as aliases. The script merges those into one entry that names every advisory and the database it came from. The data is licensed per source (mostly [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/)), so the output always credits each advisory's source and links its osv.dev page. The robots.txt-and-terms check that cleared OSV.dev is recorded in [`docs/things-to-explore.md`](docs/things-to-explore.md).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 osv_vulnerabilities.py PACKAGE [VERSION] --ecosystem ECOSYSTEM [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `PACKAGE` (positional) | — | The name as its registry spells it: `jinja2`, `lodash`, `@angular/core`, `golang.org/x/net`, `org.apache.logging.log4j:log4j-core` (Maven `group:artifact`), … |
+| `VERSION` (positional, optional) | — | The version to check, e.g. `2.4.1`. Without it, every advisory that affects any version of the package is listed |
+| `-e`, `--ecosystem` | required | `PyPI`, `npm`, `Go`, `crates.io`, `Maven`, `NuGet`, `RubyGems`, `Packagist`, `Pub`, `Hex`, `Hackage`, `CRAN`, `GitHub Actions`, or a distribution with its release (`Debian:12`, `Ubuntu:22.04:LTS`). Matched case-insensitively; `pip`, `python`, `node`, `golang`, `cargo`, `gem`, `composer`, … also work |
+| `--limit N` | `50` | Show at most `N` vulnerabilities, most severe first. The count still covers all of them |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+$ python3 osv_vulnerabilities.py jinja2 2.4.1 -e PyPI --limit 3
+Querying OSV.dev for jinja2 2.4.1 (PyPI)...
+
+jinja2 2.4.1 (PyPI): 9 known vulnerabilities from 18 advisories
+
+[HIGH] GHSA-hj2j-77xm-mc5v (CVE-2016-10745)
+  Jinja2 sandbox escape vulnerability
+  fixed in: 2.8.1  |  published 2019-04-08
+  advisories: GHSA-hj2j-77xm-mc5v (GitHub Advisory Database); PYSEC-2019-220 (PyPI Advisory Database)
+  https://osv.dev/vulnerability/GHSA-hj2j-77xm-mc5v
+
+[HIGH] GHSA-462w-v97r-4m45 (CVE-2019-10906)
+  Jinja2 sandbox escape via string formatting
+  fixed in: 2.10.1  |  published 2019-04-07
+  advisories: GHSA-462w-v97r-4m45 (GitHub Advisory Database); PYSEC-2019-217 (PyPI Advisory Database)
+  https://osv.dev/vulnerability/GHSA-462w-v97r-4m45
+
+[HIGH] GHSA-8r7q-cvjq-x353 (CVE-2014-1402)
+  Incorrect Privilege Assignment in Jinja2
+  fixed in: 2.7.2  |  published 2014-05-19
+  advisories: GHSA-8r7q-cvjq-x353 (GitHub Advisory Database); PYSEC-2014-8 (PyPI Advisory Database)
+  https://osv.dev/vulnerability/GHSA-8r7q-cvjq-x353
+
+... and 6 more (raise --limit to see them)
+
+Data from OSV.dev (https://osv.dev), which aggregates the advisory databases named on each entry; each source's own licence applies (mostly CC-BY 4.0).
+```
+
+(Results move as advisories are published.) A malicious-package entry is labelled `[MALICIOUS]` and an advisory no source rated `[UNRATED]`. With no results, the script says so and warns that OSV gives the same empty answer for a package name it doesn't know.
+
+#### Tool usage (`--json`)
+
+```bash
+python3 osv_vulnerabilities.py lodash 4.17.15 -e npm --limit 1 --json
+```
+
+```json
+{
+  "package": "lodash",
+  "version": "4.17.15",
+  "ecosystem": "npm",
+  "count": 6,
+  "advisories": 6,
+  "complete": true,
+  "vulnerabilities": [
+    {
+      "id": "GHSA-r5fr-rjxr-66jc",
+      "url": "https://osv.dev/vulnerability/GHSA-r5fr-rjxr-66jc",
+      "summary": "lodash vulnerable to Code Injection via `_.template` imports key names",
+      "details": "### Impact The fix for [CVE-2021-23337](https://github.com/advisories/GHSA-35jh-r3h4-6jhm) added validation for the `variable` option in `_.template` but did not apply the same validation to `options.imports` key names. …",
+      "severity": "HIGH",
+      "cvss": [{ "type": "CVSS_V3", "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H" }],
+      "cve": ["CVE-2026-4800"],
+      "aliases": ["CVE-2026-4800"],
+      "malicious": false,
+      "fixed": ["4.18.0"],
+      "published": "2026-04-01",
+      "modified": "2026-10-17",
+      "advisories": [
+        { "id": "GHSA-r5fr-rjxr-66jc", "source": "GitHub Advisory Database", "url": "https://osv.dev/vulnerability/GHSA-r5fr-rjxr-66jc" }
+      ]
+    }
+  ],
+  "attribution": "Data from OSV.dev (https://osv.dev), which aggregates the advisory databases named on each entry; each source's own licence applies (mostly CC-BY 4.0)."
+}
+```
+
+- `count` — distinct vulnerabilities after merging; `advisories` — the advisory records behind them; `vulnerabilities` — cut to `--limit`.
+- `severity` — the rating a source gave (`CRITICAL` / `HIGH` / `MODERATE` / `LOW`; in practice the GitHub Advisory Database's), or `null`. `cvss` holds the vector strings only; no score is computed.
+- `fixed` — versions that fix the vulnerability for this package (empty when none is listed). `malicious` — `true` for an OpenSSF Malicious Packages (`MAL-…`) entry, meaning the package version itself is malware.
+- `complete` — `false` when OSV had more pages than the script fetched (only for huge packages, such as a distribution's `linux`).
+
+With `--json`, the progress line is suppressed and the result prints as a JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Normalize the ecosystem** — `canonical_ecosystem()` matches the name case-insensitively against `ECOSYSTEMS` (OSV's own list), then `ECOSYSTEM_ALIASES`; a release suffix after the first colon is kept. An unknown name is passed through for OSV to reject.
+2. **Query** — `fetch_vulns()` POSTs `{"package": {"name", "ecosystem"}, "version"}` (the version only when given) to `/v1/query` through `post_query()`, which surfaces OSV's own error message (e.g. `400: invalid ecosystem`). While the body carries a `next_page_token`, it asks again with that `page_token`, for up to `MAX_PAGES` pages.
+3. **Merge duplicates** — `group_vulns()` links records that name each other as aliases (directly or through a chain) or share a CVE id, with a small union-find. A shared alias that is neither a returned id nor a CVE (e.g. a Snyk id) doesn't link two records.
+4. **Summarize** — `summarize_group()` drops withdrawn records, picks the GHSA advisory as the main id when there is one, and collects the summary, clipped details, severity, CVSS vectors, CVEs, aliases, malicious flag, earliest published and latest modified dates, and each advisory with its source (`source_name()`, from the id prefix via `SOURCES`). `fixed_versions()` reads the `fixed` events of `ECOSYSTEM` / `SEMVER` ranges for the queried package (names compared PyPI-style, so `Foo_Bar` matches `foo-bar`); `GIT` ranges, which hold commit hashes, are skipped.
+5. **Sort and print** — `build_results()` orders malicious entries first, then by severity, newest first within each. The text report or the JSON follows, always ending with the attribution line.
+
+### Configuration
+
+| Constant | Default | Description |
+|---|---|---|
+| `QUERY_URL` | `https://api.osv.dev/v1/query` | The OSV query endpoint |
+| `VULN_PAGE_URL` | `https://osv.dev/vulnerability/{id}` | The page linked for each advisory |
+| `REQUEST_TIMEOUT` | `30` | Request timeout in seconds |
+| `MAX_PAGES` | `5` | Result pages to follow before marking the result incomplete |
+| `DEFAULT_LIMIT` | `50` | Default for `--limit` |
+| `DETAILS_CHARS` | `400` | Where `details` is cut |
+| `ECOSYSTEMS` / `ECOSYSTEM_ALIASES` | OSV's list / `pip`, `cargo`, … | Accepted ecosystem names |
+| `SOURCES` | `GHSA` → GitHub Advisory Database, … | Advisory-id prefix → source database, for attribution |
+
+### API reference
+
+- `canonical_ecosystem(value)` — OSV's spelling of an ecosystem name (see step 1).
+- `source_name(vuln_id)` — The database an advisory id came from, by its prefix; an unknown prefix is returned as itself.
+- `post_query(payload)` — POSTs one query and returns its JSON body; raises `requests.HTTPError` with OSV's message on an error status.
+- `fetch_vulns(package, ecosystem, version=None, max_pages=MAX_PAGES)` — Returns `(vulns, complete)`.
+- `group_vulns(vulns)` — Lists of records that are one vulnerability.
+- `fixed_versions(records, package, ecosystem)` — Fixed versions for the package, in OSV's order, de-duplicated.
+- `summarize_group(records, package, ecosystem)` — One merged vulnerability as a dict.
+- `build_results(vulns, package, ecosystem)` — Merged, sorted vulnerabilities without withdrawn ones.
+- `parse_args(argv=None)` / `print_report(payload)` / `main(argv=None)` — The CLI. Fatal errors go through `cli_utils.die()`.
+
+### Error handling
+
+- A network error, a timeout, or an error status exits with status 1 — plain `Error: OSV.dev lookup failed for <PACKAGE> (<ECOSYSTEM>): <reason>` on stderr, or `{"error": "..."}` with `--json`. An ecosystem name OSV doesn't know gives `400: invalid ecosystem`.
+- A missing package or `--ecosystem`, a blank package name, or a `--limit` below 1 is rejected by argument parsing (exit code 2), before any request is made.
+- An unknown package is not an error: OSV returns no vulnerabilities for it, exactly as for a clean one, and the script warns about that.
+
+### Notes / limitations
+
+- No known advisory isn't a guarantee: OSV covers published advisories only, and an empty result can also mean a misspelled name or the wrong ecosystem.
+- Whether a vulnerability matters depends on how a project uses the package; the script only matches the package and version against advisories.
+- Severity comes from whichever source rated it, in practice the GitHub Advisory Database; advisories from other sources are often unrated. CVSS vectors are passed through, not scored.
+- Merging on a shared CVE could, in principle, join two distinct advisories that cite the same CVE for one package; it's rare in practice.
+- OSV publishes no rate limit, but the script makes one request per result page (one for almost every package) and stops after `MAX_PAGES`. For whole databases, OSV offers [data dumps](https://google.github.io/osv.dev/data/) instead.
+- The data is licensed per source (most of it CC-BY 4.0, some CC0, MIT, BSD, Apache 2.0 or, for Ubuntu, CC-BY-SA 4.0); keep the attribution when passing results on.
+
+---
+
+## Claude Code agent: `package-vulnerabilities`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/package-vulnerabilities.md`. Like the other agents here, it calls no API itself — it shells out to [`osv_vulnerabilities.py`](#osv_vulnerabilitiespy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "does jinja2 2.4.1 have any vulnerabilities?", "is lodash 4.17.15 safe to use?", "what CVEs affect requests 2.19?" or "which version of golang.org/x/net fixes the HTTP/2 rapid reset bug?" from OSV.dev's current advisories, instead of from training data that misses recent disclosures.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about CVEs, security advisories, vulnerabilities, or the safe / fixed version of a named open-source package, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "package-vulnerabilities"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Takes each package the user names, as its registry spells it, and infers the ecosystem from the wording ("Python package" → PyPI); if a name is ambiguous across registries, it asks or says which one it assumed.
+2. Runs `python3 osv_vulnerabilities.py PACKAGE [VERSION] --ecosystem ECOSYSTEM --json` from the repo root, once per package, with the version only when the user gave one.
+3. Answers first (how many known vulnerabilities, how many high or critical), then lists the important ones with severity, id and CVE, summary, fixed version and osv.dev link, as a table when there are many. It gives the lowest version that clears them all when the fixed versions make that clear, leads with any malicious-package entry, and never calls a package "safe" on an empty result.
+4. Ends with a credit line naming OSV.dev and the source databases, as their CC-BY 4.0 licences require, and a caveat that only published advisories are covered. On failure it surfaces the `{"error": "..."}` from stderr, fixes an obviously wrong ecosystem name once, and retries at most once for a network error.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`osv_vulnerabilities.py`](#osv_vulnerabilitiespy) |
+
+### Notes / limitations
+
+- Requires `osv_vulnerabilities.py` and its `cli_utils.py` helper (plus the `requests` dependency) to be present and runnable from the repo root.
+- Only as good as the package name and ecosystem it picks; a wrong one gives an empty result that looks like a clean package.
+- The "lowest version that clears them all" is the agent's reading of the per-vulnerability fixed versions, not a figure the script computes; across several release lines it lists fixes per vulnerability instead.
+- Inherits all the limitations of [`osv_vulnerabilities.py`](#osv_vulnerabilitiespy) itself.
+
+---
+
 # Web Search
 
 ---
@@ -5055,7 +5260,7 @@ Small helpers shared by the command-line scripts: UTF-8 output, uniform error ex
 - `require_env(name, script, as_json=False)` — Returns environment variable `name`, or calls `die()` (status code 1) with `"<name> environment variable must be set. See the module docstring in <script> for how to obtain one."` if it is unset or empty. Used by the six `web_search_*.py` scripts that need an API key, each calling `load_dotenv()` first so a `.env` value counts.
 - `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the four `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`, `url_metadata.py`), which all take a URL positional and reject a bare domain/path before making any request.
 - `response_text(response)` — A `requests` response's body as text, decoded correctly. When the `Content-Type` header names no charset, `requests` falls back to ISO-8859-1 for `text/*`, which garbles UTF-8 pages ("—" comes out as "â€”"). In that case this uses the encoding `requests` detects from the bytes; a charset the server names is left alone. Used by `url_content.py`, `url_links.py` and `url_metadata.py` (not `url_availability.py`, which never reads the body).
-- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the four price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
+- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the four price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py`, `market_top_volume.py` and `osv_vulnerabilities.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
 - `non_negative_int(value)` — Like `positive_int`, but `0` is allowed; for options where 0 means "none" or "no limit": `--replies` / `--max-chars` (`hn_thread.py`) and `hn_search.py`'s `--max-chars` and `--min-points`.
 - `bounded_int(maximum)` — Returns an argparse `type` callable for an integer from `1` to `maximum` (rejected as `positive_int` does, or with `must be at most <maximum>`); wired to `--top` / `--depth` in `hn_thread.py`.
 - `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).
