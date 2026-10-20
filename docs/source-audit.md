@@ -111,8 +111,11 @@ page that is disallowed, opted out of AI input, or whose robots.txt can't be rea
 a redirect to another page is checked too. `hottest-tech-discussion-summary` passes
 it on every fetch and reports a refused page's link as "blocked by the site's
 robots.txt". A URL the user names is still fetched without it, as a user-directed
-fetch; the `url-content` and `url-summary` agents could adopt it too if that
-middle case should be strict.
+fetch; for that middle case, the `url-content` and `url-summary` agents pass
+`--warn-robots`: the page is still fetched, and a site that opts out of AI input
+(`Content-Signal: ai-input=no`) or whose robots.txt asks automated clients not to
+fetch the page gets a one-line note in the report. (The second note is what
+catches Lobsters: its `ai-input=no` applies only to the search engines it names.)
 
 ## Allowed
 

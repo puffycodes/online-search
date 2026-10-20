@@ -474,3 +474,92 @@ class TestRespectRobots:
                             lambda url, ua, token, timeout: seen.append((url, ua, token, timeout)))
         uc.robots_refusal("https://x.com/a", 7)
         assert seen == [("https://x.com/a", uc.USER_AGENT, "online-search-url-content", 7)]
+
+
+class TestWarnRobots:
+    def _wire(self, monkeypatch, ai_input=None, disallowed=None, final_url=None):
+        noted, refused = [], []
+
+        def fake_fetch(url, timeout, max_chars, as_text):
+            return {
+                "url": url, "final_url": final_url or url, "status_code": 200,
+                "content_type": "text/html", "title": "T", "length": 2,
+                "truncated": False, "text_extracted": True, "content": "hi",
+            }
+
+        def fake_notes(url, timeout):
+            noted.append(url)
+            return {"ai_input": ai_input, "disallowed": disallowed}
+
+        monkeypatch.setattr(uc, "fetch_content", fake_fetch)
+        monkeypatch.setattr(uc, "robots_notes", fake_notes)
+        monkeypatch.setattr(uc, "robots_refusal", lambda url, timeout: refused.append(url))
+        return noted, refused
+
+    def test_flag_parsed(self):
+        assert uc.parse_args(["https://x.com"]).warn_robots is False
+        assert uc.parse_args(["https://x.com", "--warn-robots"]).warn_robots is True
+
+    def test_cannot_combine_with_respect_robots(self):
+        with pytest.raises(SystemExit) as exc:
+            uc.parse_args(["https://x.com", "--warn-robots", "--respect-robots"])
+        assert exc.value.code == 2
+
+    def test_notes_reported_and_page_still_returned(self, monkeypatch, capsys):
+        noted, refused = self._wire(monkeypatch, ai_input="opt-out reason",
+                                    disallowed="disallow reason")
+        uc.main(["https://x.com/a", "--warn-robots", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["content"] == "hi"
+        assert payload["ai_input_warning"] == "opt-out reason"
+        assert payload["robots_disallow_note"] == "disallow reason"
+        assert payload["robots_checked"] is True
+        assert noted == ["https://x.com/a"]
+        assert refused == []  # never the refusing check
+
+    def test_no_notes_are_null(self, monkeypatch, capsys):
+        self._wire(monkeypatch)
+        uc.main(["https://x.com/a", "--warn-robots", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["ai_input_warning"] is None
+        assert payload["robots_disallow_note"] is None
+
+    def test_checks_the_page_after_redirects(self, monkeypatch, capsys):
+        noted, _ = self._wire(monkeypatch, final_url="https://y.com/b")
+        uc.main(["https://x.com/a", "--warn-robots", "--json"])
+        assert noted == ["https://y.com/b"]
+
+    def test_not_checked_without_flag(self, monkeypatch, capsys):
+        noted, _ = self._wire(monkeypatch, ai_input="should not appear", disallowed="nor this")
+        uc.main(["https://x.com/a", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert noted == []
+        assert payload["ai_input_warning"] is None
+        assert payload["robots_disallow_note"] is None
+        assert payload["robots_checked"] is False
+
+    def test_text_report_shows_both(self, monkeypatch, capsys):
+        self._wire(monkeypatch, ai_input="x.com's robots.txt opts out of AI input",
+                   disallowed="x.com's robots.txt asks automated clients not to fetch /a")
+        uc.main(["https://x.com/a", "--warn-robots"])
+        out = capsys.readouterr().out
+        assert "Warning: x.com's robots.txt opts out of AI input" in out
+        assert "Note: x.com's robots.txt asks automated clients not to fetch /a" in out
+
+    def test_respect_robots_reports_null_notes(self, monkeypatch, capsys):
+        noted, _ = self._wire(monkeypatch)
+        monkeypatch.setattr(uc, "robots_refusal", lambda url, timeout: None)
+        uc.main(["https://x.com/a", "--respect-robots", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["robots_checked"] is True
+        # A page with either problem would have been refused outright.
+        assert payload["ai_input_warning"] is None
+        assert payload["robots_disallow_note"] is None
+        assert noted == []
+
+    def test_robots_notes_uses_script_identity(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(uc.robots, "review",
+                            lambda url, ua, token, timeout: seen.append((url, ua, token, timeout)))
+        uc.robots_notes("https://x.com/a", 7)
+        assert seen == [("https://x.com/a", uc.USER_AGENT, "online-search-url-content", 7)]

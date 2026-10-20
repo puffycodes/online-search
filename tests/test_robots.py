@@ -210,3 +210,44 @@ class TestCheck:
         self._serve(monkeypatch, problem="its robots.txt returned HTTP 503")
         assert robots.check("https://x.com/a", UA, TOKEN) == (
             "x.com: its robots.txt returned HTTP 503, which counts as a full disallow")
+
+
+class TestReview:
+    def _serve(self, monkeypatch, text=None, problem=None):
+        monkeypatch.setattr(robots, "fetch", lambda url, ua, timeout=None: (text, problem))
+
+    def test_ai_opt_out_reason(self, monkeypatch):
+        self._serve(monkeypatch, "User-agent: *\nContent-Signal: ai-input=no\n")
+        assert robots.review("https://x.com/a", UA, TOKEN) == {
+            "ai_input": "x.com's robots.txt opts out of AI input (Content-Signal: ai-input=no)",
+            "disallowed": None,
+        }
+
+    def test_disallow_reason(self, monkeypatch):
+        self._serve(monkeypatch, "User-agent: *\nDisallow: /\n")
+        assert robots.review("https://x.com/a?b=1", UA, TOKEN) == {
+            "ai_input": None,
+            "disallowed": "x.com's robots.txt asks automated clients not to fetch /a?b=1",
+        }
+
+    def test_both(self, monkeypatch):
+        self._serve(monkeypatch, "User-agent: *\nContent-Signal: ai-input=no\nDisallow: /\n")
+        notes = robots.review("https://x.com/a", UA, TOKEN)
+        assert notes["ai_input"] and notes["disallowed"]
+
+    def test_neither(self, monkeypatch):
+        self._serve(monkeypatch, "User-agent: *\nAllow: /\n")
+        assert robots.review("https://x.com/a", UA, TOKEN) == {"ai_input": None, "disallowed": None}
+
+    def test_unreadable_robots_gives_no_notes(self, monkeypatch):
+        self._serve(monkeypatch, problem="its robots.txt returned HTTP 503")
+        assert robots.review("https://x.com/a", UA, TOKEN) == {"ai_input": None, "disallowed": None}
+
+    def test_lobsters_layout_gets_the_disallow_note(self, monkeypatch):
+        # The opt-out sits in the named search engines' group, so it doesn't
+        # apply to us; the * group's Disallow: / still gives the softer note.
+        self._serve(monkeypatch, "User-agent: GoogleBot\nAllow: /\n\n"
+                                 "Content-Signal: ai-input=no\n\nUser-agent: *\nDisallow: /\n")
+        notes = robots.review("https://lobste.rs/s/abc", UA, TOKEN)
+        assert notes["ai_input"] is None
+        assert notes["disallowed"] == "lobste.rs's robots.txt asks automated clients not to fetch /s/abc"

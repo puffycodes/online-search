@@ -4743,6 +4743,7 @@ python3 url_content.py URL [--timeout SECONDS] [--max-chars N] [--text] [--json]
 | `--max-chars N` | 20000 | Maximum characters of content to return; longer bodies are truncated |
 | `--text` | off | Extract just the human-readable text of an HTML page (via BeautifulSoup), with markup and script/style content stripped, instead of returning the raw body, and report the page's title. Requires `beautifulsoup4`. |
 | `--respect-robots` | off | Ask the site first: read its `robots.txt` (via [`robots.py`](#robotspy)) and refuse the page if a rule disallows it for this script, if the site opts out of AI input (`Content-Signal: ai-input=no`), or if robots.txt can't be read because of a server or connection error. A redirect to another page is checked too. Use it whenever an agent, not the user, chose the URL |
+| `--warn-robots` | off | The gentler mode, for a URL the user chose: fetch the page regardless, then report what the robots.txt of the page the content came from (after redirects) asks, without refusing anything. An AI opt-out (`Content-Signal: ai-input=no`) goes in `ai_input_warning` (a `Warning:` line in the text report); a rule asking automated clients not to fetch the page goes in the softer `robots_disallow_note` (a `Note:` line). An unreadable robots.txt gives neither. Can't be combined with `--respect-robots` (exit code 2) |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
@@ -4777,7 +4778,9 @@ python3 url_content.py https://example.com --json
   "truncated": false,
   "text_extracted": false,
   "content": "<!doctype html>\n<html>\n...",
-  "robots_checked": false
+  "robots_checked": false,
+  "ai_input_warning": null,
+  "robots_disallow_note": null
 }
 ```
 
@@ -4800,7 +4803,9 @@ python3 url_content.py https://example.com --text --json
   "truncated": false,
   "text_extracted": true,
   "content": "Example Domain Example Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more",
-  "robots_checked": false
+  "robots_checked": false,
+  "ai_input_warning": null,
+  "robots_disallow_note": null
 }
 ```
 
@@ -4811,9 +4816,10 @@ python3 url_content.py https://example.com --text --json
 1. **Validate the URL** — Rejects a URL that doesn't start with `http://` or `https://` before making any request.
 2. **Ask robots.txt (if `--respect-robots`)** — `robots_refusal()` runs `robots.check()` with this script's `User-Agent` and its product token `online-search-url-content`. A refusal exits with status 1 and an error starting `blocked:`, before the page is requested.
 3. **Fetch** — Issues a `GET` with a browser-like `User-Agent`, following redirects. With `--respect-robots`, a redirect that ends on a different page (ignoring any `#fragment`) is checked again, and its content discarded if that page is refused (`blocked after redirect to …:`).
-4. **Check the response** — A `4xx`/`5xx` status raises `requests.HTTPError`; a `Content-Type` that doesn't look textual (no `text/`, `json`, `xml`, or `javascript` marker) raises `ValueError` rather than returning a garbled/binary body.
-5. **Extract (if `--text`)** — For an HTML page (or one with no `Content-Type`), `page_title()` first reads the title with [`url_metadata.py`](#url_metadatapy)'s `extract_metadata()`, the same rules as that script. Then the body is parsed with BeautifulSoup (`html.parser`), `<script>`/`<style>`/`<noscript>` tags are removed entirely, and the remaining text is collapsed into a single space-separated run via `" ".join(soup.get_text(separator=" ").split())`.
-6. **Truncate** — Cuts the (possibly extracted) text to `--max-chars` characters, along with the full untruncated length and a `truncated` flag.
+4. **Note (if `--warn-robots`)** — after the fetch, `robots_notes()` runs `robots.review()` on `final_url` and records its two reasons, or `null`, as `ai_input_warning` and `robots_disallow_note`.
+5. **Check the response** — A `4xx`/`5xx` status raises `requests.HTTPError`; a `Content-Type` that doesn't look textual (no `text/`, `json`, `xml`, or `javascript` marker) raises `ValueError` rather than returning a garbled/binary body.
+6. **Extract (if `--text`)** — For an HTML page (or one with no `Content-Type`), `page_title()` first reads the title with [`url_metadata.py`](#url_metadatapy)'s `extract_metadata()`, the same rules as that script. Then the body is parsed with BeautifulSoup (`html.parser`), `<script>`/`<style>`/`<noscript>` tags are removed entirely, and the remaining text is collapsed into a single space-separated run via `" ".join(soup.get_text(separator=" ").split())`.
+7. **Truncate** — Cuts the (possibly extracted) text to `--max-chars` characters, along with the full untruncated length and a `truncated` flag.
 
 ### Configuration
 
@@ -4832,9 +4838,10 @@ These are set as constants near the top of the file — edit them directly to ch
 - `page_title(html, base_url)` — The page's `<title>`, falling back to its `og:title`, or `None`; via `url_metadata.extract_metadata()`.
 - `fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=False)` — Issues the `GET` request and returns `{url, final_url, status_code, content_type, title, length, truncated, text_extracted, content}`. With `as_text=True`, reads an HTML page's title with `page_title()` and runs the body through `extract_text()` before truncating. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-textual `Content-Type`, and `ImportError` if `as_text` is set but `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
 - `robots_refusal(url, timeout)` — `None` if `robots.check()` lets this script fetch `url` for AI use, otherwise the reason it may not.
-- `format_result(result)` — Renders a `fetch_content()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url`, a "Title:" line when there is a title, and a "(truncated)" marker when applicable.
-- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--max-chars` / `--text` / `--respect-robots` / `--json` CLI flags.
-- `main(argv=None)` — Entry point; validates the URL scheme, runs the `--respect-robots` check (before the fetch, and again after a redirect to another page), adds `robots_checked` (whether it ran) to the result, calls `fetch_content()`, handles top-level errors (including a missing `beautifulsoup4` for `--text`), and prints the result (either human-readable or JSON, depending on `--json`).
+- `robots_notes(url, timeout)` — `robots.review()` for `url` with this script's identity: `{"ai_input": reason or None, "disallowed": reason or None}`.
+- `format_result(result)` — Renders a `fetch_content()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url`, a "Title:" line when there is a title, a "Warning:" line when `ai_input_warning` is set, a "Note:" line when `robots_disallow_note` is set, and a "(truncated)" marker when applicable.
+- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--max-chars` / `--text` / `--respect-robots` / `--warn-robots` / `--json` CLI flags (`--respect-robots` and `--warn-robots` are mutually exclusive).
+- `main(argv=None)` — Entry point; validates the URL scheme, runs the `--respect-robots` check (before the fetch, and again after a redirect to another page), runs the `--warn-robots` check after the fetch, adds `robots_checked` (whether either check ran), `ai_input_warning` and `robots_disallow_note` to the result, calls `fetch_content()`, handles top-level errors (including a missing `beautifulsoup4` for `--text`), and prints the result (either human-readable or JSON, depending on `--json`).
 
 ### Error handling
 
@@ -4852,7 +4859,8 @@ These are set as constants near the top of the file — edit them directly to ch
 - With `--text`: extraction is a blunt "drop script/style, flatten the rest to one line" pass, not a readability/boilerplate-removal algorithm — nav links, cookie banners, and footers come through mixed in with the article text, and no paragraph breaks are preserved.
 - Content-type sniffing is a simple substring check on the `Content-Type` header, not a body sniff — a mislabeled response (e.g. an image served as `text/plain`) would pass through and a genuinely textual response with an unusual `Content-Type` could be rejected.
 - Truncation is a hard character cutoff, not sentence/tag-aware — a truncated HTML response (without `--text`) can end mid-tag.
-- `--respect-robots` is off by default, so a URL a person names is fetched as a browser would. The research agent always passes it, because it chooses its URLs itself (see the [source audit](docs/source-audit.md)). It costs one extra request per page.
+- `--respect-robots` is off by default, so a URL a person names is fetched as a browser would. The research agent always passes it, because it chooses its URLs itself (see the [source audit](docs/source-audit.md)). The `url-content` and `url-summary` agents, whose URLs come from the user, pass `--warn-robots` instead. Either costs one extra request per page.
+- `--warn-robots` follows Content-Signal's grouping: a signal applies only to the `User-agent` group it sits in. Lobsters, for one, puts its `ai-input=no` in the group for the search engines it names, not in `*`, so a Lobsters page gets no `ai_input_warning`. That's why the mode also reports `Disallow` rules: Lobsters' `*` group is `Disallow: /`, so it gets the `robots_disallow_note` (checked live 2026-10-20).
 - Some sites block automated requests regardless of `User-Agent` (bot-detection, Cloudflare challenges, etc.), which can surface as a `4xx`/`5xx` error even though the page is reachable in a real browser.
 - A single attempt, no retry — a transient network hiccup is reported as a connection-level error rather than retried internally.
 
@@ -4890,6 +4898,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
+- Passes `--warn-robots` on every fetch: the user chose the page, so it is always fetched, but when the site opts out of AI input (`Content-Signal: ai-input=no`) or its robots.txt asks automated clients not to fetch the page, the report starts with a one-line note saying so, then answers as usual.
 - Requires `url_content.py` and the `url_metadata.py` / `cli_utils.py` modules it imports (and its `requests` dependency) to be present and runnable from the repo root; `--text` additionally requires `beautifulsoup4`.
 - Without `--text`, retrieves raw content only — no HTML-tag stripping, link-following, or JavaScript rendering; the agent says so if the user seems surprised by markup in the output or by sparse content from a JavaScript-heavy page.
 - `--text` extraction is blunt (drops script/style, flattens the rest to one line) — nav/footer/cookie-banner text comes through mixed in with the article text, with no paragraph breaks; the agent says so if the user expected clean article-only text.
@@ -5246,6 +5255,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
+- Passes `--warn-robots` on every fetch: the user chose the pages, so each is always fetched and summarized, but a page whose site opts out of AI input (`Content-Signal: ai-input=no`) or whose robots.txt asks automated clients not to fetch it gets a one-line note under its label.
 - Requires `url_content.py` and the `url_metadata.py` / `cli_utils.py` modules it imports (and its `requests`/`beautifulsoup4` dependencies) to be present and runnable from the repo root.
 - Fetches each URL's initial HTML response only — no JavaScript rendering, so a JavaScript-heavy page may summarize as little more than its shell.
 - `--text` extraction is blunt (drops script/style, flattens the rest to one line, no paragraph breaks) — the agent summarizes from that flattened text, so nav/footer/cookie-banner text mixed into the extracted content can occasionally bleed into a summary.
@@ -5306,7 +5316,7 @@ Small helpers shared by the command-line scripts: UTF-8 output, uniform error ex
 
 ## robots.py
 
-Shared helper behind [`url_content.py`](#url_contentpy)'s `--respect-robots`: may this client fetch a page, and may an AI use it? It reads a site's `robots.txt` by the rules of [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309), plus its `Content-Signal` lines ([contentsignals.org](https://contentsignals.org/)), e.g. `Content-Signal: search=yes, ai-input=no`. Not a CLI — it is imported, not run. Added after the [source audit](docs/source-audit.md) found that agents fetched pages they had chosen themselves without asking.
+Shared helper behind [`url_content.py`](#url_contentpy)'s `--respect-robots` and `--warn-robots`: may this client fetch a page, and may an AI use it? It reads a site's `robots.txt` by the rules of [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309), plus its `Content-Signal` lines ([contentsignals.org](https://contentsignals.org/)), e.g. `Content-Signal: search=yes, ai-input=no`. Not a CLI — it is imported, not run. Added after the [source audit](docs/source-audit.md) found that agents fetched pages they had chosen themselves without asking.
 
 Python's own `urllib.robotparser` isn't used: it takes the *first* matching rule rather than the longest, so `Allow: /` before `Disallow: /search` would allow `/search`, and it ignores `Content-Signal`.
 
@@ -5325,6 +5335,7 @@ Python's own `urllib.robotparser` isn't used: it takes the *first* matching rule
 ### API reference
 
 - `check(url, user_agent, token, timeout=TIMEOUT_SECONDS)` — `None` if the page may be fetched and given to an AI, otherwise the reason it may not, e.g. `"example.com's robots.txt opts out of AI input (Content-Signal: ai-input=no)"`, `"example.com's robots.txt disallows /search for <token>"` or `"example.com: its robots.txt returned HTTP 503, which counts as a full disallow"`.
+- `review(url, user_agent, token, timeout=TIMEOUT_SECONDS)` — For `--warn-robots`: what the robots.txt asks, as notes rather than a verdict, from one fetch. Returns `{"ai_input": reason or None, "disallowed": reason or None}`: the first if the site opts out of AI input (`Content-Signal: ai-input=no`), the second if a rule asks automated clients not to fetch the page (`"example.com's robots.txt asks automated clients not to fetch /path"`). An unreadable robots.txt gives `None` for both, since no preference is known.
 - `fetch(url, user_agent, timeout=TIMEOUT_SECONDS)` — `(text, problem)` for the site's robots.txt (step 1).
 - `parse(text)` — `(groups, global_signals)`; each group is `{"agents", "rules": [(allow, pattern)], "signals": [(path_or_None, {key: value})]}`.
 - `parse_signal(value)` — One `Content-Signal` value as `(path_or_None, {key: value})`, lowercased.

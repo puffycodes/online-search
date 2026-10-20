@@ -17,6 +17,7 @@
     - The maximum number of characters to return (default: 20,000).
     - Whether to extract readable text instead of returning the raw content (default: no).
     - Whether to respect the site's robots.txt (default: no). Agents pass it whenever they, not the user, chose the URL.
+    - Or, instead, whether to note what the site's robots.txt asks (default: no). Agents pass it when the user chose the URL. The two can't be combined (exit code 2).
 - When respecting robots.txt, check the page before requesting it, as the product token online-search-url-content:
     - Refuse it if a robots.txt rule disallows it (RFC 9309: the longest matching rule wins, Allow wins a tie), if the site opts out of AI input (Content-Signal: ai-input=no), or if robots.txt can't be read because of a server error or a failed connection. A missing robots.txt (4xx) allows everything.
     - A refusal fails with an error starting "blocked:" and the reason, without requesting the page.
@@ -27,12 +28,16 @@
 - When extracting text, remove scripts and styles, and join the rest into one run of text.
     - If beautifulsoup4 isn't installed, fail with an error.
     - For an HTML page (or one with no content type), also report its {{Title}}: the page's title, else its og:title, else none. From the same download, with no second request.
+- When noting, fetch the page as usual, then read the robots.txt of the page the content came from (after redirects), as the same product token, without refusing anything:
+    - {{AI Opt-out Reason}} if the site opts out of AI input (Content-Signal: ai-input=no).
+    - {{Disallow Reason}}, the softer note, if a rule asks automated clients not to fetch the page.
+    - Neither if robots.txt can't be read.
 - Cut the content to the maximum length.
 - Output:
-    - {{URL}} {{Final URL}} {{Status Code}} {{Content Type}} {{Title}} (when there is one) {{Length}}
+    - {{URL}} {{Final URL}} {{Status Code}} {{Content Type}} {{Title}} (when there is one) Warning: {{AI Opt-out Reason}} (when there is one) Note: {{Disallow Reason}} (when there is one) {{Length}}
     - Whether the content was cut off.
     - {{Content}}
-    - With --json: {url, final_url, status_code, content_type, title, length, truncated, text_extracted, content, robots_checked}; title is null without text extraction, for non-HTML content, or when the page has none.
+    - With --json: {url, final_url, status_code, content_type, title, length, truncated, text_extracted, content, robots_checked, ai_input_warning, robots_disallow_note}; robots_checked is whether either check ran, ai_input_warning is the AI opt-out reason or null, and robots_disallow_note the disallow reason or null; title is null without text extraction, for non-HTML content, or when the page has none.
 - Support a --json option:
     - With it, skip any progress line and print the result as a single JSON value on stdout.
     - Without it, print a human-readable report.

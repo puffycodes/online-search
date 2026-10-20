@@ -14,8 +14,9 @@ Python's own urllib.robotparser isn't used: it takes the first matching rule
 rather than the longest (so `Allow: /` before `Disallow: /search` would allow
 /search) and it ignores Content-Signal.
 
-Used by url_content.py's --respect-robots. Not a CLI - this module is
-imported, not run.
+Used by url_content.py's --respect-robots (check(): refuse the page) and
+--warn-robots (review(): fetch it, but report an AI opt-out or a
+disallowing rule). Not a CLI - this module is imported, not run.
 """
 
 import re
@@ -172,6 +173,10 @@ def fetch(url, user_agent, timeout=TIMEOUT_SECONDS):
     return response.content[:MAX_BYTES].decode("utf-8", errors="replace"), None
 
 
+def _ai_opt_out_reason(host):
+    return f"{host}'s robots.txt opts out of AI input (Content-Signal: ai-input=no)"
+
+
 def check(url, user_agent, token, timeout=TIMEOUT_SECONDS):
     """None if `url` may be fetched and given to an AI, else the reason it may not.
 
@@ -187,5 +192,29 @@ def check(url, user_agent, token, timeout=TIMEOUT_SECONDS):
     if not is_allowed(groups, token, path):
         return f"{host}'s robots.txt disallows {path} for {token}"
     if not ai_input_allowed(groups, global_signals, token, path):
-        return f"{host}'s robots.txt opts out of AI input (Content-Signal: ai-input=no)"
+        return _ai_opt_out_reason(host)
     return None
+
+
+def review(url, user_agent, token, timeout=TIMEOUT_SECONDS):
+    """What `url`'s robots.txt asks, as notes rather than a verdict.
+
+    For a page the user chose, where the fetch goes ahead regardless and
+    the site's wishes are only reported. Returns {"ai_input": reason or
+    None, "disallowed": reason or None}: the first if the site opts out of
+    AI input (Content-Signal: ai-input=no), the second if a rule asks
+    automated clients like `token` not to fetch the page. An unreadable
+    robots.txt gives None for both, since no preference is known.
+    """
+    notes = {"ai_input": None, "disallowed": None}
+    text, problem = fetch(url, user_agent, timeout)
+    if problem:
+        return notes
+    host = urlsplit(url).netloc
+    groups, global_signals = parse(text)
+    path = url_path(url)
+    if not ai_input_allowed(groups, global_signals, token, path):
+        notes["ai_input"] = _ai_opt_out_reason(host)
+    if not is_allowed(groups, token, path):
+        notes["disallowed"] = f"{host}'s robots.txt asks automated clients not to fetch {path}"
+    return notes

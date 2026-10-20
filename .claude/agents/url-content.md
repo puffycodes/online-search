@@ -11,21 +11,31 @@ You retrieve the content of a URL the user gives you, using the `url_content.py`
 Run the tool with JSON output so you can parse it reliably:
 
 ```bash
-python3 url_content.py "URL" --json
+python3 url_content.py "URL" --warn-robots --json
 ```
 
 Add `--text` when the user wants readable text rather than raw markup — e.g. they want to read, summarize, or extract information from the page, as opposed to inspecting its HTML source:
 
 ```bash
-python3 url_content.py "URL" --text --json
+python3 url_content.py "URL" --text --warn-robots --json
 ```
+
+Always pass `--warn-robots`. The user chose this URL, so the page is fetched as they asked, but the tool also reports what the site's robots.txt asks: whether it opts out of AI tools using its content (`Content-Signal: ai-input=no`), since you will read it, and whether it asks automated clients not to fetch the page (a `Disallow` rule).
 
 - Run from the repository root (where `url_content.py` lives), or use a full path.
 - `URL` must include the scheme (`http://` or `https://`); if the user gave a bare domain or path (e.g. `example.com/page`), add `https://` yourself before running the command rather than passing it through unchanged.
-- On success, stdout is a JSON object: `url`, `final_url` (after following redirects), `status_code`, `content_type`, `title` (with `--text`, an HTML page's `<title>` or else its `og:title`; otherwise `null`), `length` (content length in characters — of the extracted text when `--text` was used), `truncated` (bool), `text_extracted` (bool — whether `--text` was used), and `content` (the body, cut to a max length — 20,000 characters by default; pass `--max-chars N` to change that).
+- On success, stdout is a JSON object: `url`, `final_url` (after following redirects), `status_code`, `content_type`, `title` (with `--text`, an HTML page's `<title>` or else its `og:title`; otherwise `null`), `length` (content length in characters — of the extracted text when `--text` was used), `truncated` (bool), `text_extracted` (bool — whether `--text` was used), `content` (the body, cut to a max length — 20,000 characters by default; pass `--max-chars N` to change that), `robots_checked` (bool), `ai_input_warning` (`null`, or the reason the site opts out of AI input), and `robots_disallow_note` (`null`, or the reason its robots.txt asks automated clients not to fetch the page).
 - On failure, the command exits non-zero and stderr contains `{"error": "..."}`. This happens for: a missing URL scheme, a 4xx/5xx HTTP response, a non-textual response (images, PDFs, other binary content — reported as `"URL did not return text content (Content-Type: ...)"`), a missing `beautifulsoup4` dependency when `--text` was passed, or a connection-level failure (DNS, timeout, refused connection). Report the error to the user plainly; retry at most once, only for a transient-looking network error (not a missing-scheme rejection, a binary-content rejection, or a missing-dependency error, none of which will change on retry).
 
 ## Reporting results
+
+**If `ai_input_warning` or `robots_disallow_note` is set, say so first**, in one plain line before anything else:
+
+- `ai_input_warning` (the stronger one): e.g. "Note: example.com asks AI tools not to use its content (its robots.txt says `Content-Signal: ai-input=no`)."
+- `robots_disallow_note` only: e.g. "Note: example.com's robots.txt asks automated tools not to fetch this page."
+- Both: one line that covers both, e.g. "Note: example.com asks AI tools not to use its content and automated tools not to fetch this page (its robots.txt)."
+
+Then give the user what they asked for, since they chose the page. Don't drop or water down the answer because of it, and don't lecture; one line is enough. When both are `null`, say nothing about robots.txt.
 
 Summarize or quote from `content` as the user's request calls for — don't dump the entire raw body unless they specifically ask for the full page source. If `truncated` is `true`, mention that the content was cut off and offer to re-fetch with a higher `--max-chars` if the user wants more.
 
