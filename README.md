@@ -31,7 +31,9 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-candlestick-chart.md`](#claude-code-agent-stock-candlestick-chart) — Claude Code subagent that calls `stock_candlestick_chart.py` and produces a candlestick chart for a named stock, index, currency pair, crypto coin or commodity future
 - [`stock_rebased_chart.py`](#stock_rebased_chartpy) — rebases a series of stocks' closing prices to 100 as of a common date and plots them together, rendered to a PNG with matplotlib
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks, indices, currency pairs, crypto coins or commodity futures
-- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing and the cookie + crumb `quoteSummary` fetch, used by the three price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py`, `stock_holders.py` and `app/stock_information/`
+- [`stock_risk.py`](#stock_riskpy) — how risky one or more instruments' prices have been: annualized volatility, the worst peak-to-trough drawdown and its recovery, distance from the high, and the correlation of each pair, via `indicators.py`
+- [`.claude/agents/stock-risk.md`](#claude-code-agent-stock-risk) — Claude Code subagent that calls `stock_risk.py` and reports how volatile named stocks, indices, currency pairs, crypto coins or commodity futures have been, their worst falls, and how closely they moved together
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing and the cookie + crumb `quoteSummary` fetch, used by the four price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py`, `stock_holders.py` and `app/stock_information/`
 - [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py`, `stock_fundamental.py` and `stock_intrinsic_value.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
@@ -1477,9 +1479,212 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ---
 
+## stock_risk.py
+
+Describes how risky one or more instruments' prices have been over a window — annualized **volatility**, the worst peak-to-trough **drawdown** and whether it recovered, how far the last close sits **below the high**, and the **correlation** of each pair — using [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`), shared with the other price scripts through [`yahoo_finance.py`](#yahoo_financepy). The figures come from [`indicators.py`](#indicatorspy)'s `volatility()`, `max_drawdown()` and `correlation()`; this script adds the fetching, the choice of price basis, the annualization and the date alignment between symbols. No API key or authentication required. For what each figure means in plain English, see [`docs/indicators.md`](docs/indicators.md) (sections 7–10).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 stock_risk.py SYMBOL [SYMBOL ...] [--benchmark SYMBOL] [--range RANGE | --last N] [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `SYMBOL ...` (positional) | — | One or more tickers in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`), crypto (`BTC-USD`) and futures / commodities (`GC=F`). Repeats (in any letter case) are measured once |
+| `--benchmark SYMBOL` | — | One more series (e.g. `^GSPC`) to read the others against: it gets the same figures and joins every correlation pair. A benchmark also listed as a symbol is measured once, as the benchmark |
+| `--range RANGE` | `1y` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
+| `--last N` | — | Use only the most recent `N` sessions (mutually exclusive with `--range`) |
+| `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+```
+$ python3 stock_risk.py AAPL MSFT --benchmark ^GSPC
+Measuring risk for AAPL, MSFT, ^GSPC...
+
+AAPL - NasdaqGS (USD)
+  251 session(s), 2025-10-20 -> 2026-10-19  [adj_close, 252 sessions/year]
+  change      : +31.3%  (261.2748 -> 342.9400)
+  volatility  : 24.1% a year
+  worst fall  : -13.8%  2025-12-02 (285.4131) -> 2026-01-20 (246.0303), recovered 2026-05-06
+  from high   : -0.2%  (high 343.4600 on 2026-10-16)
+
+MSFT - NasdaqGS (USD)
+  251 session(s), 2025-10-20 -> 2026-10-19  [adj_close, 252 sessions/year]
+  change      : +4.1%  (512.5727 -> 533.5200)
+  volatility  : 33.0% a year
+  worst fall  : -34.5%  2025-10-28 (537.6464) -> 2026-06-25 (352.1670), recovered 2026-10-12
+  from high   : -1.8%  (high 543.4500 on 2026-10-13)
+
+^GSPC (benchmark) - SNP (USD)
+  251 session(s), 2025-10-20 -> 2026-10-19  [adj_close, 252 sessions/year]
+  change      : +14.2%  (6,735.1299 -> 7,690.7300)
+  volatility  : 12.7% a year
+  worst fall  : -9.1%  2026-01-27 (6,978.6001) -> 2026-03-30 (6,343.7202), recovered 2026-04-15
+  from high   : -1.6%  (high 7,818.9302 on 2026-10-06)
+
+Correlation of daily returns (shared sessions only)
+  AAPL / MSFT   +0.12  (251 sessions)
+  AAPL / ^GSPC  +0.33  (251 sessions)
+  MSFT / ^GSPC  +0.40  (251 sessions)
+
+Describes the window measured; past swings and falls don't predict future ones.
+```
+
+(Figures move with live data.) A symbol that couldn't be measured is reported as a `Warning: skipped '<SYMBOL>': <reason>` line on stderr, and the rest still print.
+
+#### Tool usage (`--json`)
+
+```bash
+python3 stock_risk.py VOD.L --range 3mo --json
+```
+
+```json
+{
+  "symbols": [
+    {
+      "symbol": "VOD.L",
+      "exchange": "LSE",
+      "currency": "GBp",
+      "basis": "adj_close",
+      "sessions": 63,
+      "start": "2026-07-20",
+      "end": "2026-10-16",
+      "first": 115.2,
+      "last": 122.05,
+      "change": 0.0594618601126633,
+      "periods_per_year": 252,
+      "volatility": 0.28740690314569073,
+      "max_drawdown": {
+        "drawdown": -0.11423152221448052,
+        "peak_date": "2026-09-17",
+        "peak": 131.75,
+        "trough_date": "2026-10-12",
+        "trough": 116.7,
+        "recovery_date": null
+      },
+      "high_date": "2026-09-17",
+      "high": 131.75,
+      "from_high": -0.07362426526180033
+    }
+  ],
+  "benchmark": null,
+  "correlations": [],
+  "skipped": []
+}
+```
+
+- `symbols` — one object per symbol that loaded, in the order given; `benchmark` is the same shape, or `null`.
+- `change`, `volatility`, `max_drawdown.drawdown` and `from_high` are unrounded fractions (`0.24` = 24%); prices are rounded to 4 dp. `volatility` is `null` with fewer than 3 sessions. The `max_drawdown` dates and prices are all `null` when the series never closed below an earlier high, and `recovery_date` is `null` until it closes back at or above the peak.
+- `correlations` — `{a, b, sessions, start, end, correlation}` for every pair of loaded series, benchmark included; `correlation` is `null` with fewer than 3 shared sessions or when one series never moved.
+- `skipped` — `{symbol, reason}` for each symbol (or the benchmark) that failed to fetch, had no settled prices, or had a price of zero or below.
+
+With `--json`, the progress line is suppressed and the result prints as a JSON object on stdout. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Build the query window** — `yahoo_finance.build_params()`, exactly as for [`stock_price_history.py`](#stock_price_historypy).
+2. **Fetch each symbol** — `load_symbol()` calls `yahoo_finance.fetch_history()` for each symbol and the benchmark in turn. A fetch error, an empty window or a non-positive price becomes a skip reason rather than a failure; `--last N` keeps the final `N` sessions.
+3. **Pick the price basis** — `extract_closes()` skips sessions with a `null` close (in-progress or gapped), dates each session by `meta.gmtoffset`, and uses the **adjusted close** when every kept session has one, otherwise the raw close for the whole series. It never mixes the two, which would invent a jump where the basis switched.
+4. **Annualize** — `periods_per_year()` returns `365` if any session falls on a Saturday or Sunday (crypto trades every day) and `252` otherwise, so each series' volatility is scaled to a year by its own calendar.
+5. **Per-symbol figures** — `summarize()` computes the change, `indicators.volatility()`, `indicators.max_drawdown()` (with its indices mapped back to dates and prices) and the highest close with the last close's distance from it.
+6. **Pairs** — `pair_correlation()` keeps only the dates both series traded, then calls `indicators.correlation()` on those. That matters across calendars: crypto against a stock is correlated over weekdays only, and two exchanges with different holidays over their shared sessions.
+7. **Output** — the text report, or `{symbols, benchmark, correlations, skipped}` with `--json`. If no non-benchmark symbol loaded, the script exits with status 1 and names each symbol's reason.
+
+### Configuration
+
+| Constant | Where | Default | Description |
+|---|---|---|---|
+| `DEFAULT_RANGE` | this file | `"1y"` | Window used when no `--range`, `--last`, or `--start` is given |
+| `TRADING_DAYS_PER_YEAR` | this file | `252` | Sessions per year for a series with no weekend sessions |
+| `CALENDAR_DAYS_PER_YEAR` | this file | `365` | Sessions per year for a series that trades at weekends |
+| `VALID_RANGES`, `REQUEST_TIMEOUT`, `HEADERS` | `yahoo_finance.py` | — | Shared fetch constants; see [`yahoo_finance.py`](#yahoo_financepy) |
+
+### API reference
+
+- `extract_closes(result)` — Returns `(meta, rows, basis)`: `rows` is a list of `(date, price)` pairs, oldest first, for settled sessions, and `basis` is `"adj_close"` when every kept session has an adjusted close (and the prices are those), otherwise `"close"`.
+- `periods_per_year(dates)` — `365` if any date is a Saturday or Sunday, else `252`.
+- `summarize(symbol, meta, rows, basis)` — The per-symbol dict described under `--json`.
+- `pair_correlation(name_a, rows_a, name_b, rows_b)` — `{a, b, sessions, start, end, correlation}` over the dates both `rows_a` and `rows_b` have.
+- `load_symbol(symbol, params, last)` — `(meta, rows, basis)` for one symbol, trimmed for `--last`, or a skip-reason string.
+- `parse_args(argv=None)` — Parses the symbols, the window flags, `--benchmark` and `--json`; drops repeated symbols and a symbol equal to the benchmark (case-insensitively), and exits 2 if no symbol besides the benchmark is left.
+- `print_report(payload)` — Prints the text report from the JSON-shaped payload, with skip warnings on stderr.
+- `main(argv=None)` — Entry point. Fatal errors go through `cli_utils.die()`.
+
+### Error handling
+
+- If every symbol fails to fetch or has no prices (the benchmark alone doesn't count), the script exits with status 1 — plain `Error: no price data for any symbol (<SYMBOL>: <reason>; …)` on stderr, or `{"error": "..."}` with `--json`. An unknown ticker's reason is Yahoo's `"No data found, symbol may be delisted"`.
+- If only some symbols fail, the run succeeds: they are listed under `skipped` (or warned about on stderr) and every pair involving them is left out.
+- An invalid `--range`, `--range` together with `--last`, a `--last` below 1, no symbol, or only the benchmark is rejected by argument parsing (exit code 2), before any request is made.
+- A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
+
+### Notes / limitations
+
+- Every figure describes the window measured — past swings and falls are no promise of future ones — and they move a lot with the window: a 1-month drawdown can't show a slide that took a year, and volatility and correlation over a week or two are mostly noise.
+- Volatility treats a big rise like a big fall; correlation says whether two series moved in step, not by how much, nor why. See the [`indicators.py`](#indicatorspy) limitations.
+- The weekend test for annualization is a heuristic: a crypto window too short to include a weekend (e.g. `--last 3` on weekdays) is annualized over 252 sessions instead of 365.
+- The adjusted close folds dividends into the price, so `change` is closer to a total return than a price move; where Yahoo has no adjusted close for every session the raw close is used and a split or large dividend in the window can show up as a false fall (`basis` says which).
+- Correlation is computed only on the dates both series traded; when one trades far more often (crypto against a stock), its weekend moves are left out, and `sessions` shows how many sessions the figure rests on.
+- Inherits the limits of the chart endpoint (see [`stock_price_history.py`](#stock_price_historypy)): unofficial and undocumented, Yahoo-notation tickers only, end-of-day data, minor-unit prices on some markets (LSE `GBp`), and a still-moving bar for today on markets that trade around the clock.
+
+---
+
+## Claude Code agent: `stock-risk`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-risk.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_risk.py`](#stock_riskpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "how volatile is Nvidia?", "how far did Tesla fall from its high, and has it recovered?", "which is riskier, AMD or Intel?", "are gold and Bitcoin correlated?" or "how closely does Microsoft track the S&P 500?" from measured figures, instead of impressions or stale training data. It covers how bumpy the prices were and how they moved together; the direction of a single instrument is the [`stock-trend`](#claude-code-agent-stock-trend) agent's job.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about the volatility, drawdown, swings, riskiness, or correlation of named companies, tickers, indices, exchange rates, crypto coins or commodities, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-risk"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`); if a ticker is uncertain it says so rather than guessing.
+2. Adds `--benchmark` when the user compares against a market, or asks how risky one stock is and the stock's home index makes a useful reference; a comparison of named instruments lists them all as symbols instead.
+3. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` / `5y` for "this year" / "past year" / "past 5 years", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise the default `--range 1y`.
+4. Runs `python3 stock_risk.py SYMBOL [SYMBOL ...] [--benchmark SYMBOL] <window flags> --json` from the repo root and parses `{symbols, benchmark, correlations, skipped}`.
+5. Answers the question asked first, then gives volatility as a yearly percentage (against the benchmark when there is one), the worst fall with its dates and recovery, the distance from the high when relevant, and each correlation with a plain reading; a table for three or more symbols. Skipped symbols are named with their reason. It closes with a caveat that these figures describe the past window, don't predict future swings, aren't causation, and aren't investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the script).
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`stock_risk.py`](#stock_riskpy) |
+
+### Notes / limitations
+
+- Requires `stock_risk.py` and its `yahoo_finance.py`, `indicators.py` and `cli_utils.py` helper modules (plus the `requests` dependency) to be present and runnable from the repo root.
+- Only as good as the tickers it picks — a wrong or ambiguous symbol yields the wrong company's figures or a skipped symbol.
+- The plain readings it gives (the rough scale for volatility, the bands for correlation) are rules of thumb written into the agent, not properties of the data.
+- Inherits all the limitations of [`stock_risk.py`](#stock_riskpy) itself (descriptive figures only, sensitive to the window, unofficial Yahoo endpoint, the weekend heuristic for annualization).
+
+---
+
 ## yahoo_finance.py
 
-Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), and [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1503,8 +1708,8 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 ### API reference
 
 - `parse_date(value)` — Parses a `YYYY-MM-DD` string to a UTC `datetime`, raising `ValueError` with a clear message on a bad format.
-- `add_window_args(parser, default_range, last_help)` — Adds the shared window flags to an argparse parser: a mutually exclusive `--range` (choices `VALID_RANGES`, default `default_range`) / `--last N` (`cli_utils.positive_int`, help text `last_help`), plus `--start` / `--end`. Used by all three price scripts.
-- `session_datetime(timestamp, gmtoffset)` — Converts a Yahoo UTC epoch timestamp into a naive exchange-local `datetime`, so its date is the exchange's own trading day. Used by the three price scripts and `app/stock_information/`.
+- `add_window_args(parser, default_range, last_help)` — Adds the shared window flags to an argparse parser: a mutually exclusive `--range` (choices `VALID_RANGES`, default `default_range`) / `--last N` (`cli_utils.positive_int`, help text `last_help`), plus `--start` / `--end`. Used by all four price scripts.
+- `session_datetime(timestamp, gmtoffset)` — Converts a Yahoo UTC epoch timestamp into a naive exchange-local `datetime`, so its date is the exchange's own trading day. Used by the four price scripts and `app/stock_information/`.
 - `fetch_crumb(session)` — Picks up the consent cookie on `session` (trying each of `COOKIE_URLS` until one answers) and returns the crumb from `CRUMB_URL`, or `None` if that request errors or the body isn't a short, non-HTML token. Callers decide whether a missing crumb is fatal (`market_top_volume.py` raises; `stock_intrinsic_value.py` falls back to crumbless requests).
 - `crumb_session()` — Returns `(session, crumb)`: a fresh `requests.Session` carrying `HEADERS`, plus `fetch_crumb(session)`.
 - `fetch_quote_summary(symbol, modules)` — GETs `quoteSummary` for the given `modules` (with `formatted=false`) through a `crumb_session()`, trying each of `QUOTE_SUMMARY_HOSTS` with the crumb, then each without it. Returns the first `result` — a dict keyed by module, omitting any Yahoo has no data for — or raises `requests.RequestException` with the last error (an error envelope, a non-JSON body's HTTP status, or `no fundamentals in response`).
@@ -1512,11 +1717,11 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 - `build_params(interval="1d", range_=None, start=None, end=None, last=None)` — Returns the chart-endpoint query params. The window is chosen by, in priority order: an explicit `start`/`end` pair (→ `period1`/`period2`, end padded a day), then `last` (→ a calendar look-back widened for `1wk` / `1mo` bars), then `range_`. Raises `ValueError` for `end` without `start` or an `end` not after `start`. `includeAdjustedClose=true` is always set. Callers pass `interval="1d"` (the default) for daily data.
 - `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
 - `extract_series(result)` — Returns `(meta, series)` where `series` is a dict of parallel lists straight off the payload — `timestamp`, `open`, `high`, `low`, `close`, `volume` — plus `adjclose` (a list or `None`) and the resolved `gmtoffset`. Callers turn these into row dicts.
-- `meta_summary(meta, fallback_symbol=None)` — Pulls the display fields out of a chart result's `meta` block: returns `(symbol, exchange, currency)`, with `symbol` falling back to `fallback_symbol` then `"?"`, `exchange` to `"?"`, and `currency` to `""`. Used by `stock_price_history.py` and `stock_candlestick_chart.py` for their report headers.
+- `meta_summary(meta, fallback_symbol=None)` — Pulls the display fields out of a chart result's `meta` block: returns `(symbol, exchange, currency)`, with `symbol` falling back to `fallback_symbol` then `"?"`, `exchange` to `"?"`, and `currency` to `""`. Used by `stock_price_history.py`, `stock_candlestick_chart.py` and `stock_risk.py` for their report headers.
 
 ### Notes / limitations
 
-- Changing a constant, the window flags or the `build_params` window logic here affects **all three** price scripts that use it, and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it, and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
 
 ---
 
@@ -1579,7 +1784,7 @@ A server is used instead of a static page because Yahoo's endpoints don't send C
 
 ## indicators.py
 
-Small, dependency-free technical indicators and risk metrics over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_price_history.py`](#stock_price_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) (moving-average overlays and cross-flip arrows), [`stock_rebased_chart.py`](#stock_rebased_chartpy) (`rebase`), and the [`stock-trend`](#claude-code-agent-stock-trend) agent. For a concepts-first walkthrough see [`docs/indicators.md`](docs/indicators.md).
+Small, dependency-free technical indicators and risk metrics over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_price_history.py`](#stock_price_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) (moving-average overlays and cross-flip arrows), [`stock_rebased_chart.py`](#stock_rebased_chartpy) (`rebase`), [`stock_risk.py`](#stock_riskpy) (`volatility`, `max_drawdown`, `correlation`), and the [`stock-trend`](#claude-code-agent-stock-trend) agent. For a concepts-first walkthrough see [`docs/indicators.md`](docs/indicators.md).
 
 ### Requirements
 
@@ -4850,7 +5055,7 @@ Small helpers shared by the command-line scripts: UTF-8 output, uniform error ex
 - `require_env(name, script, as_json=False)` — Returns environment variable `name`, or calls `die()` (status code 1) with `"<name> environment variable must be set. See the module docstring in <script> for how to obtain one."` if it is unset or empty. Used by the six `web_search_*.py` scripts that need an API key, each calling `load_dotenv()` first so a `.env` value counts.
 - `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the four `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`, `url_metadata.py`), which all take a URL positional and reject a bare domain/path before making any request.
 - `response_text(response)` — A `requests` response's body as text, decoded correctly. When the `Content-Type` header names no charset, `requests` falls back to ISO-8859-1 for `text/*`, which garbles UTF-8 pages ("—" comes out as "â€”"). In that case this uses the encoding `requests` detects from the bytes; a charset the server names is left alone. Used by `url_content.py`, `url_links.py` and `url_metadata.py` (not `url_availability.py`, which never reads the body).
-- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the three price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
+- `positive_int(value)` — An argparse `type` callable for an integer that must be `1` or greater; raises `argparse.ArgumentTypeError` on a non-integer or a value `< 1`. Wired to `--last` (the four price scripts), `--years` (`stock_intrinsic_value.py`), `--timeout` / `--max-chars` (the `url_*.py` scripts), the result-count flags of all seven `web_search_*.py` scripts, `--limit` (`hottest_tech_discussions.py` and `market_top_volume.py`), and `--stock-limit` / `--discussion-limit` (`stock_tech_buzz_agent.py`), so a bad value is rejected at parse time (exit code 2) rather than after the request.
 - `non_negative_int(value)` — Like `positive_int`, but `0` is allowed; for options where 0 means "none" or "no limit": `--replies` / `--max-chars` (`hn_thread.py`) and `hn_search.py`'s `--max-chars` and `--min-points`.
 - `bounded_int(maximum)` — Returns an argparse `type` callable for an integer from `1` to `maximum` (rejected as `positive_int` does, or with `must be at most <maximum>`); wired to `--top` / `--depth` in `hn_thread.py`.
 - `load_dotenv(path=ENV_FILE)` — Populates `os.environ` from a simple `KEY=VALUE` `.env` file (`ENV_FILE` defaults to `.env` next to `cli_utils.py`, i.e. the repo root, the same directory every script importing it lives in); missing file is silently ignored; never overwrites an already-set environment variable, so real env vars always take precedence over `.env` values. Used by every `web_search_*.py` script that needs an API key (all but `web_search_duckduckgo.py`, which needs no key).

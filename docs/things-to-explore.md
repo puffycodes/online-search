@@ -65,11 +65,13 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### Extending existing scripts
 
-- [ ] **Use the risk metrics**: `indicators.py` now has `volatility`,
-  `max_drawdown` and `correlation`, but nothing calls them yet. The `stock-trend`
-  agent could mention volatility and the worst drawdown alongside its verdict, and
-  the rebased chart (or a new agent) could report the correlation between the
-  tickers it compares, after lining up their shared dates.
+- [ ] **More use of the risk metrics**: `stock_risk.py` and the `stock-risk` agent
+  report `indicators.py`'s `volatility`, `max_drawdown` and `correlation`. The
+  `stock-trend` agent could add a line of volatility and worst drawdown alongside
+  its verdict (reusing `stock_risk.periods_per_year()` for crypto), and the
+  `stock-rebased-chart` agent could run `stock_risk.py` on the same symbols when the
+  user asks how closely they moved together. Shading the worst drawdown on the
+  candlestick chart is a further option.
 - [ ] **Dividend and split history**: Yahoo's chart endpoint can return dividend and
   split events alongside prices (`events=div,splits`), so this is an extension of
   `yahoo_finance.py`. Unofficial, like the rest of Yahoo.
