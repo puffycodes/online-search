@@ -48,7 +48,9 @@ crawlers; for those the API's own terms decide.
 - **Verdict:** fails the same test as Lobsters. Removing it takes out the whole
   stock section (10 scripts, 11 agents, `stock_tech_buzz_agent.py`, the stock web
   app), so the decision is the user's. A replacement price source needs its own
-  robots.txt-and-terms check first. Tracked in [`things-to-explore.md`](things-to-explore.md).
+  robots.txt-and-terms check first. Tracked in [`things-to-explore.md`](things-to-explore.md),
+  with a replacement shortlist checked on 2026-10-20 (Alpha Vantage recommended,
+  SEC EDGAR as a US supplement, Stooq ruled out).
 
 ### `ddgs` "auto" backend — fixed
 

@@ -26,6 +26,38 @@ before the top picks because it's about the repo's existing sources, not new one
   tools, or move them to a licensed price-data source (which needs its own
   robots.txt-and-terms check before anything is built).
 
+  **Replacement shortlist**, checked on 2026-10-20 against what the stock section
+  uses: (A) daily prices for stocks on ~10 exchanges plus indices, FX, crypto and
+  futures; (B) top movers for ~20 markets; (C) fundamentals; (D) earnings and
+  dividend dates; (E) analyst targets, ratings and upgrades / downgrades;
+  (F) holders and insider trades. Free tiers and coverage marked "?" were not
+  confirmed.
+
+  | Provider | Covers | Free tier | Terms and robots.txt |
+  |---|---|---|---|
+  | **Alpha Vantage** | A (global stocks, FX, crypto, a few commodities; adjusted closes and indices are paid), B (US only), C, D, E (target and rating counts only), F | 25 requests/day; unlimited for verified open-source or educational projects | Free use is "personal, non-commercial" for "investment analysis, research, testing, monitoring"; nothing on AI, and its docs promote use with LLMs and agents (official MCP server). No robots.txt |
+  | **SEC EDGAR** (`data.sec.gov`) | C and F for US filers only (XBRL company facts, Form 4, 13F); no prices or estimates | No key; 10 requests/second | Free to "access and download"; declare a name and contact email in the User-Agent. `data.sec.gov` has no robots.txt; `sec.gov` disallows only search, admin and login paths |
+  | **Finnhub** | C, D, E (recommendation trends); price history reportedly paid; rest ? | 60/minute; free endpoints unconfirmed | "Strictly for personal use"; no redistributing data "or derived results"; nothing on AI |
+  | **Twelve Data** | A (US stocks, FX, crypto only); C–F paid | 800/day, 8/minute | No commercial use of free-tier data, no redistribution or external display, no caching beyond documented limits; nothing on AI. API host robots.txt is `Disallow: /`, but it's a documented keyed API, so its terms decide |
+  | **EODHD** | A (global end of day); rest ? | ? | Non-professional users may "store, manipulate, and analyze" but not redistribute or display; nothing on AI. `/api/` disallowed in robots.txt (same reasoning as Twelve Data) |
+  | **Tiingo** | A (US, FX, crypto); fundamentals paid | 1,000/day, 50/hour, 500 symbols/month (third-party figures) | Terms not read (page 404) |
+  | **FMP** | C–F claimed; ? | ? | Terms not read (403 to automated fetches); display or redistribution needs a separate licence |
+  | **Massive** (formerly Polygon) | US only | ? | Only the terms index was read |
+  | **Stooq** | — | — | **Ruled out:** robots.txt `Disallow: /`, and CSV downloads sit behind a JavaScript proof-of-work challenge |
+
+  **Recommended:** Alpha Vantage as the single provider (a shared module in place
+  of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
+  US fundamentals and insider data to save Alpha Vantage requests. **No free
+  replacement** for: top movers outside the US, analyst upgrade / downgrade
+  history, most fund-holder lists, index and adjusted history on free tiers,
+  futures (`=F`). At 25 requests a day, a fundamentals lookup (4–5 calls) is a
+  real share of the budget.
+
+  **Decisions needed before building:** whether a free Alpha Vantage key and its
+  limit are acceptable; which uncovered features to drop or which scripts to
+  remove; what contact to declare to the SEC, if EDGAR is added. Re-check Finnhub
+  and FMP with a real key, since their free tiers couldn't be confirmed.
+
 ## Top picks
 
 Chosen on 2026-10-19, in suggested order. Each is described in full in its section
