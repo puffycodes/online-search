@@ -18,9 +18,9 @@ both READMEs in the same change. Then remove the item from this list.
 Chosen on 2026-10-19, in suggested order. Each is described in full in its section
 below; remove it from both places when it's done.
 
-1. **Vulnerability lookup via OSV.dev** (Tech and news): the most useful new source,
-   and the first one to go through the robots.txt-and-terms check before anything is
-   built; record the finding here either way.
+1. **Vulnerability lookup via OSV.dev** (Tech and news): the most useful new source.
+   Its robots.txt-and-terms check passed on 2026-10-20 (see the entry below), so it
+   is ready to build, crediting each advisory's source.
 2. **Broken-link checker** (Combining existing scripts): joins `url_links.py` and
    `url_availability.py`; the main design question is staying polite on big pages (a
    cap on links, a delay, each host checked sparingly).
@@ -95,7 +95,26 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 ### New sources
 
 - [ ] **Vulnerability lookup** (OSV.dev, no key): known vulnerabilities for a package
-  and version across PyPI, npm, Go, crates.io and other ecosystems.
+  and version across PyPI, npm, Go, crates.io and other ecosystems. Checked on
+  2026-10-20: **cleared to build**, with attribution.
+  - **robots.txt:** `osv.dev/robots.txt` is only a `Sitemap:` line, with no
+    `Disallow` rules for any client. `api.osv.dev` has no robots.txt (404).
+  - **AI signals:** none found. There is no `Content-Signal` line, no `X-Robots-Tag`
+    header (on the site or the API), no robots or TDM meta tags on the home page, and
+    no `ai.txt` or `.well-known/tdmrep.json`.
+  - **API terms:** the API docs and FAQ give no terms of use, need no key, and say
+    "Currently there are no limits on the API" (responses are capped at 32 MiB over
+    HTTP/1.1). Endpoints: `POST /v1/query`, `POST /v1/querybatch`,
+    `GET /v1/vulns/{id}` on `api.osv.dev`. The osv.dev code is Apache 2.0.
+  - **Data licence:** there is no single licence; the data page licenses each source
+    separately. Most are CC-BY 4.0 (GitHub, PyPI, Go, OSS-Fuzz, PSF), some CC0
+    (RustSec, GSD, Haskell, opam), MIT, BSD or Apache 2.0, and Ubuntu is CC-BY-SA 4.0.
+    CC-BY needs attribution, so the script and agent should credit the advisory's
+    source (its ID prefix, e.g. `GHSA-`, `PYSEC-`, `GO-`, `RUSTSEC-`) and link each
+    advisory's osv.dev page.
+  - **Courtesy:** no limit is published, but keep requests small: one `query` per
+    package (or one `querybatch`), and no bulk crawling. For whole databases OSV
+    publishes data dumps instead.
 - [ ] **Package stats**: PyPI's JSON API (versions, release dates, metadata) and
   npm's registry and downloads APIs.
 - [ ] **GitHub releases**: the latest releases of a repository, from the GitHub API
