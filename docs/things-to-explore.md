@@ -16,8 +16,8 @@ both READMEs in the same change. Then remove the item from this list.
 
 ## From the source audit
 
-The [source audit](source-audit.md) of 2026-10-20 left two items open. They come
-before the top picks because they're about the repo's existing sources, not new ones.
+The [source audit](source-audit.md) of 2026-10-20 left one item open. It comes
+before the top picks because it's about the repo's existing sources, not new ones.
 
 - [ ] **Replace or remove Yahoo Finance.** Its API hosts' robots.txt says
   `Disallow: /` to every client, `finance.yahoo.com` blocks Claude agents by name,
@@ -25,10 +25,6 @@ before the top picks because they're about the repo's existing sources, not new 
   the stock section depends on it, so this needs a decision first: remove the stock
   tools, or move them to a licensed price-data source (which needs its own
   robots.txt-and-terms check before anything is built).
-- [ ] **Check robots.txt and `Content-Signal` before an agent fetches a page it chose
-  itself.** `hottest-tech-discussion-summary` picks article URLs and feeds the pages
-  to an AI model through `url_content.py`, which never checks either. A user-named
-  URL is a user-directed fetch and can stay as it is.
 
 ## Top picks
 

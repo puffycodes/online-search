@@ -13,6 +13,7 @@
     - Make a summary of the discussion.
         - Read the HN thread's top comments with the hn_thread.py script (HN refuses ordinary page fetches).
         - Retrieve the linked article's content, if it has one, up to 15,000 characters.
+        - Retrieve every page (the article and each search result) with the robots.txt check on, since the agent chose the URLs itself. A page the site's robots.txt disallows, or whose site opts out of AI input, is never retrieved, retried or summarized from its snippet: keep its link, labelled as blocked by the site's robots.txt.
         - Treat a page that comes back with almost no content (just a site name, a JavaScript or sign-in wall) as not retrieved. A page that is mostly a sign-in wall counts as not retrieved even when some headlines or teaser lines show around it.
         - Produce a summary of what the article says and what HN commenters said, with how many comments were read.
     - Identify the subject of the discussion and express it as a single phase.
@@ -25,7 +26,7 @@
         - Say how many results were skipped, and why.
         - Retrieve the content of each of the results and give a summary using all of the content.
             - A result that redirects to a page already collected is a duplicate; replace it with the next spare result.
-            - A result that couldn't be retrieved, came back nearly empty, or only links elsewhere is replaced once by the next spare result; it stays in the link list, marked as dropped.
+            - A result that couldn't be retrieved, was blocked by the site's robots.txt, came back nearly empty, or only links elsewhere is replaced once by the next spare result; it stays in the link list, marked as dropped (or blocked).
     - Only when the user asks how HN discussed the topics before, list the earlier HN threads on the subject:
         - Search Hacker News stories for 1-3 distinctive keywords naming the subject (its own name when it has one; not the headline or a generic category).
         - Search the last two years, up to three days before the topic was posted, so that other submissions of the same news and the topic's own thread are not counted as earlier.

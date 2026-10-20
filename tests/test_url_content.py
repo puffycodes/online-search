@@ -385,3 +385,92 @@ class TestMain:
         assert captured["as_text"] is True
         payload = json.loads(capsys.readouterr().out)
         assert payload["text_extracted"] is True
+
+
+class TestRespectRobots:
+    def _result(self, url, final_url=None):
+        return {
+            "url": url, "final_url": final_url or url, "status_code": 200,
+            "content_type": "text/html", "title": None, "length": 2,
+            "truncated": False, "text_extracted": True, "content": "hi",
+        }
+
+    def _wire(self, monkeypatch, refusals=None, final_url=None):
+        checked, fetched = [], []
+
+        def fake_refusal(url, timeout):
+            checked.append(url)
+            return (refusals or {}).get(url)
+
+        def fake_fetch(url, timeout, max_chars, as_text):
+            fetched.append(url)
+            return self._result(url, final_url)
+
+        monkeypatch.setattr(uc, "robots_refusal", fake_refusal)
+        monkeypatch.setattr(uc, "fetch_content", fake_fetch)
+        return checked, fetched
+
+    def test_flag_parsed(self):
+        assert uc.parse_args(["https://x.com"]).respect_robots is False
+        assert uc.parse_args(["https://x.com", "--respect-robots"]).respect_robots is True
+
+    def test_off_by_default_never_checks(self, monkeypatch, capsys):
+        checked, fetched = self._wire(monkeypatch)
+        uc.main(["https://x.com/a", "--json"])
+        assert checked == []
+        assert fetched == ["https://x.com/a"]
+        assert json.loads(capsys.readouterr().out)["robots_checked"] is False
+
+    def test_allowed_page_fetched_and_flagged(self, monkeypatch, capsys):
+        checked, fetched = self._wire(monkeypatch)
+        uc.main(["https://x.com/a", "--respect-robots", "--json"])
+        assert checked == ["https://x.com/a"]
+        assert fetched == ["https://x.com/a"]
+        assert json.loads(capsys.readouterr().out)["robots_checked"] is True
+
+    def test_refused_page_never_fetched(self, monkeypatch, capsys):
+        reason = "x.com's robots.txt disallows /a for online-search-url-content"
+        checked, fetched = self._wire(monkeypatch, refusals={"https://x.com/a": reason})
+        with pytest.raises(SystemExit) as exc:
+            uc.main(["https://x.com/a", "--respect-robots", "--json"])
+        assert exc.value.code == 1
+        assert fetched == []
+        assert json.loads(capsys.readouterr().err) == {"error": f"blocked: {reason}"}
+
+    def test_refused_text_mode(self, monkeypatch, capsys):
+        self._wire(monkeypatch, refusals={"https://x.com/a": "nope"})
+        with pytest.raises(SystemExit):
+            uc.main(["https://x.com/a", "--respect-robots"])
+        assert capsys.readouterr().err.strip() == "Error: blocked: nope"
+
+    def test_redirect_target_checked_and_refused(self, monkeypatch, capsys):
+        checked, _ = self._wire(
+            monkeypatch, final_url="https://y.com/b",
+            refusals={"https://y.com/b": "y.com's robots.txt opts out of AI input"},
+        )
+        with pytest.raises(SystemExit) as exc:
+            uc.main(["https://x.com/a", "--respect-robots", "--json"])
+        assert exc.value.code == 1
+        assert checked == ["https://x.com/a", "https://y.com/b"]
+        captured = capsys.readouterr()
+        assert captured.out == ""  # the redirected page's content is discarded
+        assert json.loads(captured.err)["error"].startswith(
+            "blocked after redirect to https://y.com/b:")
+
+    def test_redirect_target_allowed(self, monkeypatch, capsys):
+        checked, _ = self._wire(monkeypatch, final_url="https://y.com/b")
+        uc.main(["https://x.com/a", "--respect-robots", "--json"])
+        assert checked == ["https://x.com/a", "https://y.com/b"]
+        assert json.loads(capsys.readouterr().out)["final_url"] == "https://y.com/b"
+
+    def test_fragment_only_difference_not_rechecked(self, monkeypatch):
+        checked, _ = self._wire(monkeypatch, final_url="https://x.com/a")
+        uc.main(["https://x.com/a#top", "--respect-robots", "--json"])
+        assert checked == ["https://x.com/a#top"]
+
+    def test_robots_refusal_uses_script_identity(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(uc.robots, "check",
+                            lambda url, ua, token, timeout: seen.append((url, ua, token, timeout)))
+        uc.robots_refusal("https://x.com/a", 7)
+        assert seen == [("https://x.com/a", uc.USER_AGENT, "online-search-url-content", 7)]

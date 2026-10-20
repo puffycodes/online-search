@@ -12,6 +12,14 @@ HTML page (via BeautifulSoup), with script/style content and markup
 stripped out; it also reports the page's title, read from the same download
 with url_metadata.py's extract_metadata() (the <title>, else og:title).
 
+--respect-robots makes the fetch ask first: it reads the site's robots.txt
+(robots.py) and refuses the page if a rule disallows it for this script, if
+the site opts out of AI input (Content-Signal: ai-input=no), or if robots.txt
+can't be read because of a server or connection error. A redirect to another
+page is checked too, and its content discarded if that page is refused. Use
+it whenever an agent, not the user, chose the URL; a refusal exits with
+code 1 and an error starting "blocked".
+
 Supports a --json flag for structured output, so this script can be
 called as a tool by an agent: it parses stdout instead of a human-
 readable report.
@@ -22,12 +30,15 @@ import json
 
 import requests
 
+import robots
 from cli_utils import die, positive_int, response_text, use_utf8_output, validate_url_scheme
 from url_metadata import extract_metadata
 
 TIMEOUT_SECONDS = 10
 MAX_CHARS = 20000
 USER_AGENT = "Mozilla/5.0 (compatible; online-search-url-content/1.0)"
+# The product token matched against robots.txt User-agent groups.
+ROBOTS_TOKEN = "online-search-url-content"
 
 TEXTUAL_CONTENT_TYPE_MARKERS = ("text/", "json", "xml", "javascript")
 
@@ -159,11 +170,30 @@ def parse_args(argv=None):
         ),
     )
     parser.add_argument(
+        "--respect-robots",
+        action="store_true",
+        help=(
+            "Check the site's robots.txt first, and refuse the page if it is disallowed "
+            "or the site opts out of AI input (Content-Signal: ai-input=no). Use when "
+            "an agent, not the user, chose the URL."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Output machine-readable JSON on stdout instead of a human-readable report.",
     )
     return parser.parse_args(argv)
+
+
+def robots_refusal(url, timeout):
+    """None if robots.txt lets this script fetch `url` for AI use, else why not."""
+    return robots.check(url, USER_AGENT, ROBOTS_TOKEN, timeout=timeout)
+
+
+def _same_page(a, b):
+    """Whether two URLs name the same page, ignoring any #fragment."""
+    return a.split("#", 1)[0] == b.split("#", 1)[0]
 
 
 def main(argv=None):
@@ -175,6 +205,11 @@ def main(argv=None):
     if not args.json:
         print(f"Fetching: {args.url}\n")
 
+    if args.respect_robots:
+        refusal = robots_refusal(args.url, args.timeout)
+        if refusal:
+            die(f"blocked: {refusal}", args.json)
+
     try:
         result = fetch_content(
             args.url, timeout=args.timeout, max_chars=args.max_chars, as_text=args.text
@@ -183,6 +218,14 @@ def main(argv=None):
         die("beautifulsoup4 is required for --text (pip install beautifulsoup4)", args.json)
     except (requests.RequestException, ValueError) as exc:
         die(str(exc), args.json)
+
+    if args.respect_robots and not _same_page(result["final_url"], args.url):
+        # A redirect landed on another page (often another site), which has
+        # its own rules; its content is discarded if that page is refused.
+        refusal = robots_refusal(result["final_url"], args.timeout)
+        if refusal:
+            die(f"blocked after redirect to {result['final_url']}: {refusal}", args.json)
+    result["robots_checked"] = args.respect_robots
 
     if args.json:
         print(json.dumps(result, indent=2))

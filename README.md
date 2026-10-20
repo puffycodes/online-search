@@ -77,7 +77,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds (`web_search_perplexity.py` is a standalone tool, not part of this fallback chain)
 - [`url_availability.py`](#url_availabilitypy) — checks whether a web page at a given URL is reachable, via an HTTP GET request and status-code classification, optionally finding a dead page's last Wayback Machine copy (no API key)
 - [`.claude/agents/url-availability.md`](#claude-code-agent-url-availability) — Claude Code subagent that calls `url_availability.py` and reports whether a named URL is up, down, or returning an error, with a dead page's Wayback Machine copy on request
-- [`url_content.py`](#url_contentpy) — retrieves the raw content (HTML/text/JSON/etc.) of a web page at a given URL, via an HTTP GET request, with an optional `--text` mode (BeautifulSoup) to extract just the human-readable text (no API key)
+- [`url_content.py`](#url_contentpy) — retrieves the raw content (HTML/text/JSON/etc.) of a web page at a given URL, via an HTTP GET request, with an optional `--text` mode (BeautifulSoup) to extract just the human-readable text (no API key), and `--respect-robots` to honour the site's robots.txt and AI opt-out first
 - [`.claude/agents/url-content.md`](#claude-code-agent-url-content) — Claude Code subagent that calls `url_content.py` and reports or summarizes the content at a named URL
 - [`url_links.py`](#url_linkspy) — retrieves a web page at a given URL and extracts every hyperlink (`<a href>`) in its HTML content, resolved to absolute URLs, via BeautifulSoup (no API key)
 - [`.claude/agents/url-links.md`](#claude-code-agent-url-links) — Claude Code subagent that calls `url_links.py` and reports the links found on a named URL
@@ -88,6 +88,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 **[Development](#development)**
 - [`tests/`](tests/) — offline `pytest` suite for every script, helper module and web app (see [`tests/README.md`](tests/README.md))
 - [`cli_utils.py`](#cli_utilspy) — small shared CLI helpers (`use_utf8_output()` for UTF-8 stdout/stderr on every platform, `die()` uniform error-exit, `validate_url_scheme()` and `response_text()` (charset-aware page decoding) for the `url_*.py` scripts, `positive_int` / `non_negative_int` / `bounded_int` argparse types, `.env` loading and `require_env()` for API keys, result-list formatting/printing) imported by the command-line scripts
+- [`robots.py`](#robotspy) — reads a site's robots.txt (RFC 9309) and `Content-Signal` lines to decide whether a page may be fetched and given to an AI; behind `url_content.py --respect-robots`
 
 ---
 
@@ -3491,6 +3492,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running scri
 
 ### Notes / limitations
 
+- Every `url_content.py` call passes `--respect-robots`, because the agent picks the article and search-result URLs itself. A page whose robots.txt disallows the fetch or opts out of AI input (`Content-Signal: ai-input=no`) is never fetched: its link is kept and labelled "blocked by the site's robots.txt", it is never summarized from its search snippet, and a blocked search result is replaced once from the engine's spares like any other dropped result.
 - Requires all of `hottest_tech_discussions.py`, `hn_thread.py`, the `web_search_*.py` scripts, and `url_content.py` (plus `beautifulsoup4`, for `url_content.py --text`) to be present and runnable from the repo root, and at least two working search-engine API keys to satisfy the "3 results each from 2 sources" requirement.
 - The subject-phrase distillation is a judgment call made by the agent itself, not a deterministic script — the same discussion could be phrased as slightly different search queries across runs.
 - Inherits the limitations of each underlying tool: `hottest_tech_discussions.py`'s live-snapshot ranking (results differ between runs), the `web_search_*.py` fallback chain's per-engine quirks (documented in the [`web-search`](#claude-code-agent-web-search) agent section), and `url_content.py --text`'s blunt extraction (no paragraph breaks, boilerplate not removed) plus its usual single-attempt-GET/no-retry behavior.
@@ -4726,7 +4728,7 @@ Retrieves the raw content of a web page at a given URL, by making an HTTP GET re
 
 - `requests`
 - `beautifulsoup4` — only required for `--text`; the rest of the script works without it
-- the repo's own `cli_utils.py` and `url_metadata.py` modules (no install — run from the repo root so they import; `url_metadata.py` reads the `--text` title)
+- the repo's own `cli_utils.py`, `url_metadata.py` and `robots.py` modules (no install — run from the repo root so they import; `url_metadata.py` reads the `--text` title, `robots.py` does the `--respect-robots` check)
 
 ### Usage
 
@@ -4740,6 +4742,7 @@ python3 url_content.py URL [--timeout SECONDS] [--max-chars N] [--text] [--json]
 | `--timeout SECONDS` | 10 | Request timeout in seconds |
 | `--max-chars N` | 20000 | Maximum characters of content to return; longer bodies are truncated |
 | `--text` | off | Extract just the human-readable text of an HTML page (via BeautifulSoup), with markup and script/style content stripped, instead of returning the raw body, and report the page's title. Requires `beautifulsoup4`. |
+| `--respect-robots` | off | Ask the site first: read its `robots.txt` (via [`robots.py`](#robotspy)) and refuse the page if a rule disallows it for this script, if the site opts out of AI input (`Content-Signal: ai-input=no`), or if robots.txt can't be read because of a server or connection error. A redirect to another page is checked too. Use it whenever an agent, not the user, chose the URL |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
@@ -4773,7 +4776,8 @@ python3 url_content.py https://example.com --json
   "length": 1256,
   "truncated": false,
   "text_extracted": false,
-  "content": "<!doctype html>\n<html>\n..."
+  "content": "<!doctype html>\n<html>\n...",
+  "robots_checked": false
 }
 ```
 
@@ -4795,7 +4799,8 @@ python3 url_content.py https://example.com --text --json
   "length": 142,
   "truncated": false,
   "text_extracted": true,
-  "content": "Example Domain Example Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more"
+  "content": "Example Domain Example Domain This domain is for use in documentation examples without needing permission. Avoid use in operations. Learn more",
+  "robots_checked": false
 }
 ```
 
@@ -4804,10 +4809,11 @@ python3 url_content.py https://example.com --text --json
 ### How it works
 
 1. **Validate the URL** — Rejects a URL that doesn't start with `http://` or `https://` before making any request.
-2. **Fetch** — Issues a `GET` with a browser-like `User-Agent`, following redirects.
-3. **Check the response** — A `4xx`/`5xx` status raises `requests.HTTPError`; a `Content-Type` that doesn't look textual (no `text/`, `json`, `xml`, or `javascript` marker) raises `ValueError` rather than returning a garbled/binary body.
-4. **Extract (if `--text`)** — For an HTML page (or one with no `Content-Type`), `page_title()` first reads the title with [`url_metadata.py`](#url_metadatapy)'s `extract_metadata()`, the same rules as that script. Then the body is parsed with BeautifulSoup (`html.parser`), `<script>`/`<style>`/`<noscript>` tags are removed entirely, and the remaining text is collapsed into a single space-separated run via `" ".join(soup.get_text(separator=" ").split())`.
-5. **Truncate** — Cuts the (possibly extracted) text to `--max-chars` characters, along with the full untruncated length and a `truncated` flag.
+2. **Ask robots.txt (if `--respect-robots`)** — `robots_refusal()` runs `robots.check()` with this script's `User-Agent` and its product token `online-search-url-content`. A refusal exits with status 1 and an error starting `blocked:`, before the page is requested.
+3. **Fetch** — Issues a `GET` with a browser-like `User-Agent`, following redirects. With `--respect-robots`, a redirect that ends on a different page (ignoring any `#fragment`) is checked again, and its content discarded if that page is refused (`blocked after redirect to …:`).
+4. **Check the response** — A `4xx`/`5xx` status raises `requests.HTTPError`; a `Content-Type` that doesn't look textual (no `text/`, `json`, `xml`, or `javascript` marker) raises `ValueError` rather than returning a garbled/binary body.
+5. **Extract (if `--text`)** — For an HTML page (or one with no `Content-Type`), `page_title()` first reads the title with [`url_metadata.py`](#url_metadatapy)'s `extract_metadata()`, the same rules as that script. Then the body is parsed with BeautifulSoup (`html.parser`), `<script>`/`<style>`/`<noscript>` tags are removed entirely, and the remaining text is collapsed into a single space-separated run via `" ".join(soup.get_text(separator=" ").split())`.
+6. **Truncate** — Cuts the (possibly extracted) text to `--max-chars` characters, along with the full untruncated length and a `truncated` flag.
 
 ### Configuration
 
@@ -4825,9 +4831,10 @@ These are set as constants near the top of the file — edit them directly to ch
 - `extract_text(html)` — Strips an HTML document down to its human-readable text via BeautifulSoup, dropping `<script>`/`<style>`/`<noscript>` content and collapsing all whitespace to single spaces. Raises `ImportError` if `beautifulsoup4` isn't installed (imported lazily, so the rest of the script works without it).
 - `page_title(html, base_url)` — The page's `<title>`, falling back to its `og:title`, or `None`; via `url_metadata.extract_metadata()`.
 - `fetch_content(url, timeout=TIMEOUT_SECONDS, max_chars=MAX_CHARS, as_text=False)` — Issues the `GET` request and returns `{url, final_url, status_code, content_type, title, length, truncated, text_extracted, content}`. With `as_text=True`, reads an HTML page's title with `page_title()` and runs the body through `extract_text()` before truncating. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-textual `Content-Type`, and `ImportError` if `as_text` is set but `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
+- `robots_refusal(url, timeout)` — `None` if `robots.check()` lets this script fetch `url` for AI use, otherwise the reason it may not.
 - `format_result(result)` — Renders a `fetch_content()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url`, a "Title:" line when there is a title, and a "(truncated)" marker when applicable.
-- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--max-chars` / `--text` / `--json` CLI flags.
-- `main(argv=None)` — Entry point; validates the URL scheme, calls `fetch_content()`, handles top-level errors (including a missing `beautifulsoup4` for `--text`), and prints the result (either human-readable or JSON, depending on `--json`).
+- `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--max-chars` / `--text` / `--respect-robots` / `--json` CLI flags.
+- `main(argv=None)` — Entry point; validates the URL scheme, runs the `--respect-robots` check (before the fetch, and again after a redirect to another page), adds `robots_checked` (whether it ran) to the result, calls `fetch_content()`, handles top-level errors (including a missing `beautifulsoup4` for `--text`), and prints the result (either human-readable or JSON, depending on `--json`).
 
 ### Error handling
 
@@ -4836,6 +4843,7 @@ These are set as constants near the top of the file — edit them directly to ch
 - If the response's `Content-Type` doesn't look textual, the script prints an error (`"URL did not return text content (Content-Type: ...)"`) and exits with status code 1.
 - If `--text` is passed but `beautifulsoup4` isn't installed, the script prints `"beautifulsoup4 is required for --text (pip install beautifulsoup4)"` and exits with status code 1 — before any content is returned.
 - If the request fails at the connection level (DNS failure, timeout, connection refused, etc.), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
+- With `--respect-robots`, a page refused by the site's robots.txt exits with status code 1 and an error starting `blocked:` (`{"error": "blocked: example.com's robots.txt opts out of AI input (Content-Signal: ai-input=no)"}` with `--json`), before the page is requested; a refused redirect target gives `blocked after redirect to <URL>: …`. An unreadable robots.txt (a `5xx` or a connection failure) counts as a refusal; a missing one (`4xx`) allows everything.
 - An out-of-range `--timeout` or `--max-chars` (e.g. `0` or negative) is rejected by argparse before any request, exiting with status code 2.
 
 ### Notes / limitations
@@ -4844,6 +4852,7 @@ These are set as constants near the top of the file — edit them directly to ch
 - With `--text`: extraction is a blunt "drop script/style, flatten the rest to one line" pass, not a readability/boilerplate-removal algorithm — nav links, cookie banners, and footers come through mixed in with the article text, and no paragraph breaks are preserved.
 - Content-type sniffing is a simple substring check on the `Content-Type` header, not a body sniff — a mislabeled response (e.g. an image served as `text/plain`) would pass through and a genuinely textual response with an unusual `Content-Type` could be rejected.
 - Truncation is a hard character cutoff, not sentence/tag-aware — a truncated HTML response (without `--text`) can end mid-tag.
+- `--respect-robots` is off by default, so a URL a person names is fetched as a browser would. The research agent always passes it, because it chooses its URLs itself (see the [source audit](docs/source-audit.md)). It costs one extra request per page.
 - Some sites block automated requests regardless of `User-Agent` (bot-detection, Cloudflare challenges, etc.), which can surface as a `4xx`/`5xx` error even though the page is reachable in a real browser.
 - A single attempt, no retry — a transient network hiccup is reported as a connection-level error rather than retried internally.
 
@@ -5293,3 +5302,45 @@ Small helpers shared by the command-line scripts: UTF-8 output, uniform error ex
 - `load_dotenv()`'s `.env` parsing is intentionally minimal (`KEY=VALUE` lines, optional quoting, `#` comments) — it doesn't handle multi-line values or shell-style variable expansion.
 - `format_result()` / `print_results()` assume the `{rank, title, url, snippet}` shape; they aren't used by `web_search_perplexity.py`, whose Sonar-based output shape is a synthesized answer plus a source list rather than a flat results array (see that script's own section for why).
 
+---
+
+## robots.py
+
+Shared helper behind [`url_content.py`](#url_contentpy)'s `--respect-robots`: may this client fetch a page, and may an AI use it? It reads a site's `robots.txt` by the rules of [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309), plus its `Content-Signal` lines ([contentsignals.org](https://contentsignals.org/)), e.g. `Content-Signal: search=yes, ai-input=no`. Not a CLI — it is imported, not run. Added after the [source audit](docs/source-audit.md) found that agents fetched pages they had chosen themselves without asking.
+
+Python's own `urllib.robotparser` isn't used: it takes the *first* matching rule rather than the longest, so `Allow: /` before `Disallow: /search` would allow `/search`, and it ignores `Content-Signal`.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+
+### How it decides
+
+1. **Fetch** `/robots.txt` from the page's site with the caller's `User-Agent`, following redirects, reading at most 500 KiB. As RFC 9309 says, a `4xx` (no file) allows everything, while a `5xx` or a connection failure means nothing can be assumed allowed.
+2. **Pick the groups** — the `User-agent` groups naming the caller's product token (case-insensitively, e.g. `online-search-url-content`), or, if none do, the `*` groups. Consecutive `User-agent` lines share one group.
+3. **Match the rules** — `Allow` / `Disallow` patterns against the page's path and query, with `*` matching any run of characters and a final `$` anchoring the end. The longest matching pattern wins, and `Allow` wins a tie. `/robots.txt` itself is always allowed.
+4. **Read the signal** — the `Content-Signal` lines in the chosen groups, plus any before the first group (which apply to everyone). A path-scoped signal (`Content-Signal: /docs/ ai-input=yes`) beats an unscoped one, and a longer path a shorter one. Only `ai-input` is acted on: it covers feeding a page into an AI model to answer a question or write a summary, which is what this repo's agents do with fetched pages. No `ai-input` at all means no stated preference.
+
+### API reference
+
+- `check(url, user_agent, token, timeout=TIMEOUT_SECONDS)` — `None` if the page may be fetched and given to an AI, otherwise the reason it may not, e.g. `"example.com's robots.txt opts out of AI input (Content-Signal: ai-input=no)"`, `"example.com's robots.txt disallows /search for <token>"` or `"example.com: its robots.txt returned HTTP 503, which counts as a full disallow"`.
+- `fetch(url, user_agent, timeout=TIMEOUT_SECONDS)` — `(text, problem)` for the site's robots.txt (step 1).
+- `parse(text)` — `(groups, global_signals)`; each group is `{"agents", "rules": [(allow, pattern)], "signals": [(path_or_None, {key: value})]}`.
+- `parse_signal(value)` — One `Content-Signal` value as `(path_or_None, {key: value})`, lowercased.
+- `matching_groups(groups, token)`, `is_allowed(groups, token, path)`, `ai_input_allowed(groups, global_signals, token, path)` — Steps 2–4.
+- `path_matches(pattern, path)`, `url_path(url)`, `robots_url(url)` — Pattern matching, the path-plus-query a rule is matched against (`/` if empty, no fragment), and the site's robots.txt URL.
+
+### Configuration
+
+| Constant | Default | Description |
+|---|---|---|
+| `TIMEOUT_SECONDS` | `10` | Timeout for the robots.txt request |
+| `MAX_BYTES` | `500 * 1024` | How much of a robots.txt is read (RFC 9309's minimum) |
+
+### Notes / limitations
+
+- One robots.txt request per check: `url_content.py` runs once per page, so nothing is cached between pages of one site.
+- Paths are matched as sent, without percent-decoding them first; a rule and a URL that spell one character differently (`%7E` vs `~`) don't match.
+- `Content-Signal` is a newer, voluntary convention. Its `search` and `ai-train` keys are parsed but not acted on: the repo neither builds a search index nor trains models.
+- Like robots.txt itself, this is a request the site makes, not access control: it covers sites that state a preference this way, not ones that say so only in their terms.

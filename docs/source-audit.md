@@ -19,7 +19,7 @@ crawlers; for those the API's own terms decide.
 | `ddgs` default `"auto"` backend | `web_search_duckduckgo.py` | **Violated** robots.txt of Google, Yahoo, Startpage, Mojeek, Grokipedia | **Fixed** 2026-10-20: backend pinned to DuckDuckGo |
 | DuckDuckGo HTML results | `web_search_duckduckgo.py` | Grey area: allowed by robots.txt, no search API offered | Kept, last in the `web-search` chain |
 | Open-Meteo | `weather.py`, `weather_forecast.py`, `weather_history.py`, `air_quality.py`, 4 agents | Allowed; **attribution was missing** | **Fixed** 2026-10-20: CC BY 4.0 credit on every result |
-| Pages fetched by the `url_*.py` scripts | `url-*` agents, `hottest-tech-discussion-summary` | No robots.txt or AI opt-out check | **Open:** check before agents fetch pages they chose themselves |
+| Pages fetched by the `url_*.py` scripts | `url-*` agents, `hottest-tech-discussion-summary` | No robots.txt or AI opt-out check | **Fixed** 2026-10-20 for agent-chosen pages: `url_content.py --respect-robots`, always used by the research agent |
 | Hacker News API (Firebase) | `hn.py` and the HN scripts | Allowed | None |
 | HN Search (Algolia) | `hn_search.py`, `hn_thread.py` | Allowed, 10,000 requests/hour/IP | None |
 | OSV.dev | `osv_vulnerabilities.py` | Allowed; per-source licences, mostly CC BY 4.0 | Credit already built in |
@@ -95,17 +95,24 @@ option.
   `attribution` (`weather.ATTRIBUTION`); the four agents end their reports with a
   credit line.
 
-## Open gap
+## Fetching pages
 
-### Pages fetched by the `url_*.py` scripts
+### Pages fetched by the `url_*.py` scripts — fixed for agent-chosen pages
 
 The four `url_*.py` scripts fetch the page they're given, with an honest
 `online-search-url-*` User-Agent, but never read robots.txt or a `Content-Signal`
 line. For a URL the user names, that is a user-directed fetch, like a browser. But
 `hottest-tech-discussion-summary` picks article URLs itself and feeds the pages to an
-AI model, which is the use Lobsters' `ai-input=no` opted out of. **Open:** check
-robots.txt and `Content-Signal` before an agent fetches a page it chose itself.
-Tracked in [`things-to-explore.md`](things-to-explore.md).
+AI model, which is the use Lobsters' `ai-input=no` opted out of.
+
+**Fix:** `url_content.py --respect-robots` (via the new `robots.py`) reads the
+site's robots.txt by RFC 9309 and its `Content-Signal` lines first, and refuses a
+page that is disallowed, opted out of AI input, or whose robots.txt can't be read;
+a redirect to another page is checked too. `hottest-tech-discussion-summary` passes
+it on every fetch and reports a refused page's link as "blocked by the site's
+robots.txt". A URL the user names is still fetched without it, as a user-directed
+fetch; the `url-content` and `url-summary` agents could adopt it too if that
+middle case should be strict.
 
 ## Allowed
 
