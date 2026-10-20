@@ -35,7 +35,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py`, `stock_fundamental.py` and `stock_intrinsic_value.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
-- [`indicators.py`](#indicatorspy) — dependency-free technical indicators over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `rebase`, `trend`
+- [`indicators.py`](#indicatorspy) — dependency-free technical indicators and risk metrics over a price series: `moving_average`, `price_vs_moving_average`, `moving_average_cross`, `moving_average_cross_flip`, `rebase`, `trend`, `returns`, `volatility`, `max_drawdown`, `correlation`
 - [`valuation.py`](#valuationpy) — dependency-free intrinsic-value estimators: `gordon_growth_value`, `discounted_cash_flow`, `multiple_value` / `ev_multiple_value`, `equity_from_enterprise`, `implied_growth_rate` (reverse DCF)
 - [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy) — pulls fundamentals from Yahoo Finance and runs every `valuation.py` method (DCF, reverse DCF, dividend discount, P/E, Graham, EV/EBITDA, P/S) against the current price
 - [`.claude/agents/stock-intrinsic-value.md`](#claude-code-agent-stock-intrinsic-value) — Claude Code subagent that calls `stock_intrinsic_value.py` and reports a named stock's DCF / reverse-DCF / multiples fair value versus its price
@@ -1579,7 +1579,7 @@ A server is used instead of a static page because Yahoo's endpoints don't send C
 
 ## indicators.py
 
-Small, dependency-free technical indicators over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_price_history.py`](#stock_price_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) (moving-average overlays and cross-flip arrows), [`stock_rebased_chart.py`](#stock_rebased_chartpy) (`rebase`), and the [`stock-trend`](#claude-code-agent-stock-trend) agent. For a concepts-first walkthrough see [`docs/indicators.md`](docs/indicators.md).
+Small, dependency-free technical indicators and risk metrics over a price series — a plain list of numbers, oldest session first, such as the `close` field of each row from [`stock_price_history.py`](#stock_price_historypy)'s `--json` output. Not a CLI: it is imported, not run. Used by [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) (moving-average overlays and cross-flip arrows), [`stock_rebased_chart.py`](#stock_rebased_chartpy) (`rebase`), and the [`stock-trend`](#claude-code-agent-stock-trend) agent. For a concepts-first walkthrough see [`docs/indicators.md`](docs/indicators.md).
 
 ### Requirements
 
@@ -1593,6 +1593,10 @@ Small, dependency-free technical indicators over a price series — a plain list
 - `moving_average_cross_flip(prices, fast, slow)` — Marks the sessions where `moving_average_cross` flips sides. Returns a list the **same length** as `prices`: `True` on a session where the cross has just gone `"below"` → `"above"` or `"above"` → `"below"` since the last decisive session, `False` otherwise. Runs of `"equal"` between the two sides are stepped over, so the flip still reports on the session where the new side first shows; `"equal"` sessions, unchanged sessions, and the first decisive session are `False`, and undefined sessions are `None`. Take `[-1]` for the current reading. Raises `ValueError` (via `moving_average`) if either window `< 1`.
 - `rebase(prices, n=0)` — Rescales the series so its `n`-th session (default `0`, the first) reads as 100. Returns a list the **same length** as `prices`: element `i` is `prices[i] / prices[n] * 100`, so values above 100 mean the series has risen relative to session `n`, below means it has fallen. Raises `IndexError` if `n` is out of range, `ValueError` if `prices[n]` is `0`.
 - `trend(prices, window=None, flat_threshold=0.01)` — Classifies the series as `"up"`, `"down"`, or `"flat"`. Fits a least-squares line through the closes and measures the move that line implies from its first fitted point to its last, as a fraction of the *magnitude* of the mean price (so the sign always tracks the slope, even for an all-negative series); if that fitted move is smaller than `flat_threshold` (default `0.01` = 1%) in magnitude the series is `"flat"` (direction is just noise), otherwise its sign decides up vs down. `window=N` restricts the fit to the last `N` prices. Raises `ValueError` on fewer than 2 prices (or `window < 2`).
+- `returns(prices)` — Session-to-session fractional change. Returns a list the **same length** as `prices`: element `i` is `prices[i] / prices[i-1] - 1` (`0.05` = up 5%), `None` at index 0 (an empty input gives `[]`). Raises `ValueError` if any price but the last is `0`.
+- `volatility(prices, periods_per_year=252)` — Annualized volatility: the sample standard deviation (`n - 1` denominator) of `returns(prices)`, times `sqrt(periods_per_year)`. Returns a fraction (`0.24` = 24% a year); pass `periods_per_year=1` for the per-session figure, `52` for weekly bars, `365` for a 7-day-a-week crypto series. Up and down moves count alike. Takes the whole series — slice it first (`prices[-21:]`) for a recent stretch. Raises `ValueError` on fewer than 3 prices, `periods_per_year <= 0`, or a zero price.
+- `max_drawdown(prices)` — The worst peak-to-trough fall against the running high. Returns `{"drawdown", "peak", "trough", "recovery"}`: `drawdown` is a fraction `<= 0` (`-0.25` = down 25% from the peak), `peak` / `trough` are the indices of the high and the low, and `recovery` is the index of the first later session that closed at or above the peak's price (`None` if none has). On a tie the earliest fall wins. With no fall at all, `drawdown` is `0.0` and the three indices are `None`. Raises `ValueError` on an empty series or a non-positive price.
+- `correlation(prices_a, prices_b)` — Pearson correlation, from `-1` to `+1`, of the two series' **returns** (not raw prices, which would make any two up-trending series look related). The lists must be the same length and aligned session for session; matching up dates across exchanges with different holidays is the caller's job. Returns `None` if either series' returns never vary (a flat or constant-growth series). Raises `ValueError` on a length mismatch, fewer than 3 prices, or a zero price.
 - `_ols_slope(values)` — Internal: least-squares slope of `values` against `x = 0, 1, 2, …` (per step).
 
 ### Examples
@@ -1600,7 +1604,8 @@ Small, dependency-free technical indicators over a price series — a plain list
 ```python
 >>> from indicators import (
 ...     moving_average, price_vs_moving_average, moving_average_cross,
-...     moving_average_cross_flip, rebase, trend)
+...     moving_average_cross_flip, rebase, trend, returns, volatility,
+...     max_drawdown, correlation)
 >>> moving_average([1, 2, 3, 4, 5], 3)
 [None, None, 2.0, 3.0, 4.0]
 >>> price_vs_moving_average([10, 10, 10, 7, 13], 3)
@@ -1619,6 +1624,14 @@ Small, dependency-free technical indicators over a price series — a plain list
 'down'
 >>> trend([10, 10, 10, 10])
 'flat'
+>>> returns([100, 150, 75])
+[None, 0.5, -0.5]
+>>> round(volatility([100, 150, 75], periods_per_year=1), 4)
+0.7071
+>>> max_drawdown([100, 120, 90, 110])
+{'drawdown': -0.25, 'peak': 1, 'trough': 2, 'recovery': None}
+>>> correlation([100, 150, 75], [10, 15, 7.5])
+1.0
 ```
 
 Pull real closes straight from the JSON tool:
@@ -1627,7 +1640,7 @@ Pull real closes straight from the JSON tool:
 import json, subprocess
 from indicators import (
     trend, moving_average, price_vs_moving_average, moving_average_cross,
-    moving_average_cross_flip, rebase)
+    moving_average_cross_flip, rebase, volatility, max_drawdown)
 
 out = subprocess.run(
     ["python3", "stock_price_history.py", "AAPL", "--range", "6mo", "--json"],
@@ -1642,13 +1655,17 @@ price_vs_moving_average(closes, 50)[-1]        # -> "above" / "below" / "equal"
 moving_average_cross(closes, 20, 50)[-1]       # -> is the 20-SMA above the 50-SMA?
 moving_average_cross_flip(closes, 20, 50)[-1]  # -> did the 20/50 cross just flip sides?
 rebase(closes)[-1]            # -> current price as a ratio of the first session, x100
+volatility(closes)            # -> annualized volatility over the span, e.g. 0.24
+volatility(closes[-21:])      # -> ... over roughly the last month
+max_drawdown(closes)          # -> worst fall: {"drawdown": -0.12, "peak": 41, ...}
 ```
 
 ### Notes / limitations
 
 - `moving_average` re-sums each window, so it is O(len·n) — fine for stock series (hundreds–thousands of points). For very long inputs keep a running sum instead (O(len)), accepting minor floating-point drift. `price_vs_moving_average`, `moving_average_cross`, and `moving_average_cross_flip` build on it and inherit that cost.
 - `trend` is a mechanical read of past closing prices — a straight-line fit, nothing more. It is not a forecast, and `flat_threshold` is a blunt single knob: tune it up to ignore weaker trends, down to be more sensitive. It does not scale with the series' own volatility.
-- All of these take raw `close` values. Pass `adj_close` instead when spanning a split or large dividend.
+- The risk metrics (`volatility`, `max_drawdown`, `correlation`) describe the past period only — past swings and falls are no promise of future ones — and all three move a lot with the window chosen. `volatility` is symmetric (a big jump up scores like a big drop) and assumes the bars are evenly spaced at `periods_per_year`. `correlation` says whether two series moved in step, not by how much, nor why.
+- All of these take raw `close` values. Pass `adj_close` instead when spanning a split or large dividend — a split shows up in raw closes as a huge one-day "fall", which would wreck `returns`, `volatility` and `max_drawdown` in particular.
 
 ---
 

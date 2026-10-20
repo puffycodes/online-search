@@ -1,15 +1,21 @@
-"""Tests for indicators: the price-series transforms, trend classifier, and _ols_slope."""
+"""Tests for indicators: the price-series transforms, trend classifier, _ols_slope, and risk metrics."""
 
 import pytest
 
+import math
+
 from indicators import (
     _ols_slope,
+    correlation,
+    max_drawdown,
     moving_average,
     moving_average_cross,
     moving_average_cross_flip,
     price_vs_moving_average,
     rebase,
+    returns,
     trend,
+    volatility,
 )
 
 
@@ -161,3 +167,147 @@ class TestTrend:
         # doesn't flip the sign of the slope-derived direction.
         assert trend([-5, -4, -3, -2, -1]) == "up"
         assert trend([-1, -2, -3, -4, -5]) == "down"
+
+
+class TestReturns:
+    def test_basic(self):
+        assert returns([100, 150, 75]) == [None, 0.5, -0.5]
+
+    def test_same_length_as_input(self):
+        assert len(returns([1, 2, 3, 4])) == 4
+
+    def test_single_price(self):
+        assert returns([5]) == [None]
+
+    def test_empty(self):
+        assert returns([]) == []
+
+    def test_accepts_any_iterable(self):
+        assert returns(iter([2, 4])) == [None, 1.0]
+
+    def test_zero_before_last_raises(self):
+        with pytest.raises(ValueError, match="non-zero"):
+            returns([10, 0, 5])
+
+    def test_zero_last_price_is_minus_one(self):
+        # Only a zero *divisor* is a problem; a final 0 is a -100% session.
+        assert returns([10, 0]) == [None, -1.0]
+
+
+class TestVolatility:
+    def test_per_session(self):
+        # returns 0.5, -0.5: mean 0, sample variance 0.5
+        assert volatility([100, 150, 75], periods_per_year=1) == pytest.approx(
+            math.sqrt(0.5))
+
+    def test_annualized_by_sqrt_periods(self):
+        prices = [100, 102, 99, 103, 101]
+        assert volatility(prices) == pytest.approx(
+            volatility(prices, periods_per_year=1) * math.sqrt(252))
+
+    def test_constant_series_is_zero(self):
+        assert volatility([10, 10, 10]) == 0.0
+
+    def test_steady_growth_is_zero(self):
+        # Same return every session: no swing around the mean.
+        assert volatility([100, 110, 121, 133.1]) == pytest.approx(0.0, abs=1e-12)
+
+    def test_up_and_down_moves_count_alike(self):
+        assert volatility([100, 150, 75]) == pytest.approx(
+            volatility([100, 50, 75]))
+
+    def test_too_few_prices_raises(self):
+        with pytest.raises(ValueError, match="at least 3 prices"):
+            volatility([100, 101])
+
+    @pytest.mark.parametrize("bad", [0, -252])
+    def test_non_positive_periods_raises(self, bad):
+        with pytest.raises(ValueError, match="periods_per_year"):
+            volatility([1, 2, 3], periods_per_year=bad)
+
+    def test_zero_price_raises(self):
+        with pytest.raises(ValueError, match="non-zero"):
+            volatility([10, 0, 5])
+
+
+class TestMaxDrawdown:
+    def test_reference_example(self):
+        assert max_drawdown([100, 120, 90, 110]) == {
+            "drawdown": -0.25, "peak": 1, "trough": 2, "recovery": None,
+        }
+
+    def test_recovery_index(self):
+        assert max_drawdown([100, 50, 80, 100, 90]) == {
+            "drawdown": -0.5, "peak": 0, "trough": 1, "recovery": 3,
+        }
+
+    def test_recovery_above_peak(self):
+        assert max_drawdown([100, 50, 120])["recovery"] == 2
+
+    def test_rising_series_has_no_drawdown(self):
+        assert max_drawdown([1, 2, 3]) == {
+            "drawdown": 0.0, "peak": None, "trough": None, "recovery": None,
+        }
+
+    def test_single_price(self):
+        assert max_drawdown([5])["drawdown"] == 0.0
+
+    def test_picks_largest_not_latest(self):
+        # A -50% fall early beats a later -20% one from a higher peak.
+        out = max_drawdown([100, 50, 200, 160])
+        assert (out["drawdown"], out["peak"], out["trough"]) == (-0.5, 0, 1)
+
+    def test_later_larger_fall_from_new_peak(self):
+        out = max_drawdown([100, 90, 200, 100])
+        assert (out["drawdown"], out["peak"], out["trough"]) == (-0.5, 2, 3)
+
+    def test_tie_keeps_earliest(self):
+        out = max_drawdown([100, 50, 100, 50])
+        assert (out["peak"], out["trough"], out["recovery"]) == (0, 1, 2)
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError, match="at least 1 price"):
+            max_drawdown([])
+
+    @pytest.mark.parametrize("bad", [[10, 0, 5], [10, -1]])
+    def test_non_positive_price_raises(self, bad):
+        with pytest.raises(ValueError, match="positive"):
+            max_drawdown(bad)
+
+
+class TestCorrelation:
+    def test_perfect_positive(self):
+        assert correlation([100, 150, 75], [10, 15, 7.5]) == pytest.approx(1.0)
+
+    def test_perfect_negative(self):
+        assert correlation([100, 150, 75], [100, 50, 75]) == pytest.approx(-1.0)
+
+    def test_uses_returns_not_prices(self):
+        # Both prices rise every session, but the size of each rise is
+        # opposite: big-then-small vs small-then-big. On raw prices this would
+        # read near +1; on returns it is -1.
+        assert correlation([100, 200, 210], [100, 105, 210]) == pytest.approx(-1.0)
+
+    def test_symmetric(self):
+        a, b = [100, 103, 101, 106, 104], [50, 51, 49, 52, 53]
+        assert correlation(a, b) == pytest.approx(correlation(b, a))
+        assert -1.0 <= correlation(a, b) <= 1.0
+
+    def test_flat_series_is_none(self):
+        assert correlation([10, 10, 10], [1, 2, 3]) is None
+
+    def test_steady_growth_is_none(self):
+        # Constant returns: no variance, so correlation is undefined.
+        assert correlation([1, 2, 4], [5, 6, 4]) is None
+
+    def test_length_mismatch_raises(self):
+        with pytest.raises(ValueError, match="same length"):
+            correlation([1, 2, 3], [1, 2, 3, 4])
+
+    def test_too_few_prices_raises(self):
+        with pytest.raises(ValueError, match="at least 3 prices"):
+            correlation([1, 2], [3, 4])
+
+    def test_zero_price_raises(self):
+        with pytest.raises(ValueError, match="non-zero"):
+            correlation([1, 0, 3], [1, 2, 3])

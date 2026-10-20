@@ -7,6 +7,11 @@ easier to read. A "session" just means one trading day.
 They all **describe the past**. None of them forecasts the future — they smooth,
 compare, or summarise numbers that have already happened.
 
+Sections 1–6 are about **direction** (where the price has been heading).
+Sections 7–10 are **risk metrics**: they describe how **bumpy** the ride was —
+how big the daily swings were, how deep the worst fall went, and whether two
+prices tended to move together.
+
 Quick map:
 
 | Function | In one sentence |
@@ -17,6 +22,10 @@ Quick map:
 | `moving_average_cross_flip` | Flags the exact day the fast/slow order switches. |
 | `rebase` | Redraws the whole series as a ratio to one chosen day, so that day reads 100. |
 | `trend` | One word for a stretch of prices: `up`, `down`, or `flat`. |
+| `returns` | Each day's change from the day before, as a fraction (`0.02` = up 2%). |
+| `volatility` | How widely the price swung day to day, as a yearly percentage. |
+| `max_drawdown` | The worst fall from a high to a later low, and whether it has recovered. |
+| `correlation` | How closely two prices moved together, from −1 to +1. |
 
 ---
 
@@ -229,6 +238,152 @@ trend([10, 10, 10, 10])  ->  "flat"
 **Watch out.** It's a summary of the past, and it depends heavily on the window
 you choose. A stock can be `"up"` over six months while the last two weeks are
 `"down"` — checking a couple of windows tells you more than any single verdict.
+
+---
+
+## 7. Returns — `returns(prices)`
+
+**What it tells you.** For each day, how much the price changed since the day
+before, as a fraction: `0.02` means up 2%, `-0.05` means down 5%. The first day
+is blank (`None`) because there's no earlier day to compare it with.
+
+**Why it exists.** Prices themselves aren't comparable across stocks — a $5 move
+is huge for a $20 stock and tiny for a $900 one. Percent changes are. The three
+risk metrics below are built on these daily changes rather than on raw prices.
+
+**Example.**
+
+```
+prices:   100   150    75
+returns:   –    0.5  -0.5
+```
+
+From 100 to 150 is up 50% (`0.5`); from 150 to 75 is down 50% (`-0.5`).
+
+**Watch out.** A fall of 50% followed by a rise of 50% does **not** get you back
+to where you started: 100 → 50 → 75. The percentages don't simply add up.
+
+---
+
+## 8. Volatility — `volatility(prices, periods_per_year=252)`
+
+**What it tells you.** How widely the price swung from day to day — one number,
+written as a yearly percentage. `0.24` means "24% a year."
+
+**How it decides.** It takes the daily returns (section 7) and measures how
+spread out they are around their own average (the statistician's "standard
+deviation"). A stock that moves ±0.3% most days has low volatility; one that
+jumps ±4% has high volatility. That daily figure is then scaled up to a yearly
+one by multiplying by the square root of the number of trading days in a year
+(about 252), so a 3-month and a 1-year measurement read on the same scale.
+
+**Rough sense of scale.** These vary a lot, but as a loose guide: big, steady
+companies are often somewhere around 15–30% a year; small or speculative
+companies and cryptocurrencies run well above that; major currency pairs are
+often under 10%.
+
+**The dial.** `periods_per_year` says how many data points make a year: 252 for
+daily stock prices (the default), 365 for a crypto coin that trades every day,
+52 for weekly prices, 12 for monthly. Pass `1` to get the plain day-to-day
+figure without scaling it up.
+
+**Example.**
+
+```
+volatility([10, 10, 10])                          ->  0.0    (never moved)
+volatility([100, 150, 75], periods_per_year=1)    ->  0.707  (huge daily swings)
+```
+
+**Watch out.**
+- It treats a jump **up** exactly like a drop **down** — a stock climbing in big
+  leaps scores as "volatile" too. It measures bumpiness, not loss.
+- A stock rising by the same amount every day has a volatility of zero, however
+  far it has risen. It's about the *swings*, not the direction.
+- It describes the period you measured. A calm six months doesn't promise a calm
+  next month.
+
+---
+
+## 9. Maximum drawdown — `max_drawdown(prices)`
+
+**What it tells you.** The worst fall from a high point to a later low point —
+"if you'd bought at the worst possible moment in this period, how much would you
+have been down at the bottom?" It also tells you **when** that happened and
+whether the price has since climbed back.
+
+**How it decides.** It walks through the prices day by day, remembering the
+highest price seen so far. Each day it measures how far the price sits below
+that high. The biggest such gap is the maximum drawdown.
+
+**What you get back.** Four things:
+- `drawdown` — the size of the fall, as a negative fraction: `-0.25` means "down
+  25% from the high." `0.0` means the price never dipped below an earlier high.
+- `peak` — which day the high was (its position in the list).
+- `trough` — which day the low was.
+- `recovery` — the first day afterwards that the price got back to the old high,
+  or `None` if it hasn't yet.
+
+**Example.**
+
+```
+prices:   100   120    90   110
+               peak trough
+```
+
+The high was 120 (day 1), the low after it 90 (day 2): a fall of 30 from 120,
+which is **−25%**. The price is at 110 by the end — still below 120 — so
+`recovery` is `None`.
+
+**How to read it.** It's closer to how people actually feel risk than volatility
+is: "this stock once fell 40% before coming back" is easier to picture than "its
+volatility was 35%."
+
+**Watch out.** It depends heavily on the period you look at. A 1-month window
+can't show a slide that took a year, and a single bad stretch decides the whole
+number. Pair it with `recovery` — a 30% fall that recovered in three weeks is a
+very different story from one that hasn't recovered at all.
+
+---
+
+## 10. Correlation — `correlation(prices_a, prices_b)`
+
+**What it tells you.** Whether two prices tended to move together, as a number
+from **−1 to +1**:
+- near **+1** — they usually rose and fell on the same days (two big oil
+  companies, say);
+- near **0** — no consistent link between their daily moves;
+- near **−1** — one tended to rise on the days the other fell.
+
+**How it decides.** It lines up the two stocks' daily returns (section 7) day by
+day and measures how consistently they moved in step. It deliberately uses the
+daily *changes*, not the prices: two stocks that both drifted up over a year
+would look closely linked on raw prices, even if their day-to-day moves had
+nothing to do with each other.
+
+**Example.**
+
+```
+A:  100   150    75       (up 50%, then down 50%)
+B:   10    15   7.5       (up 50%, then down 50%)   ->  correlation  +1.0
+C:  100    50    75       (down 50%, then up 50%)   ->  A vs C       −1.0
+```
+
+**Lining up the days.** The two lists must be the same length and match day for
+day — element 5 of each must be the same date. Stocks on different exchanges
+keep different holidays, so the caller has to keep only the dates both traded
+before calling this.
+
+**When there's no answer.** If one of the prices didn't swing at all over the
+period (it was flat, or rose by exactly the same percentage every day), there's
+nothing to compare its moves with, and you get `None` instead of a number.
+
+**Watch out.**
+- Correlation isn't cause: two stocks can move together because the whole market
+  moved, not because one affects the other.
+- It shifts over time. Two stocks that moved together last year may not this
+  year, especially around a market shock, when many things suddenly move together.
+- It says nothing about *size*: a stock that moves 1% every time another moves
+  5% can still have a correlation of +1.
 
 ---
 

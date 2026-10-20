@@ -18,16 +18,13 @@ both READMEs in the same change. Then remove the item from this list.
 Chosen on 2026-10-19, in suggested order. Each is described in full in its section
 below; remove it from both places when it's done.
 
-1. **Risk metrics in `indicators.py`** (Finance): no new data source to vet, pure
-   functions with offline tests, and it makes the stock tools more useful (e.g. the
-   `stock-trend` agent mentioning volatility and drawdown).
-2. **Vulnerability lookup via OSV.dev** (Tech and news): the most useful new source,
+1. **Vulnerability lookup via OSV.dev** (Tech and news): the most useful new source,
    and the first one to go through the robots.txt-and-terms check before anything is
    built; record the finding here either way.
-3. **Broken-link checker** (Combining existing scripts): joins `url_links.py` and
+2. **Broken-link checker** (Combining existing scripts): joins `url_links.py` and
    `url_availability.py`; the main design question is staying polite on big pages (a
    cap on links, a delay, each host checked sparingly).
-4. **Targeted test runs for `web-search`** (Repo and tooling): every research flow
+3. **Targeted test runs for `web-search`** (Repo and tooling): every research flow
    depends on it, and its fallback rules (missing key, quota message, transient
    error) have never been tested on purpose.
 
@@ -68,10 +65,11 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### Extending existing scripts
 
-- [ ] **Risk metrics in `indicators.py`**: volatility, maximum drawdown and the
-  correlation between tickers, as pure functions over the price history the chart
-  scripts already fetch; they could feed the rebased chart or a new agent.
-  Descriptive, not predictive, like the rest of `indicators.py`.
+- [ ] **Use the risk metrics**: `indicators.py` now has `volatility`,
+  `max_drawdown` and `correlation`, but nothing calls them yet. The `stock-trend`
+  agent could mention volatility and the worst drawdown alongside its verdict, and
+  the rebased chart (or a new agent) could report the correlation between the
+  tickers it compares, after lining up their shared dates.
 - [ ] **Dividend and split history**: Yahoo's chart endpoint can return dividend and
   split events alongside prices (`events=div,splits`), so this is an extension of
   `yahoo_finance.py`. Unofficial, like the rest of Yahoo.
