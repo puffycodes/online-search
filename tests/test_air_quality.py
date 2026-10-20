@@ -166,7 +166,9 @@ class TestMain:
         record = {"location": "X", "us_aqi": 42}
         monkeypatch.setattr(aq, "get_air_quality", lambda *a, **k: record)
         aq.main(["X", "--json"])
-        assert json.loads(capsys.readouterr().out) == record
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["us_aqi"] == 42
+        assert payload["attribution"] == aq.ATTRIBUTION
 
     def test_text_output(self, monkeypatch, capsys):
         record = {
@@ -189,3 +191,4 @@ class TestMain:
         out = capsys.readouterr().out
         assert "Looking up air quality for 'X'" in out
         assert "Air quality for X" in out
+        assert out.rstrip().endswith(aq.ATTRIBUTION)

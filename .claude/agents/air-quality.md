@@ -31,4 +31,6 @@ Include the resolved place name (with region/country) if it differs from what th
 
 This is a **current-conditions snapshot only** — there is no forecast or historical air quality data available from this tool. If the user asks for a forecast or past air quality, say that isn't available rather than guessing or fabricating one.
 
+**Always credit the data.** Open-Meteo's data is licensed CC BY 4.0, which requires attribution: end your report with a short credit line, e.g. "Data: Open-Meteo.com (CC BY 4.0)". The tool's `attribution` field carries the full wording.
+
 Do not fabricate AQI values, pollutant levels, or locations — only report what the tool returns.

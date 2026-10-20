@@ -10,6 +10,12 @@ official API for that reason). Use this script when an occasional,
 key-free lookup is enough; prefer web_search_brave.py for anything
 higher-volume or production-facing.
 
+Only DuckDuckGo is queried. `ddgs` is a metasearch library whose default
+backend ("auto") also scrapes Google, Yahoo, Startpage, Mojeek, Brave and
+Grokipedia, whose robots.txt files disallow those search paths (audited
+2026-10-20; see docs/source-audit.md), so the backend is pinned to
+DuckDuckGo's HTML endpoint, which its robots.txt allows.
+
 Use `ddgs`, not its predecessor `duckduckgo_search` (renamed in 2025).
 `duckduckgo_search` is unmaintained and hits DuckDuckGo's rate limit
 almost immediately; `ddgs` is the actively maintained successor and is
@@ -28,6 +34,7 @@ import argparse
 try:
     from ddgs import DDGS
     from ddgs.exceptions import DDGSException
+    BACKEND = "duckduckgo"
 except ImportError:
     # Degraded fallback for Python <3.10, where ddgs can't be installed.
     # This unmaintained predecessor package rate-limits much more readily.
@@ -36,9 +43,12 @@ except ImportError:
         from duckduckgo_search.exceptions import (
             DuckDuckGoSearchException as DDGSException,
         )
+        # The old package names DuckDuckGo's own HTML endpoint "html".
+        BACKEND = "html"
     except ImportError:
         DDGS = None
         DDGSException = Exception
+        BACKEND = None
 
 from cli_utils import die, positive_int, print_results, use_utf8_output
 
@@ -47,7 +57,7 @@ RESULTS_TO_SHOW = 10
 
 def fetch_results(query, limit):
     with DDGS() as ddgs:
-        return list(ddgs.text(query, max_results=limit))
+        return list(ddgs.text(query, max_results=limit, backend=BACKEND))
 
 
 def result_to_dict(rank, item):

@@ -24,8 +24,8 @@ class FakeDDGS:
     def __exit__(self, *exc_info):
         return False
 
-    def text(self, query, max_results=None):
-        self.calls.append((query, max_results))
+    def text(self, query, max_results=None, backend=None):
+        self.calls.append((query, max_results, backend))
         if self.exception is not None:
             raise self.exception
         return self.results
@@ -37,7 +37,15 @@ class TestFetchResults:
         monkeypatch.setattr(wsd, "DDGS", fake)
         results = wsd.fetch_results("python", 3)
         assert results == [{"title": "A"}, {"title": "B"}, {"title": "C"}]
-        assert fake.calls == [("python", 3)]
+        assert fake.calls == [("python", 3, wsd.BACKEND)]
+
+    def test_backend_pinned_to_duckduckgo(self, monkeypatch):
+        # ddgs's default "auto" backend also scrapes Google, Yahoo and others
+        # whose robots.txt disallows it; only DuckDuckGo may be queried.
+        fake = FakeDDGS()
+        monkeypatch.setattr(wsd, "DDGS", fake)
+        wsd.fetch_results("python", 3)
+        assert fake.calls[0][2] in ("duckduckgo", "html")
 
     def test_propagates_ddgs_exception(self, monkeypatch):
         fake = FakeDDGS(exception=wsd.DDGSException("202 Ratelimit"))

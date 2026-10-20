@@ -22,6 +22,12 @@ moves a lot when the assumptions move. Nothing here is investment advice.
 [`things-to-explore.md`](things-to-explore.md) lists data sources and features that
 could be added on top of the existing scripts. They are ideas only, not implemented yet.
 
+## Source audit
+
+[`source-audit.md`](source-audit.md) records the robots.txt-and-terms check of every
+outside service the scripts call (last run 2026-10-20): what each one allows, what
+the repo does to comply, and what is still open.
+
 ## Agent feature specs
 
 [`features/agent/`](features/agent/) holds one `features.md` per Claude Code subagent

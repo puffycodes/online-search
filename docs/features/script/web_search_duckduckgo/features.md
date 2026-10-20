@@ -5,6 +5,7 @@
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the ddgs package (or the older duckduckgo_search package), which scrapes DuckDuckGo's results; no API key.
     - If neither package is installed, fail before searching.
+    - Query DuckDuckGo only: pin the backend to DuckDuckGo ("duckduckgo" in ddgs, "html" in duckduckgo_search). Never use ddgs's default "auto" backend, which also scrapes Google, Yahoo, Startpage, Mojeek, Brave and Grokipedia against their robots.txt (see docs/source-audit.md).
 - Use cli_utils.py's print_results() (which renders each row with format_result()).
 
 ## Actions

@@ -29,6 +29,7 @@ import requests
 
 from cli_utils import die, positive_int, use_utf8_output
 from weather import (
+    ATTRIBUTION,
     daily_value,
     fetch_json,
     format_daylight,
@@ -310,11 +311,13 @@ def main(argv=None):
     if row is None:
         die(f"No location found matching '{args.location}'.", args.json)
 
+    row["attribution"] = ATTRIBUTION
     if args.json:
         print(json.dumps(row, indent=2))
         return
 
     print(format_history(row))
+    print(f"\n{ATTRIBUTION}")
 
 
 if __name__ == "__main__":

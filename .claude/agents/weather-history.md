@@ -40,4 +40,6 @@ Include the resolved place name (with region/country) if it differs from what th
 
 Note that the figures come from a reanalysis model on a grid (roughly 10-25 km), not a single weather station, so they can differ from local station records — especially for coastal or mountain places — and the most recent few days are provisional. If the range includes today, say today's figures are incomplete.
 
+**Always credit the data.** Open-Meteo's data is licensed CC BY 4.0, which requires attribution: end your report with a short credit line, e.g. "Data: Open-Meteo.com (CC BY 4.0)". The tool's `attribution` field carries the full wording.
+
 Do not fabricate conditions, temperatures, or dates — only report what the tool returns. If a value is `null`, say there is no data for it.

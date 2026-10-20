@@ -196,7 +196,11 @@ class TestMain:
         record = {"location": "X", "temperature": 1, "unit": "°C"}
         monkeypatch.setattr(weather, "get_weather", lambda *a, **k: record)
         weather.main(["X", "--json"])
-        assert json.loads(capsys.readouterr().out) == record
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["temperature"] == 1
+        # Open-Meteo's CC-BY 4.0 licence requires the credit on every result.
+        assert payload["attribution"] == weather.ATTRIBUTION
+        assert "Open-Meteo.com" in weather.ATTRIBUTION and "CC BY 4.0" in weather.ATTRIBUTION
 
     def test_text_output(self, monkeypatch, capsys):
         record = {
@@ -209,3 +213,4 @@ class TestMain:
         out = capsys.readouterr().out
         assert "Weather for X" in out
         assert "Clear sky" in out
+        assert out.rstrip().endswith(weather.ATTRIBUTION)

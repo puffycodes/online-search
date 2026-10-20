@@ -31,6 +31,7 @@
     - {{Place Name}}, {{Region}}, {{Country}} and the date or range.
     - One row per day, then the summary.
     - With --json: {location, admin1, country, latitude, longitude, start_date, end_date, unit, days: [{date, weather_code, condition, temp_max, temp_min, temp_mean, precipitation_sum, rain_sum, snowfall_sum, windspeed_max, sunrise, sunset, daylight_hours, polar}], summary}.
+- Always end the result with the credit "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0." (Open-Meteo's data is CC BY 4.0, which requires attribution): the last line of the report, or the `attribution` field with --json.
 - Support a --json option:
     - With it, skip any progress line and print the result as a single JSON value on stdout.
     - Without it, print a human-readable report.

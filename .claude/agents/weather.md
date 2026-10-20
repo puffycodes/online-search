@@ -26,4 +26,6 @@ Lead with the condition and temperature: `<Location>: <condition>, <temperature>
 
 This is a **current-conditions snapshot only** — there is no forecast, hourly, or historical data available from this tool. Upcoming days, the UV index and sunrise / sunset are the `weather-forecast` agent's job, and past dates the `weather-history` agent's; say so rather than guessing or fabricating them from this snapshot.
 
+**Always credit the data.** Open-Meteo's data is licensed CC BY 4.0, which requires attribution: end your report with a short credit line, e.g. "Data: Open-Meteo.com (CC BY 4.0)". The tool's `attribution` field carries the full wording.
+
 Do not fabricate conditions, temperatures, or locations — only report what the tool returns.

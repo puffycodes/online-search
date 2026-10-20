@@ -23,6 +23,7 @@ import requests
 
 from cli_utils import die, use_utf8_output
 from weather import (
+    ATTRIBUTION,
     FORECAST_URL,
     daily_value,
     fetch_json,
@@ -208,11 +209,13 @@ def main(argv=None):
     if row is None:
         die(f"No location found matching '{args.location}'.", args.json)
 
+    row["attribution"] = ATTRIBUTION
     if args.json:
         print(json.dumps(row, indent=2))
         return
 
     print(format_forecast(row))
+    print(f"\n{ATTRIBUTION}")
 
 
 if __name__ == "__main__":

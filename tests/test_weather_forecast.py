@@ -149,4 +149,14 @@ class TestMain:
         record = {"location": "X", "days": []}
         monkeypatch.setattr(wf, "get_forecast", lambda *a, **k: record)
         wf.main(["X", "--json"])
-        assert json.loads(capsys.readouterr().out) == record
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["days"] == []
+        assert payload["attribution"] == wf.ATTRIBUTION
+
+    def test_text_output_ends_with_attribution(self, monkeypatch, capsys):
+        monkeypatch.setattr(wf, "get_forecast", lambda *a, **k: {"location": "X"})
+        monkeypatch.setattr(wf, "format_forecast", lambda row: "FORECAST")
+        wf.main(["X"])
+        out = capsys.readouterr().out
+        assert "FORECAST" in out
+        assert out.rstrip().endswith(wf.ATTRIBUTION)

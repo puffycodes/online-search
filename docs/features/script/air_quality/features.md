@@ -25,6 +25,7 @@
     - {{Alder Pollen}} {{Birch Pollen}} {{Grass Pollen}} {{Mugwort Pollen}} {{Olive Pollen}} {{Ragweed Pollen}}, in grains/m³, on one line; or "Pollen: not available (Europe only)" when every value is missing.
     - {{Observation Time}}
     - With --json: {location, admin1, country, latitude, longitude, us_aqi, us_aqi_category, european_aqi, pm2_5, pm10, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, alder_pollen, birch_pollen, grass_pollen, mugwort_pollen, olive_pollen, ragweed_pollen, time}.
+- Always end the result with the credit "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0." (Open-Meteo's data is CC BY 4.0, which requires attribution): the last line of the report, or the `attribution` field with --json.
 - Support a --json option:
     - With it, skip any progress line and print the result as a single JSON value on stdout.
     - Without it, print a human-readable report.

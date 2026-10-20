@@ -216,7 +216,9 @@ class TestMain:
         record = {"location": "X", "days": []}
         monkeypatch.setattr(wh, "get_history", lambda *a, **k: seen.append((a, k)) or record)
         wh.main(["X", "--start", "2024-01-01", "--end", "2024-01-03", "--unit", "fahrenheit", "--json"])
-        assert json.loads(capsys.readouterr().out) == record
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["days"] == []
+        assert payload["attribution"] == wh.ATTRIBUTION
         assert seen == [(("X", dt.date(2024, 1, 1), dt.date(2024, 1, 3)), {"unit": "fahrenheit"})]
 
     def test_text_output_has_progress_line(self, monkeypatch, capsys):
@@ -226,6 +228,7 @@ class TestMain:
         out = capsys.readouterr().out
         assert out.startswith("Looking up the weather for 'X' on 2024-01-01 to 2024-01-02...")
         assert "Summary (2 days)" in out
+        assert out.rstrip().endswith(wh.ATTRIBUTION)
 
     def test_bad_window_exits_2_before_fetch(self, monkeypatch):
         monkeypatch.setattr(wh, "get_history", lambda *a, **k: pytest.fail("should not fetch"))

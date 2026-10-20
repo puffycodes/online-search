@@ -20,6 +20,7 @@
     - {{Place Name}}, {{Region}}, {{Country}}
     - {{Condition}} {{Temperature}} {{Wind Speed}} {{Wind Direction}} {{Observation Time}}
     - With --json: {location, admin1, country, latitude, longitude, temperature, unit, windspeed, winddirection, weather_code, condition, time}.
+- Always end the result with the credit "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0." (Open-Meteo's data is CC BY 4.0, which requires attribution): the last line of the report, or the `attribution` field with --json.
 - Support a --json option:
     - With it, skip any progress line and print the result as a single JSON value on stdout.
     - Without it, print a human-readable report.

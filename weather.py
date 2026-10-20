@@ -21,6 +21,9 @@ GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 REQUEST_TIMEOUT = 10
 SECONDS_PER_DAY = 86400
+# Open-Meteo's data is CC-BY 4.0, which requires this credit on every result
+# (https://open-meteo.com/en/terms). Shared by all four Open-Meteo scripts.
+ATTRIBUTION = "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0."
 
 # WMO weather interpretation codes -> short description.
 # https://open-meteo.com/en/docs#weathervariables
@@ -247,11 +250,13 @@ def main(argv=None):
     if row is None:
         die(f"No location found matching '{args.location}'.", args.json)
 
+    row["attribution"] = ATTRIBUTION
     if args.json:
         print(json.dumps(row, indent=2))
         return
 
     print(format_weather(row))
+    print(f"\n{ATTRIBUTION}")
 
 
 if __name__ == "__main__":

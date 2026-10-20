@@ -29,7 +29,7 @@ import json
 import requests
 
 from cli_utils import die, use_utf8_output
-from weather import fetch_json, format_place, geocode, place_fields
+from weather import ATTRIBUTION, fetch_json, format_place, geocode, place_fields
 
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
@@ -172,11 +172,13 @@ def main(argv=None):
     if row is None:
         die(f"No location found matching '{args.location}'.", args.json)
 
+    row["attribution"] = ATTRIBUTION
     if args.json:
         print(json.dumps(row, indent=2))
         return
 
     print(format_air_quality(row))
+    print(f"\n{ATTRIBUTION}")
 
 
 if __name__ == "__main__":

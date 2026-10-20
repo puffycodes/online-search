@@ -131,6 +131,8 @@ Weather for Tokyo, Japan
   Temperature: 26.5°C
   Wind: 2.5 km/h, direction 360°
   As of: 2026-09-08T07:45
+
+Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.
 ```
 
 #### Tool usage (`--json`)
@@ -152,7 +154,8 @@ python3 weather.py "New York" --json
   "winddirection": 291,
   "weather_code": 0,
   "condition": "Clear sky",
-  "time": "2026-09-08T07:45"
+  "time": "2026-09-08T07:45",
+  "attribution": "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0."
 }
 ```
 
@@ -198,6 +201,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ### Notes / limitations
 
+- **Attribution is required.** Open-Meteo's data is licensed [CC BY 4.0](https://open-meteo.com/en/terms), so the report always ends with `Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.` and the JSON carries the same text as `attribution` (the constant `weather.ATTRIBUTION`, shared by all four Open-Meteo scripts). Keep it when passing results on. Free use is for non-commercial purposes, under 10,000 calls a day.
 - Geocoding always takes Open-Meteo's single top match for the query string — an ambiguous name (e.g. a city that exists in several countries) may resolve to the wrong place; disambiguate by adding a country or region to the query (e.g. `"Springfield, Illinois"`).
 - Reports only the current conditions at a single instant — no forecast, hourly, or historical data (see [`weather_forecast.py`](#weather_forecastpy) and [`weather_history.py`](#weather_historypy) for those).
 - `weathercode` is Open-Meteo's own WMO-based classification; `WEATHER_CODES` covers the documented codes but treats any other value as `"Unknown (code N)"` rather than guessing.
@@ -237,6 +241,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
+- Ends its report with a credit line for Open-Meteo.com, whose data is licensed CC BY 4.0 and requires attribution.
 - Requires `weather.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Reports current conditions only — there is no forecast, hourly, or historical data to fall back on, so it says so rather than fabricating one.
 - Inherits all the limitations of [`weather.py`](#weatherpy) itself (geocoding takes only the top match for an ambiguous name, live-snapshot results).
@@ -290,6 +295,8 @@ Date          UV max  UV level         Sunrise  Sunset  Daylight
 2026-10-15       3.5  Moderate           05:47   17:06    11h19m
 2026-10-16       4.2  Moderate           05:48   17:05    11h17m
 2026-10-17       5.3  Moderate           05:49   17:03    11h15m
+
+Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.
 ```
 
 At high latitudes the sunrise column reads `polar night` or `midnight sun` (with the sunset column blank) on days the sun doesn't rise or set.
@@ -325,7 +332,8 @@ python3 weather_forecast.py "Chicago" --days 1 --json
       "daylight_hours": 11.1,
       "polar": null
     }
-  ]
+  ],
+  "attribution": "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0."
 }
 ```
 
@@ -368,6 +376,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `weather_descrip
 
 ### Notes / limitations
 
+- **Attribution is required.** Open-Meteo's data is licensed [CC BY 4.0](https://open-meteo.com/en/terms), so the report always ends with `Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.` and the JSON carries the same text as `attribution` (the constant `weather.ATTRIBUTION`, shared by all four Open-Meteo scripts). Keep it when passing results on. Free use is for non-commercial purposes, under 10,000 calls a day.
 - Same geocoding caveat as [`weather.py`](#weatherpy): the query's single top match is used, so an ambiguous name may resolve to the wrong place — disambiguate with a country or region in the query.
 - One high/low/condition summary per calendar day — no hourly breakdown and no current-conditions reading (use [`weather.py`](#weatherpy) for that).
 - `weathercode` is Open-Meteo's daily summary code for the day as a whole; a day with, say, morning rain and an otherwise clear afternoon is reported under a single condition.
@@ -410,6 +419,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
+- Ends its report with a credit line for Open-Meteo.com, whose data is licensed CC BY 4.0 and requires attribution.
 - Requires `weather_forecast.py`, its `weather.py` dependency, and the `requests` package to be present and runnable from the repo root.
 - Reports one high/low/condition summary per day, not an hourly breakdown, and has no current-conditions reading — for "right now" it defers to the [`weather`](#claude-code-agent-weather) agent rather than approximating from the forecast's first day.
 - Inherits all the limitations of [`weather_forecast.py`](#weather_forecastpy) itself (geocoding takes only the top match for an ambiguous name, per-day summary codes, forecast accuracy tapering toward day 16, live-snapshot results).
@@ -471,6 +481,8 @@ Summary (5 days)
   Coldest night        -5.2°C on 2026-01-06
   Total precipitation  24.6 mm (4 wet days, >= 1 mm)
   Total snowfall       1.7 cm
+
+Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.
 ```
 
 At high latitudes the sunrise column reads `polar night` or `midnight sun` (with the sunset column blank) on days the sun doesn't rise or set.
@@ -509,7 +521,8 @@ python3 weather_history.py "New York" --date 2010-12-25 --json
       "polar": null
     }
   ],
-  "summary": null
+  "summary": null,
+  "attribution": "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0."
 }
 ```
 
@@ -554,6 +567,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, `daily_value()`,
 
 ### Notes / limitations
 
+- **Attribution is required.** Open-Meteo's data is licensed [CC BY 4.0](https://open-meteo.com/en/terms), so the report always ends with `Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.` and the JSON carries the same text as `attribution` (the constant `weather.ATTRIBUTION`, shared by all four Open-Meteo scripts). Keep it when passing results on. Free use is for non-commercial purposes, under 10,000 calls a day.
 - The data is a **reanalysis** — a weather model run over past observations on a grid of roughly 10-25 km — not a single weather station's record, so it can differ from a nearby station, especially on coasts and in mountains. The latest days come from a faster model and are revised for about a week; today's values are partial.
 - `weathercode` is the model's daily summary code, derived from its precipitation and cloud; a day's "Heavy snow fall" can sit alongside a modest snowfall total.
 - Same geocoding caveat as [`weather.py`](#weatherpy): the top match is used. Accents matter — `"Tromso"` resolves to a different place than `"Tromsø"`.
@@ -592,6 +606,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Notes / limitations
 
+- Ends its report with a credit line for Open-Meteo.com, whose data is licensed CC BY 4.0 and requires attribution.
 - Requires `weather_history.py`, its `weather.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
 - Inherits all the limitations of [`weather_history.py`](#weather_historypy): gridded reanalysis rather than station data, provisional recent days, a 366-day range limit, top-match geocoding.
 
@@ -642,6 +657,8 @@ Air quality for Singapore, Singapore
   Ozone: 99.0 µg/m³
   Pollen: not available (Europe only)
   As of: 2026-09-15T14:00
+
+Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.
 ```
 
 #### Tool usage (`--json`)
@@ -672,7 +689,8 @@ python3 air_quality.py "Beijing" --json
   "mugwort_pollen": null,
   "olive_pollen": null,
   "ragweed_pollen": null,
-  "time": "2026-09-15T14:00"
+  "time": "2026-09-15T14:00",
+  "attribution": "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0."
 }
 ```
 
@@ -716,6 +734,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, and `format_plac
 
 ### Notes / limitations
 
+- **Attribution is required.** Open-Meteo's data is licensed [CC BY 4.0](https://open-meteo.com/en/terms), so the report always ends with `Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.` and the JSON carries the same text as `attribution` (the constant `weather.ATTRIBUTION`, shared by all four Open-Meteo scripts). Keep it when passing results on. Free use is for non-commercial purposes, under 10,000 calls a day.
 - Same geocoding caveat as [`weather.py`](#weatherpy): the query's single top match is used, so an ambiguous name may resolve to the wrong place — disambiguate by adding a country or region to the query.
 - Reports only the current reading at a single instant — no forecast or historical air quality (Open-Meteo's air quality API supports both `hourly=` forecasts and archived history; this script only calls the `current` shortcut).
 - The US AQI and European AQI are **not directly comparable** — they use different pollutant breakpoints and scales (US AQI runs roughly 0-500, European AQI roughly 0-100+). Don't average or otherwise combine them.
@@ -757,6 +776,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
+- Ends its report with a credit line for Open-Meteo.com, whose data is licensed CC BY 4.0 and requires attribution.
 - Requires `air_quality.py` (and its `weather.py` and `requests` dependencies) to be present and runnable from the repo root.
 - Pollen counts exist only for places in Europe, and are raw grains/m³ with no low/high bands.
 - Reports current conditions only — there is no forecast or historical air quality to fall back on, so it says so rather than fabricating one.
@@ -3879,7 +3899,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 ### How it works
 
 1. **Check the dependency** — If neither `ddgs` nor the legacy `duckduckgo_search` package is importable, the script exits with an error before doing anything else.
-2. **Fetch** — Opens a `DDGS()` session and calls `.text(query, max_results=limit)`, which scrapes DuckDuckGo's HTML search results.
+2. **Fetch** — Opens a `DDGS()` session and calls `.text(query, max_results=limit, backend=BACKEND)`, which scrapes DuckDuckGo's HTML search results. `BACKEND` is `"duckduckgo"` for `ddgs` (or `"html"` for the legacy package), pinned on purpose: `ddgs`'s default `"auto"` backend is a metasearch that also scrapes Google, Yahoo, Startpage, Mojeek, Brave and Grokipedia, whose robots.txt files disallow those paths (see [`docs/source-audit.md`](docs/source-audit.md)).
 3. **Display top N** — Prints each result's rank, title, URL, and snippet.
 
 ### Configuration
@@ -3907,7 +3927,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Notes / limitations
 
 - Unofficial: scrapes DuckDuckGo's HTML rather than calling a supported API, so it can start returning rate-limit errors under sustained or automated use, independent of IP reputation.
-- **Package choice matters a lot here.** The legacy `duckduckgo_search` package rate-limits almost immediately (observed failing on the first request in testing); `ddgs`, the maintained successor, is far less rate-limit-prone. Always prefer `ddgs`; only fall back to `duckduckgo_search` when stuck on Python <3.10, and expect frequent failures in that mode.
+- **Package choice matters a lot here.** The legacy `duckduckgo_search` package rate-limits almost immediately (observed failing on the first request in testing); `ddgs`, the maintained successor, lasts longer, but with the backend pinned to DuckDuckGo it still hits DuckDuckGo's `202` rate limit after a few quick queries (observed 2026-10-20: the second query in a row failed). Always prefer `ddgs`; only fall back to `duckduckgo_search` when stuck on Python <3.10, and expect frequent failures in that mode.
 - No pagination beyond what `ddgs` fetches internally for `max_results` — very large `--limit` values may be slower or less reliable than with `web_search_brave.py`.
 - Result ranking, freshness, and coverage reflect DuckDuckGo's index, not Google's or Brave's — they will generally overlap for well-known queries but can diverge for niche or very recent topics.
 

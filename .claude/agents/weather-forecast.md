@@ -35,4 +35,6 @@ For a UV question, give the peak UV index and its category for the day(s) asked,
 
 This tool has **no hourly or current-conditions data** — only one high/low/condition summary per calendar day. If the user wants the weather right now, redirect to the `weather` tool instead of approximating it from the forecast's first day.
 
+**Always credit the data.** Open-Meteo's data is licensed CC BY 4.0, which requires attribution: end your report with a short credit line, e.g. "Data: Open-Meteo.com (CC BY 4.0)". The tool's `attribution` field carries the full wording.
+
 Do not fabricate conditions, temperatures, or dates — only report what the tool returns.
