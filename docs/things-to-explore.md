@@ -300,6 +300,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   (`docs/features/agent/<agent>/test-runs.md`). Still untested: `web-search` with a real
   quota message or an empty result list, `url-summary`'s `ai-input=no` note (no live
   site found that sets it for every client), and `hn-search`'s invalid-argument and
-  `--author` paths. Other agents with judgement steps could follow: `trip-weather`
-  (turning "next week" into dates, keeping typical weather apart) and `url-feed`
-  (choosing a site's URL itself and the robots flag that goes with it).
+  `--author` paths. `trip-weather` and `url-feed` got theirs on 2026-10-21 too; they found
+  Open-Meteo's daylight-saving error in sun times (fixed in `weather.local_daily()`)
+  and a `--since` run cut short by the default `--limit` (fixed in the agent).

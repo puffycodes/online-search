@@ -31,6 +31,7 @@ from weather import (
     format_place,
     format_sun,
     geocode,
+    local_daily,
     place_fields,
     sun_fields,
     weather_description,
@@ -90,8 +91,7 @@ def fetch_daily_forecast(latitude, longitude, days=DEFAULT_FORECAST_DAYS, unit="
         params["end_date"] = end.isoformat()
     else:
         params["forecast_days"] = days
-    data = fetch_json(FORECAST_URL, params)
-    return data.get("daily") or {}
+    return local_daily(fetch_json(FORECAST_URL, params))
 
 
 def forecast_day(daily, i):

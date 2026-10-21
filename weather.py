@@ -11,6 +11,7 @@ readable report.
 """
 
 import argparse
+import datetime as dt
 import json
 
 import requests
@@ -72,6 +73,44 @@ def fetch_json(url, params):
             raise requests.HTTPError(f"{response.status_code}: {reason}", response=response)
     response.raise_for_status()
     return response.json()
+
+
+def local_daily(data):
+    """The ``daily`` block of an Open-Meteo response (requested with
+    timezone=auto), with sunrise and sunset moved to each date's own UTC
+    offset.
+
+    Open-Meteo gives every date the offset the place has *today*, so across
+    a daylight-saving change the times are an hour out: in October 2026 it
+    gave Orlando's 2025-12-20 sunset as 18:33 (EDT) instead of 17:33 (EST).
+    The response names the zone (``timezone``) and the offset it used
+    (``utc_offset_seconds``), so each time is converted back to UTC and then
+    into that zone. Without the zone database (zoneinfo, or tzdata on
+    Windows) or a named zone, the block is returned as it came.
+    Shared by weather_forecast.py and weather_history.py.
+    """
+    daily = data.get("daily") or {}
+    name, offset = data.get("timezone"), data.get("utc_offset_seconds")
+    if not name or offset is None or not ("sunrise" in daily or "sunset" in daily):
+        return daily
+    try:
+        from zoneinfo import ZoneInfo
+        zone = ZoneInfo(name)
+    except Exception:
+        return daily
+    fixed = dt.timezone(dt.timedelta(seconds=offset))
+
+    def convert(value):
+        try:
+            moment = dt.datetime.fromisoformat(value).replace(tzinfo=fixed)
+        except (TypeError, ValueError):
+            return value
+        return moment.astimezone(zone).strftime("%Y-%m-%dT%H:%M")
+
+    for key in ("sunrise", "sunset"):
+        if key in daily:
+            daily[key] = [convert(value) for value in daily[key]]
+    return daily
 
 
 def daily_value(daily, key, i):

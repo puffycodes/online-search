@@ -196,6 +196,7 @@ These are set as constants near the top of the file — edit them directly to ch
 - `place_fields(place)` — Returns the `{location, admin1, country, latitude, longitude}` fields every record built from a `geocode()` match starts with. Shared with `weather_forecast.py`'s `get_forecast()`, `weather_history.py`'s `get_history()` and `air_quality.py`'s `get_air_quality()`.
 - `weather_description(code)` — Maps a WMO weather code to a short description, or `"Unknown (code N)"` for one not in `WEATHER_CODES`.
 - `daily_value(daily, key, i)` — Day `i` of an Open-Meteo `daily` block's `key` series, or `None` when the series or day is missing.
+- `local_daily(data)` — The `daily` block of an Open-Meteo response with sunrise and sunset moved to each date's own UTC offset. Open-Meteo gives every date the offset the place has today, so across a daylight-saving change its times are an hour out (in October 2026 it gave Orlando's 2025-12-20 sunset as 18:33 EDT instead of 17:33 EST, and its forecast kept 18:39 after the 1 November change). The response names the zone and the offset it used, so each time is converted through UTC into that zone with `zoneinfo` (Windows needs the `tzdata` package); without a zone database the block is returned unchanged. Used by `weather_forecast.fetch_daily_forecast()` and `weather_history.fetch_daily_history()`, found by the `trip-weather` test runs on 2026-10-21.
 - `sun_fields(daily, i)` — `{sunrise, sunset, daylight_hours, polar}` for day `i` of a `daily` block requested with `sunrise`, `sunset` and `daylight_duration`: local `"HH:MM"` times (the scripts call the API with `timezone=auto`) and daylight in hours. With 0 h of daylight (`polar: "night"`) or 24 h (`polar: "day"`), Open-Meteo's midnight placeholders become `None`. Shared by `weather_forecast.py` and `weather_history.py`.
 - `format_sun(day)` — `(sunrise, sunset)` display strings for a record carrying `sun_fields()`: the times, `("polar night", "")`, `("midnight sun", "")`, or `("-", "-")`.
 - `format_daylight(hours)` — Daylight hours as `"12h05m"`, or `"-"` when missing.
@@ -983,6 +984,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### Notes / limitations
 
 - Requires `trip_weather.py` and the weather modules it imports (plus `requests`) to be runnable from the repo root.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/trip-weather/test-runs.md`](docs/features/agent/trip-weather/test-runs.md) lists targeted live runs of its judgement rules ("next week", forecast plus typical, a stay over 31 days, past dates, packing advice with air quality, °F); all passed on 2026-10-21 and found the daylight-saving error in sun times that `weather.local_daily()` now fixes.
 - Inherits all the limitations of [`trip_weather.py`](#trip_weatherpy) itself (typical weather is history, short air-quality forecast, 31-day trips).
 
 ---
@@ -5862,6 +5864,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 - Requires `url_feed.py` and its dependencies (`requests`, `defusedxml`, `beautifulsoup4`) to be runnable from the repo root.
 - Never scrapes a site that has no feed; it says so instead. To summarize posts, it points to the `url-summary` agent.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/url-feed/test-runs.md`](docs/features/agent/url-feed/test-runs.md) lists targeted live runs of its judgement rules (a user-given site, a named site, a robots note, a date window beyond the feed, no feed, a robots refusal); all passed on 2026-10-21, and the `--since` run led to raising `--limit` with a date window.
 - Inherits all the limitations of [`url_feed.py`](#url_feedpy) itself (short feed history, first advertised feed only, no JSON Feed).
 
 ---

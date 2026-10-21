@@ -74,6 +74,47 @@ class TestFetchJson:
             weather.fetch_json("u", {})
 
 
+class TestLocalDaily:
+    """Open-Meteo applies today's UTC offset to every date; local_daily()
+    moves sunrise / sunset to each date's own offset."""
+
+    def _data(self, sunrise, sunset, offset=-14400, timezone="America/New_York"):
+        return {"timezone": timezone, "utc_offset_seconds": offset,
+                "daily": {"time": [d[:10] for d in sunrise], "sunrise": sunrise,
+                          "sunset": sunset, "temperature_2m_max": [20.0] * len(sunrise)}}
+
+    def test_winter_date_given_summer_offset(self):
+        # As fetched in October (EDT, -4h) for a December date (EST, -5h).
+        daily = weather.local_daily(self._data(["2025-12-20T08:13"], ["2025-12-20T18:33"]))
+        assert daily["sunrise"] == ["2025-12-20T07:13"] and daily["sunset"] == ["2025-12-20T17:33"]
+        assert daily["temperature_2m_max"] == [20.0]
+
+    def test_dates_either_side_of_a_change(self):
+        daily = weather.local_daily(self._data(
+            ["2026-10-31T07:36", "2026-11-02T07:38"], ["2026-10-31T18:41", "2026-11-02T18:39"]))
+        assert daily["sunset"] == ["2026-10-31T18:41", "2026-11-02T17:39"]
+
+    def test_no_daylight_saving_zone_unchanged(self):
+        data = self._data(["2026-12-01T05:32"], ["2026-12-01T19:42"], offset=7200,
+                          timezone="Africa/Johannesburg")
+        assert weather.local_daily(data)["sunset"] == ["2026-12-01T19:42"]
+
+    @pytest.mark.parametrize("change", [{"timezone": None}, {"utc_offset_seconds": None},
+                                        {"timezone": "Not/AZone"}])
+    def test_left_alone_without_zone(self, change):
+        data = dict(self._data(["2025-12-20T08:13"], ["2025-12-20T18:33"]), **change)
+        assert weather.local_daily(data)["sunset"] == ["2025-12-20T18:33"]
+
+    def test_no_sun_fields_or_daily(self):
+        assert weather.local_daily({"timezone": "America/New_York", "utc_offset_seconds": 0,
+                                    "daily": {"time": ["2026-01-01"]}}) == {"time": ["2026-01-01"]}
+        assert weather.local_daily({}) == {}
+
+    def test_unparseable_value_kept(self):
+        daily = weather.local_daily(self._data(["2025-12-20T08:13"], [None]))
+        assert daily["sunset"] == [None] and daily["sunrise"] == ["2025-12-20T07:13"]
+
+
 class TestDailyValue:
     def test_present_missing_and_short(self):
         daily = {"a": [1, None]}

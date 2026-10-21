@@ -11,7 +11,7 @@
     - Add https:// to a bare domain.
     - For a URL the user gave, read it with --warn-robots.
     - For a site the user only named, choose its URL, say which, and read it with --respect-robots (the repo's rule for URLs an agent chooses). If unsure of the address, say so rather than guessing.
-    - Set how many items and from which date from the request.
+    - Set how many items and from which date from the request; with a date, raise the item limit (e.g. 100) unless the user asked for a number, so the date decides what is shown.
 - If the feed can't be read, report why; retry at most once, only for a transient network error. If a site has no feed, say so; never scrape its pages instead.
 - Output:
     - {{Feed Title}} and what is shown, and the page the feed was found on when discovered.

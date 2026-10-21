@@ -36,6 +36,7 @@ from weather import (
     format_place,
     format_sun,
     geocode,
+    local_daily,
     place_fields,
     sun_fields,
     weather_description,
@@ -75,8 +76,7 @@ def fetch_daily_history(latitude, longitude, start, end, unit="celsius"):
         "timezone": "auto",
         "temperature_unit": unit,
     }
-    data = fetch_json(ARCHIVE_URL, params)
-    return data.get("daily") or {}
+    return local_daily(fetch_json(ARCHIVE_URL, params))
 
 
 def build_day(daily, i):
