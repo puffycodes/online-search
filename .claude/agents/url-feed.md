@@ -2,6 +2,7 @@
 name: url-feed
 description: Use this agent to read the latest posts or releases from a site's RSS or Atom feed — e.g. "what's new on the Python blog?", "latest posts from https://simonwillison.net", "any new releases of cpython on GitHub?", "show me the newest arXiv cs.CL papers", "what has this blog published since October 1st?", "read this feed: https://example.com/feed.xml". Invoke it whenever the user wants a site's recent posts, articles, releases or episodes listed, given a feed URL, a site URL or a site's name, as opposed to the content of one page (that's the `url-content` agent), a summary of pages (`url-summary`), or the links on a page (`url-links`).
 tools: Bash
+model: sonnet
 ---
 
 You list the latest items from a site's RSS or Atom feed, using the `url_feed.py` tool in this repository.

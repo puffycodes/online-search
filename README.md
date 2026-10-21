@@ -244,7 +244,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: haiku` runs it on Haiku, as the job is one script run and its result reported.
 
 | Field | Value |
 |---|---|
@@ -423,7 +423,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: haiku` runs it on Haiku, as the job is one script run and its result reported.
 
 | Field | Value |
 |---|---|
@@ -615,6 +615,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
+| `model` | `haiku` |
 | Underlying script | [`weather_history.py`](#weather_historypy) |
 
 ### Notes / limitations
@@ -813,7 +814,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: haiku` runs it on Haiku, as the job is one script run and its result reported.
 
 | Field | Value |
 |---|---|
@@ -979,6 +980,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
+| `model` | `sonnet` |
 | Underlying script | [`trip_weather.py`](#trip_weatherpy) |
 
 ### Notes / limitations
@@ -1193,7 +1195,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|
@@ -1348,7 +1350,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|
@@ -1387,7 +1389,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to `Bash` (run the script and the analysis snippet).
+The agent's frontmatter restricts it to `Bash` (run the script and the analysis snippet). `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|
@@ -1538,7 +1540,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG).
+The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG). `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|
@@ -1693,7 +1695,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG).
+The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (verify the PNG). `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|
@@ -1901,7 +1903,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to `Bash` (run the script).
+The agent's frontmatter restricts it to `Bash` (run the script). `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|
@@ -2721,6 +2723,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
+| `model` | `sonnet` |
 | Underlying script | [`stock_fundamental.py`](#stock_fundamentalpy) |
 
 ### Notes / limitations
@@ -2850,6 +2853,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
+| `model` | `sonnet` |
 | Underlying script | [`stock_earnings_calendar.py`](#stock_earnings_calendarpy) |
 
 ### Notes / limitations
@@ -2992,6 +2996,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
+| `model` | `sonnet` |
 | Underlying script | [`stock_analyst_targets.py`](#stock_analyst_targetspy) |
 
 ### Notes / limitations
@@ -3150,6 +3155,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
+| `model` | `sonnet` |
 | Underlying script | [`stock_holders.py`](#stock_holderspy) |
 
 ### Notes / limitations
@@ -3339,7 +3345,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: haiku` runs it on Haiku, as the job is one script run and its result reported.
 
 | Field | Value |
 |---|---|
@@ -4175,7 +4181,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to `Bash` (run the script).
+The agent's frontmatter restricts it to `Bash` (run the script). `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|
@@ -5021,7 +5027,7 @@ It never runs more than one script once a prior one has already returned results
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the scripts and reading their stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the scripts and reading their stdout is all it needs. `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|
@@ -5200,7 +5206,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: haiku` runs it on Haiku, as the job is one script run and its result reported.
 
 | Field | Value |
 |---|---|
@@ -5381,6 +5387,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
+| `model` | `sonnet` |
 | Underlying script | [`url_broken_links.py`](#url_broken_linkspy) |
 
 ### Notes / limitations
@@ -5559,7 +5566,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: haiku` runs it on Haiku, as the job is one script run and its result reported.
 
 | Field | Value |
 |---|---|
@@ -5702,7 +5709,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: haiku` runs it on Haiku, as the job is one script run and its result reported.
 
 | Field | Value |
 |---|---|
@@ -5859,6 +5866,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | Field | Value |
 |---|---|
 | `tools` | `Bash` |
+| `model` | `sonnet` |
 | Underlying script | [`url_feed.py`](#url_feedpy) |
 
 ### Notes / limitations
@@ -6028,7 +6036,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: haiku` runs it on Haiku, as the job is one script run and its result reported.
 
 | Field | Value |
 |---|---|
@@ -6068,7 +6076,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: sonnet` runs it on Sonnet, as its judgement is bounded.
 
 | Field | Value |
 |---|---|

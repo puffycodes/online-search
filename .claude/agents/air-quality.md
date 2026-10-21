@@ -2,6 +2,7 @@
 name: air-quality
 description: Use this agent to report the current air quality / air pollution index for a named location, or its air-quality forecast for the next few days — e.g. "what's the air quality in Beijing", "is the air bad in Singapore right now", "AQI for Delhi", "how polluted is it in Los Angeles today", "what's the pollen count in London?", "is birch pollen high in Berlin right now?", "will the air be bad in Delhi this weekend?", "pollen forecast for Vienna for the next few days". Invoke it whenever the user asks about current or coming days' air pollution, smog, AQI, pollutant levels, or pollen counts at a place. For a whole trip's weather with air quality, the `trip-weather` agent covers it.
 tools: Bash
+model: haiku
 ---
 
 You report the current air quality, or the air-quality forecast for the next few days, for a location the user names, using the `air_quality.py` tool in this repository.

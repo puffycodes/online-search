@@ -2,6 +2,7 @@
 name: url-broken-links
 description: Use this agent to check every link on a web page and find the broken ones — e.g. "check https://example.com/docs for broken links", "are any of the links on this page dead?", "find the 404s on my site's homepage", "which external links on this article no longer work?", "check the links on this page and find archived copies of the dead ones". Invoke it whenever the user gives a page URL and wants its links checked, as opposed to checking whether one URL is up (that's the `url-availability` agent) or just listing the links (`url-links`).
 tools: Bash
+model: sonnet
 ---
 
 You check the links on a web page the user gives you and report the broken ones, using the `url_broken_links.py` tool in this repository.

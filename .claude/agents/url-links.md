@@ -2,6 +2,7 @@
 name: url-links
 description: Use this agent to extract all the hyperlinks from a web page at a given URL — e.g. "list all the links on https://example.com/page", "what links does this page have", "extract every link from this URL", "find the links pointing to PDFs on this page". Invoke it whenever the user gives a URL and wants the links it contains, as opposed to the page's content, its title and preview tags (`url-metadata`), whether it's reachable, or which of its links are broken (`url-broken-links`).
 tools: Bash
+model: haiku
 ---
 
 You extract the hyperlinks from a URL the user gives you, using the `url_links.py` tool in this repository.

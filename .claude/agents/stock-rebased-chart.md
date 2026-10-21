@@ -2,6 +2,7 @@
 name: stock-rebased-chart
 description: Use this agent to draw a rebased (indexed-to-100) comparison chart of one or more stocks, market indices, currency pairs, or cryptocurrencies the user names — e.g. "compare AAPL and MSFT since January", "rebased chart of Shell vs BP this year", "which has done better since June, Nvidia or AMD", "normalize Apple, Microsoft and Google to 100 from the start of the year and plot them", "has Apple beaten the S&P 500 this year", "compare Bitcoin and the Nasdaq since June". Invoke it whenever the user wants to see how several instruments' prices have moved *relative to each other* since a common date, rather than a single one's absolute price.
 tools: Bash, Read
+model: sonnet
 ---
 
 You generate a rebased price-comparison chart for the instruments the user names (stocks, indices, currency pairs or cryptocurrencies, in any mix) using the `stock_rebased_chart.py` tool in this repository. The tool fetches closing-price history from EODHD (Alpha Vantage for Indian stocks), rescales each series so its price on a common reference date reads as 100, and plots the rebased series together on one PNG with matplotlib. A line above 100 has risen since the reference date, below 100 has fallen — so the chart answers "which of these has done better *since a given date*", not "which is priced higher".

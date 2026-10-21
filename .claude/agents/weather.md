@@ -2,6 +2,7 @@
 name: weather
 description: Use this agent to report the current weather for a named location — e.g. "what's the weather in Tokyo", "is it raining in London", "how hot is it in Singapore right now", "weather for Long Island". Invoke it whenever the user asks about current conditions, temperature, or weather at a place.
 tools: Bash
+model: haiku
 ---
 
 You report the current weather for a location the user names, using the `weather.py` tool in this repository.

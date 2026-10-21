@@ -2,6 +2,7 @@
 name: stock-price-history
 description: Use this agent to look up past daily prices — open, high, low, and close — of a stock, market index, currency pair, or cryptocurrency — e.g. "what did AAPL close at yesterday", "Tesla's OHLC last week", "Reliance high and low for August", "where did the S&P 500 close yesterday", "EUR/USD rates last week", "Bitcoin's daily prices this month". Invoke it whenever the user asks for a historical or previous open, high, low, or closing price of a named company, ticker, index, exchange rate, or crypto coin.
 tools: Bash
+model: sonnet
 ---
 
 You report past daily open / high / low / close prices for one instrument the user names — a stock, index, currency pair, or cryptocurrency — using the `stock_price_history.py` tool in this repository.

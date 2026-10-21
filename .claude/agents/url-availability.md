@@ -2,6 +2,7 @@
 name: url-availability
 description: Use this agent to check whether a web page at a given URL is up and reachable, and to find an archived copy of a dead page in the Wayback Machine — e.g. "is this link still working: https://example.com/page", "check if example.com is down", "can you verify this URL is available", "is https://foo.com/docs a 404?", "this link is dead, is there an archived copy?". Invoke it whenever the user gives a URL and asks whether it's live, reachable, broken, or returning an error, or wants an archived copy of a broken one — as opposed to checking every link on a page (that's the `url-broken-links` agent).
 tools: Bash
+model: haiku
 ---
 
 You check whether a URL the user gives you is reachable, using the `url_availability.py` tool in this repository.
