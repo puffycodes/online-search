@@ -30,6 +30,8 @@ crawlers; for those the API's own terms decide.
 | SerpApi | `web_search_serpapi.py` | Allowed (keyed) | None |
 | Exa | `web_search_exa.py` | Allowed (keyed) | None; don't redistribute retrieved content |
 | Perplexity API | `web_search_perplexity.py` | Allowed (keyed) | None |
+| EODHD end-of-day API | `eodhd_price_history.py` (added 2026-10-21) | Allowed (keyed); personal, non-professional use | None; don't redistribute or display the data to others |
+| Alpha Vantage | `alphavantage_price_history.py` (added 2026-10-21) | Allowed (keyed); personal, non-commercial use | None |
 
 ## Violations
 
@@ -151,3 +153,14 @@ catches Lobsters: its `ai-input=no` applies only to the search engines it names.
 - **Perplexity API** ([terms](https://www.perplexity.ai/hub/legal/perplexity-api-terms-of-service)):
   output may be displayed "solely within the Customer Applications"; the customer
   owns it.
+- **EODHD** ([terms](https://eodhd.com/financial-apis/terms-conditions)): checked
+  2026-10-21 before building `eodhd_price_history.py`. Non-professional users may
+  "store, manipulate, and analyze the data for private, non-commercial purposes"
+  but not redistribute or display it; nothing on AI. `eodhd.com/robots.txt`
+  disallows `/api/`, but it's a documented keyed API, so its terms decide (the
+  standard above). Full check in [`things-to-explore.md`](things-to-explore.md).
+- **Alpha Vantage** ([terms](https://www.alphavantage.co/terms_of_service/)):
+  checked 2026-10-20 and 2026-10-21 before building `alphavantage_price_history.py`.
+  Free use is "personal, non-commercial"; nothing against AI, and its docs promote
+  use with LLMs and agents. No robots.txt (404). Full check in
+  [`things-to-explore.md`](things-to-explore.md).

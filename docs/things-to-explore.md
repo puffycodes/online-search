@@ -133,6 +133,13 @@ before the top picks because it's about the repo's existing sources, not new one
   dropping Singapore and Tokyo, and either dropping India or adding free Alpha
   Vantage for it. The agents' DBS (`D05.SI`) examples would need rewriting.
 
+  **Built on 2026-10-21:** `eodhd_price_history.py` and
+  `alphavantage_price_history.py`, which share `daily_prices.py`. They take each
+  provider's own ticker notation and emit `stock_price_history.py`'s row shape.
+  No agent calls them yet. Still to do: decide the markets, route Yahoo-style
+  tickers to a provider, move the four price scripts and their agents over, and
+  add Databento for futures.
+
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
   US fundamentals and insider data to save Alpha Vantage requests. **No free

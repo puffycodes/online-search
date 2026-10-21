@@ -2,7 +2,7 @@
 
 Unit tests for the scripts and helper modules at the repository root. Everything
 runs **offline** — every network call is monkeypatched, so running the suite
-never touches Yahoo Finance, Open-Meteo (weather or air quality), Hacker News,
+never touches Yahoo Finance, EODHD, Alpha Vantage, Open-Meteo (weather or air quality), Hacker News,
 any of the web search APIs (Brave, Serper, Tavily, SerpApi, Exa, Perplexity,
 DuckDuckGo), or the arbitrary URLs fetched by the `url_*.py` scripts.
 
@@ -62,6 +62,9 @@ tests/
   test_hn_thread.py
   test_market_top_volume.py
   test_stock_price_history.py
+  test_daily_prices.py
+  test_eodhd_price_history.py
+  test_alphavantage_price_history.py
   test_stock_candlestick_chart.py
   test_stock_rebased_chart.py
   test_stock_risk.py
@@ -162,6 +165,9 @@ exercise `yahoo_finance.extract_series` and the per-script `extract_rows`.
 | `test_hn_thread.py` | `hn_thread` | `fetch_tree` (30 s timeout, 404 → `None`, other errors raise); `count_comments` / `is_empty`; `ranked_children` (HN `kids` order, deleted leaves dropped, unknown ids last, oldest-first without `kids`); `fetch_kids` (failed fetch → `None`, empty item → `[]`); `select_comments` (`--top` / `--replies` / `--depth` limits, ranked order fetched only for shown comments with replies, full and partial fallback to oldest first); `comment_to_dict` / `thread_to_dict` (counts, `[deleted]`, truncation, comment root); `format_thread` (story report, numbering, trimmed-reply notes and singular wording, unranked note, comment root); `parse_args` defaults, flags and exit-2 matrix; `main` (JSON/text output, missing item and request errors exit 1) |
 | `test_market_top_volume.py` | `market_top_volume` | `METRICS`/`MARKETS` structural consistency; `quote_to_dict`; `format_quote` ordering; `get_movers` predefined vs region path, filters, sort; `fetch_region_quotes` crumb/error/success; `main` (invalid `--limit` exits 2 before any fetch, valid limit passed through) |
 | `test_stock_price_history.py` | `stock_price_history` | `extract_rows` rounding / unsettled-bar skip / gmtoffset date shift / None-safety; `main` `--last` trim, JSON shape, adj-close column, fetch-error exit, invalid `--start` date exit |
+| `test_daily_prices.py` | `daily_prices` | `parse_date`; `add_window_args` defaults and `--last 0` exit 2; `resolve_window` (default days, `--last` look-back, end defaults to today, start beats last, single day, errors for `--end` alone / reversed / bad date); `price_row` rounding, numeric strings, int volume, missing values; `in_window` inclusive bounds; `print_table` title, summary line, adj-close column only when it differs, currency suffix |
+| `test_eodhd_price_history.py` | `eodhd_price_history` | `fetch_eod` request (URL, params incl. key and window, timeout), 404 "Ticker Not Found." and non-list body raise; `extract_rows` sorting, rounding, close-less bar skipped, repeated `warning` collapsed to one note; `main` (JSON shape and `--last` trim, the free plan's out-of-window bar dropped with its note, text table, network error with the key redacted, missing key exits 1, bad date exits 1 before the key check, `--last 0` exits 2) |
+| `test_alphavantage_price_history.py` | `alphavantage_price_history` | `fetch_daily` compact / full request, `Error Message` / `Information` / `Note` refusals, empty body, missing series, HTTP error; `extract_rows` string conversion, sorting, null `adj_close`, close-less bar skipped; `history_note` (window before the compact data, inside it, `--full`, short listing); `main` (JSON shape and `--last` trim, note in JSON, text table, refusal exits 1, network error with the key redacted, missing key exits 1, `--end` without `--start` exits 1) |
 | `test_stock_candlestick_chart.py` | `stock_candlestick_chart` | `_parse_ma_arg` / `_parse_flip_ma_arg` full matrices; `extract_rows` skips bars with missing OHLC, date is `datetime`; `main` invalid `--start` date exit |
 | `test_stock_rebased_chart.py` | `stock_rebased_chart` | `fetch_closes` None-close skip; `main` base-date defaulting + fallback, per-symbol skip when the base date is missing, invalid `--base-date`, all-symbols-fail exit, `--last 0` exits 2; `--benchmark` rebased and passed to the renderer separately, never sets the default base date, absent by default, fetch failure or no base-date close drops only the benchmark, a benchmark also listed as a symbol is fetched and drawn once, benchmark-only exits 2 before any fetch, benchmark data alone still exits 1; `render_chart` draws the benchmark dashed in `BENCHMARK_COLOR` with a `(benchmark)` label (skipped without matplotlib) |
 | `test_stock_risk.py` | `stock_risk` | `extract_closes` adjusted-close preference, falls back to raw close for the whole series when any session lacks an adjusted one, unsettled-bar skip, gmtoffset date, empty result; `periods_per_year` 252 for weekdays vs 365 with a weekend session; `summarize` change / volatility / drawdown dates and prices / recovery date / high and distance from it, no-fall `None`s, too-short-for-volatility `None`, weekend series annualized over 365, symbol fallback; `pair_correlation` aligns on shared dates (an unshared outlier is ignored), too few or no shared sessions → `None`; `parse_args` defaults, repeats dropped case-insensitively, benchmark also listed is measured once, benchmark-only / no symbol / `--range` with `--last` exit 2; `load_symbol` fetch error, no rows and non-positive price as skip reasons, `--last` trim; `main` JSON shape and pair order, single symbol has no pairs, failed symbol or benchmark skipped, all-fail and benchmark-only data exit 1, text report (progress line, benchmark label, worst fall, pairs, closing caveat, stderr warning, no-fall line), `--last 0` exits 2, invalid date exits 1 |
