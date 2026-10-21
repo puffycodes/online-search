@@ -170,9 +170,8 @@ Chosen on 2026-10-21, in suggested order (the 2026-10-19 picks, the broken-link
 checker and the `web-search` test runs, are done). Each is described in full in its
 section below; remove it from both places when it's done.
 
-1. **RSS/Atom feed reader** (Web pages): small and in the `url_*` family; the design
-   question is politeness for feeds an agent picks itself (robots.txt, as
-   `url_content.py --respect-robots` does).
+All the 2026-10-21 picks are done too (trip weather, the `url-summary` test runs and
+the RSS/Atom feed reader). Choose the next ones from the sections below.
 
 ## Combining existing scripts
 
@@ -289,7 +288,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   caching and server headers, as a small `url_*` sibling.
 - [ ] **Wayback history**: list a page's archived snapshots over time from the
   Wayback Machine's CDX API, extending what `url_availability.py --wayback` does.
-- [ ] **RSS/Atom feed reader**: latest items from a site's feed.
 - [ ] **SSL certificate expiry and DNS lookup**: standard library only (`ssl`, `socket`).
 - [ ] **robots.txt and sitemap listing**.
 

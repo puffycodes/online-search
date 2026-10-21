@@ -126,6 +126,11 @@ fetch; for that middle case, the `url-content` and `url-summary` agents pass
 fetch the page gets a one-line note in the report. (The second note is what
 catches Lobsters: its `ai-input=no` applies only to the search engines it names.)
 
+`url_feed.py` (added 2026-10-21) reads RSS / Atom feeds with the same `--respect-robots`
+/ `--warn-robots` pair as `url_content.py`, checking both a page and the feed it
+advertises. The `url-feed` agent passes `--respect-robots` when it picks a site's
+feed itself and `--warn-robots` for a URL the user gave.
+
 `url_broken_links.py` (added 2026-10-21) fetches the links it finds on a page,
 so it reads each linked host's robots.txt once and skips any link disallowed for
 `online-search-url-broken-links`; an unreadable robots.txt counts as a full

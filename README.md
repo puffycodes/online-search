@@ -89,6 +89,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/url-content.md`](#claude-code-agent-url-content) — Claude Code subagent that calls `url_content.py` and reports or summarizes the content at a named URL
 - [`url_links.py`](#url_linkspy) — retrieves a web page at a given URL and extracts every hyperlink (`<a href>`) in its HTML content, resolved to absolute URLs, via BeautifulSoup (no API key)
 - [`.claude/agents/url-links.md`](#claude-code-agent-url-links) — Claude Code subagent that calls `url_links.py` and reports the links found on a named URL
+- [`url_feed.py`](#url_feedpy) — the latest items from a site's RSS or Atom feed, given the feed or a page that links to it, parsed safely with `defusedxml` and listed newest first, with `--respect-robots` / `--warn-robots` (no API key)
+- [`.claude/agents/url-feed.md`](#claude-code-agent-url-feed) — Claude Code subagent that calls `url_feed.py` and lists a site's latest posts or releases
 - [`url_metadata.py`](#url_metadatapy) — retrieves a web page at a given URL and extracts its title, meta description, canonical URL, and OpenGraph / Twitter-card tags, via BeautifulSoup (no API key)
 - [`.claude/agents/url-metadata.md`](#claude-code-agent-url-metadata) — Claude Code subagent that calls `url_metadata.py` and reports the title, description, canonical URL or link-preview tags of one or more URLs
 - [`.claude/agents/url-summary.md`](#claude-code-agent-url-summary) — Claude Code subagent that calls `url_content.py` once per given URL and reports a summary of each page's content
@@ -5709,6 +5711,157 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - No JavaScript rendering — links injected client-side by a JavaScript-heavy page won't appear; the agent says so if the user expected more links than were found from a page known to be JS-heavy.
 - No deduplication or classification — `mailto:`/`tel:`/`javascript:` links and repeated links (e.g. the same nav link on every page) come through as-is; the agent filters or dedupes on the user's behalf when asked for something more specific than "all the links."
 - Inherits all the limitations of [`url_links.py`](#url_linkspy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET).
+
+---
+
+## url_feed.py
+
+Reads the latest items from a site's RSS or Atom feed. Give it the feed's URL or just a page of the site: for a page, it finds the feed the page advertises (`<link rel="alternate" type="application/rss+xml">` or `atom+xml`), the way feed readers do. RSS 2.0, RSS 1.0 (RDF) and Atom are parsed into one item shape (title, link, published date, author, plain-text summary) and listed newest first. No API key required.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/), [`defusedxml`](https://pypi.org/project/defusedxml/) (safe XML parsing) and [`beautifulsoup4`](https://pypi.org/project/beautifulsoup4/) (finding a feed on a page)
+- the repo's own `robots.py`, `hn.py` (for `clean_text()`) and `cli_utils.py` (run from the repo root)
+
+```bash
+pip install requests defusedxml beautifulsoup4
+```
+
+### Usage
+
+```bash
+python3 url_feed.py URL [--limit N] [--since YYYY-MM-DD] [--max-chars N] [--respect-robots | --warn-robots] [--timeout SECONDS] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `URL` (positional) | — | A feed, or a page that links to its feed; must start with `http://` or `https://` |
+| `--limit N` | 10 | Most items to show |
+| `--since` | — | Only items published on or after this date (undated items are left out and counted) |
+| `--max-chars N` | 300 | Longest summary per item |
+| `--respect-robots` | off | Check robots.txt for the page and a discovered feed first, and refuse one that is disallowed or opts out of AI input; for feeds an agent chose |
+| `--warn-robots` | off | Read regardless, but report what the feed's robots.txt asks in `ai_input_warning` / `robots_disallow_note`; for feeds the user chose |
+| `--timeout SECONDS` | 10 | Request timeout |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
+
+#### Example output
+
+From a live run on 2026-10-21:
+
+```
+$ python3 url_feed.py https://blog.python.org --limit 3
+Reading the feed for: https://blog.python.org
+
+Feed: Python Insider (RSS)
+  https://blog.python.org/rss.xml
+  found on https://blog.python.org
+
+Showing 3 of 50 item(s), newest first
+
+1. Python 3.16.0 alpha 1 is now available
+   2026-10-13 00:00:00 UTC - Savannah Ostrowski
+   https://blog.python.org/2026/10/python-3160-alpha-1-is-now-available/
+   The first developer preview of Python 3.16 is ready for testing.
+
+2. Python 3.15.0 (final) is here!
+   2026-10-09 00:00:00 UTC - Hugo van Kemenade
+   https://blog.python.org/2026/10/python-3150-final-is-here/
+   A brand new Python here for you to enjoy!
+
+3. Python 3.15.0 candidate 3 is here!
+   2026-10-02 00:00:00 UTC - Hugo van Kemenade
+   https://blog.python.org/2026/10/python-3150-rc3/
+   Following tradition, a surprise rc3!
+```
+
+#### Tool usage (`--json`)
+
+```json
+{
+  "url": "https://github.com/python/cpython/releases.atom",
+  "feed_url": "https://github.com/python/cpython/releases.atom",
+  "discovered": false,
+  "format": "atom",
+  "title": "Release notes from cpython",
+  "site_url": "https://github.com/python/cpython/releases",
+  "item_count": 10,
+  "undated_skipped": 0,
+  "items": [
+    {"title": "v3.16.0a1", "link": "https://github.com/python/cpython/releases/tag/v3.16.0a1", "published": "2026-10-13T15:05:54Z", "author": "savannahostrowski", "summary": "Python 3.16.0a1"}
+  ],
+  "robots_checked": false,
+  "ai_input_warning": null,
+  "robots_disallow_note": null
+}
+```
+
+(From a live run on 2026-10-21 with `--limit 1`.) `published` is an ISO 8601 UTC time, or `null` when the feed gives no readable date.
+
+### How it works
+
+1. **Fetch** the URL with this script's own User-Agent (`online-search-url-feed`), refusing a body over 5 MB. With `--respect-robots`, `robots.check()` runs first.
+2. **Feed or page?** (`looks_like_feed()`): an HTML or XHTML Content-Type is a page; an RSS, Atom or other XML type is a feed; otherwise the body's start (`<?xml`, `<rss`, `<feed`) decides.
+3. **Discover** (`discover_feed()`): for a page, the first `<link rel="alternate">` with an RSS or Atom type, resolved against the page's URL, is fetched (after its own robots check with `--respect-robots`). A page with none is an error; the script never scrapes a page instead.
+4. **Parse** (`parse_feed()`) with `defusedxml`, which refuses entity-expansion ("billion laughs") and external-entity tricks. Atom entries take `published`, else `updated`; RSS items take `pubDate`, else `dc:date`; summaries come from `description` / `summary`, else the full content, through `hn.clean_text()`. `parse_date()` reads RFC 822 and ISO 8601 dates into UTC and leaves anything else `null`.
+5. **Select** (`select_items()`): dated items newest first, undated ones after them in feed order; `--since` drops older and undated items; then `--limit`.
+6. **Report**, with `--warn-robots` notes from `robots.review()` on the feed actually read.
+
+### API reference
+
+- `read_feed(url, limit, since, max_chars, timeout, robots_check=None)` — the whole run, returning the JSON-ready dict; `robots_check(url)` is called on the page and on a discovered feed.
+- `fetch(url, timeout)`, `looks_like_feed(content_type, body)`, `discover_feed(html, base_url)` — fetching and finding the feed.
+- `parse_feed(body, max_chars)` — `{format, title, site_url, items}`; raises `NotAFeed` (a `ValueError`) for XML that isn't RSS or Atom, `ValueError` for malformed or unsafe XML.
+- `parse_date(value)`, `select_items(items, limit, since)`, `format_result(result)`.
+
+### Error handling
+
+- A missing scheme, a network error or 4xx/5xx, a page with no feed, XML that isn't a feed, malformed or unsafe XML, a body over 5 MB, a robots refusal (`blocked: …`) or a missing `defusedxml` / `beautifulsoup4` exits with status 1: `Error: …` on stderr, or `{"error": "..."}` with `--json`.
+- Invalid `--limit`, `--since`, `--max-chars` or `--timeout` values, or both robots flags at once, exit with status 2 before any request.
+
+### Notes / limitations
+
+- Feeds usually hold only the latest 10–50 items, so `--since` can't reach further back than the feed does.
+- A summary is the publisher's own blurb (or the start of the full text), cut to `--max-chars`; it isn't a summary of the article.
+- Only the first advertised feed of a page is read; a site with several (posts, comments, categories) may need the specific feed URL.
+- JSON Feed (`application/feed+json`) isn't supported.
+- With `--warn-robots`, some feed hosts ask automated clients not to fetch them (on 2026-10-21, `export.arxiv.org`'s robots.txt disallowed its `/rss/` feeds); the note says so.
+
+---
+
+## Claude Code agent: `url-feed`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/url-feed.md`. It calls no API itself — it shells out to [`url_feed.py`](#url_feedpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer "what's new on the Python blog?", "latest releases of cpython", "newest arXiv cs.CL papers" or "what has this blog published since October 1st?" from the site's own feed.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects it when the user wants a site's recent posts, articles, releases or episodes, given a feed URL, a site URL or just a site's name. One page's content stays with `url-content`, summaries with `url-summary`, and a page's links with `url-links`.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "url-feed"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Uses the URL the user gave (adding `https://` if needed) with `--warn-robots`. If the user only named a site, it picks the URL itself, says which, and passes `--respect-robots`, following the repo's rule for agent-chosen URLs.
+2. Runs `python3 url_feed.py "URL" --json` with `--limit` / `--since` from the request.
+3. Lists the items newest first (title as a link, readable date, author, one-line gist), with a one-line robots note when the tool reports one, and says when nothing falls in a `--since` window or the feed doesn't reach back that far.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`url_feed.py`](#url_feedpy) |
+
+### Notes / limitations
+
+- Requires `url_feed.py` and its dependencies (`requests`, `defusedxml`, `beautifulsoup4`) to be runnable from the repo root.
+- Never scrapes a site that has no feed; it says so instead. To summarize posts, it points to the `url-summary` agent.
+- Inherits all the limitations of [`url_feed.py`](#url_feedpy) itself (short feed history, first advertised feed only, no JSON Feed).
 
 ---
 
