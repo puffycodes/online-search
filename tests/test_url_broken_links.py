@@ -308,6 +308,11 @@ class TestFormatResult:
         assert '404 Not Found  https://example.com/gone  "Gone"' in out
         assert "Unreachable (1):" in out and "DNS failure" in out
         assert "Blocked" not in out
+        assert "OK (" not in out
+
+    def test_show_ok(self, wired):
+        out = ubl.format_result(ubl.check_page("https://example.com/docs"), show_ok=True)
+        assert out.endswith('OK (1):\n  200 OK  https://example.com/ok  "t"')
 
 
 class TestMain:
@@ -318,7 +323,18 @@ class TestMain:
 
     def test_text_progress_line(self, wired, capsys):
         ubl.main(["https://example.com/docs"])
-        assert capsys.readouterr().out.startswith("Checking the links on: https://example.com/docs")
+        out = capsys.readouterr().out
+        assert out.startswith("Checking the links on: https://example.com/docs")
+        assert "OK (1):" not in out
+
+    def test_show_ok_flag(self, wired, capsys):
+        ubl.main(["https://example.com/docs", "--show-ok"])
+        assert "OK (1):" in capsys.readouterr().out
+
+    def test_json_includes_ok_without_flag(self, wired, capsys):
+        ubl.main(["https://example.com/docs", "--json"])
+        statuses = [r["status"] for r in json.loads(capsys.readouterr().out)["links"]]
+        assert "ok" in statuses
 
     def test_page_failure_exits_1(self, monkeypatch, capsys):
         def boom(url, timeout, user_agent):

@@ -16,6 +16,7 @@
     - The minimum gap between requests to the same host, in seconds (default: 1.0).
     - Which links to check: all (default), only internal ones (the page's own host), or only external ones.
     - An optional --wayback flag (off by default).
+    - An optional --show-ok flag (off by default): also list the links that worked in the text report.
     - A request timeout in seconds (default: 10).
 - Fetch the page (it's the user's choice, so regardless of its robots.txt) and extract its links.
 - Choose the links to check, in page order:
@@ -40,6 +41,7 @@
     - {{Count}} per status.
     - Broken, unreachable, blocked and robots-skipped links, each with {{Status Code}} {{Reason}} or {{Error}}, {{URL}} and {{Link Text}}, plus the archived copy when looked up.
     - Redirected links with {{Final URL}} and any note.
+    - With --show-ok, the links that worked: {{Status Code}} {{Reason}}, {{URL}} and {{Link Text}}. Without it they are only counted.
     - With --json: {url, final_url, link_count, checked, max_links, scope, counts, skipped, ai_input_warning, robots_disallow_note, links: [{url, text, internal, status, status_code, reason, final_url, error, note, archived?, archive_error?}]}.
 - A page with broken links is a normal result.
 - Support a --json option:

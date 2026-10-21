@@ -297,7 +297,9 @@ def _archive_line(record):
     return f"    Archived copy: {record['archived']['url']}"
 
 
-def format_result(result):
+def format_result(result, show_ok=False):
+    """The text report: problem links, then redirects, then (with ``show_ok``)
+    the links that worked."""
     lines = [f"Page: {result['url']}"]
     if result["final_url"] != result["url"]:
         lines.append(f"Redirected to: {result['final_url']}")
@@ -348,6 +350,10 @@ def format_result(result):
             lines.append(f"  {record['url']}\n    -> {record['final_url']}")
             if record.get("note"):
                 lines.append(f"    Note: {record['note']}")
+    ok = [r for r in result["links"] if r["status"] == "ok"] if show_ok else []
+    if ok:
+        lines += ["", f"OK ({len(ok)}):"]
+        lines += [_link_line(record) for record in ok]
     return "\n".join(lines)
 
 
@@ -381,6 +387,11 @@ def parse_args(argv=None):
         "--wayback",
         action="store_true",
         help="Look up the most recent Wayback Machine copy of each broken or unreachable link.",
+    )
+    parser.add_argument(
+        "--show-ok",
+        action="store_true",
+        help="Also list the links that worked in the text report (--json always includes them).",
     )
     parser.add_argument(
         "--timeout",
@@ -418,7 +429,7 @@ def main(argv=None):
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(format_result(result))
+        print(format_result(result, show_ok=args.show_ok))
 
 
 if __name__ == "__main__":

@@ -48,6 +48,6 @@ Lead with the answer: how many links were checked and how many are broken or unr
 3. Blocked links, briefly, as "refused automated checks; may work in a browser".
 4. Links not checked because of robots.txt, as a count, plus the URLs if there are only a few.
 
-Mention other redirects only if the user asked about them or there are few. Say what was left out (`skipped.over_cap`, `out_of_scope`) so the user knows the check wasn't exhaustive. If nothing is broken, say so plainly.
+Mention other redirects only if the user asked about them or there are few. List the links that worked (status `ok`, all in the JSON) only if the user asks for them. Say what was left out (`skipped.over_cap`, `out_of_scope`) so the user knows the check wasn't exhaustive. If nothing is broken, say so plainly.
 
 This checks HTTP status only: a page that returns `200 OK` with "page not found" in its body (a soft 404) counts as ok. Do not fabricate statuses, URLs or archived copies; report only what the tool returns.

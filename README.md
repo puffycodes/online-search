@@ -5025,7 +5025,7 @@ pip install requests beautifulsoup4
 ### Usage
 
 ```bash
-python3 url_broken_links.py URL [--max-links N] [--delay SECONDS] [--scope all|internal|external] [--wayback] [--timeout SECONDS] [--json]
+python3 url_broken_links.py URL [--max-links N] [--delay SECONDS] [--scope all|internal|external] [--wayback] [--show-ok] [--timeout SECONDS] [--json]
 ```
 
 | Flag | Default | Description |
@@ -5035,6 +5035,7 @@ python3 url_broken_links.py URL [--max-links N] [--delay SECONDS] [--scope all|i
 | `--delay SECONDS` | 1.0 | Minimum gap between the start of requests to the same host |
 | `--scope` | `all` | `internal` checks only links to the page's own host, `external` only links elsewhere |
 | `--wayback` | off | Look up the most recent Wayback Machine copy of each broken or unreachable link |
+| `--show-ok` | off | Also list the links that worked, at the end of the text report. `--json` always includes them |
 | `--timeout SECONDS` | 10 | Request timeout, for the page, each link, robots.txt and Wayback lookups |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
 
@@ -5103,7 +5104,7 @@ With `--wayback`, broken and unreachable records also carry `archived` (`{url, t
    - Requests to one host start at least `--delay` seconds apart (`HostThrottle`).
    - `url_availability.check_url()` GETs the link, following redirects, and `classify()` sorts the answer: `ok`, `redirected`, `broken` (4xx/5xx), `blocked` (401, 403, 429) or, with no answer, `unreachable`. A redirect from a specific page to a site's front page gets a `note`.
 4. **Wayback copies** (`--wayback`, `add_wayback_copies()`): `url_availability.add_wayback()` for each broken or unreachable link, at least 3 seconds apart; after the first `429` the rest are marked as not looked up.
-5. **Report**: problem links first (broken, unreachable, blocked, not checked), then redirects; or the JSON object.
+5. **Report**: problem links first (broken, unreachable, blocked, not checked), then redirects, then, with `--show-ok`, the links that worked; or the JSON object, which always has every checked link.
 
 ### Configuration
 
