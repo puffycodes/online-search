@@ -50,7 +50,8 @@ crawlers; for those the API's own terms decide.
   app), so the decision is the user's. A replacement price source needs its own
   robots.txt-and-terms check first. Tracked in [`things-to-explore.md`](things-to-explore.md),
   with a replacement shortlist checked on 2026-10-20 (Alpha Vantage recommended,
-  SEC EDGAR as a US supplement, Stooq ruled out).
+  SEC EDGAR as a US supplement, Stooq ruled out), and the paid and free
+  price-history options checked on 2026-10-21 (ECB data API ruled out).
 
 ### `ddgs` "auto" backend — fixed
 

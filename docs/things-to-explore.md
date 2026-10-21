@@ -35,15 +35,41 @@ before the top picks because it's about the repo's existing sources, not new one
 
   | Provider | Covers | Free tier | Terms and robots.txt |
   |---|---|---|---|
-  | **Alpha Vantage** | A (global stocks, FX, crypto, a few commodities; adjusted closes and indices are paid), B (US only), C, D, E (target and rating counts only), F | 25 requests/day; unlimited for verified open-source or educational projects | Free use is "personal, non-commercial" for "investment analysis, research, testing, monitoring"; nothing on AI, and its docs promote use with LLMs and agents (official MCP server). No robots.txt |
+  | **Alpha Vantage** | A (global stocks, FX, crypto, a few commodities; adjusted closes and indices are paid; free daily stock history is only the latest 100 sessions), B (US only), C, D, E (target and rating counts only), F | 25 requests/day; unlimited for verified open-source or educational projects | Free use is "personal, non-commercial" for "investment analysis, research, testing, monitoring"; nothing on AI, and its docs promote use with LLMs and agents (official MCP server). No robots.txt |
   | **SEC EDGAR** (`data.sec.gov`) | C and F for US filers only (XBRL company facts, Form 4, 13F); no prices or estimates | No key; 10 requests/second | Free to "access and download"; declare a name and contact email in the User-Agent. `data.sec.gov` has no robots.txt; `sec.gov` disallows only search, admin and login paths |
   | **Finnhub** | C, D, E (recommendation trends); price history reportedly paid; rest ? | 60/minute; free endpoints unconfirmed | "Strictly for personal use"; no redistributing data "or derived results"; nothing on AI |
   | **Twelve Data** | A (US stocks, FX, crypto only); C–F paid | 800/day, 8/minute | No commercial use of free-tier data, no redistribution or external display, no caching beyond documented limits; nothing on AI. API host robots.txt is `Disallow: /`, but it's a documented keyed API, so its terms decide |
-  | **EODHD** | A (global end of day); rest ? | ? | Non-professional users may "store, manipulate, and analyze" but not redistribute or display; nothing on AI. `/api/` disallowed in robots.txt (same reasoning as Twelve Data) |
-  | **Tiingo** | A (US, FX, crypto); fundamentals paid | 1,000/day, 50/hour, 500 symbols/month (third-party figures) | Terms not read (page 404) |
+  | **EODHD** | A (global end of day); rest ? | 20 calls/day, 1 year of end-of-day history | Non-professional users may "store, manipulate, and analyze" but not redistribute or display; nothing on AI. `/api/` disallowed in robots.txt (same reasoning as Twelve Data) |
+  | **Tiingo** | A (US and Chinese stocks, ETFs, funds, crypto; FX not on its pricing page); fundamentals paid | 1,000/day, 50/hour, 500 symbols/month | Terms page not read (404). Its pricing page licenses every individual plan for "internal use only": your own use, without displaying or sharing the data with anyone. api.tiingo.com redirects to tiingo.com, whose robots.txt disallows only `/admin` |
   | **FMP** | C–F claimed; ? | ? | Terms not read (403 to automated fetches); display or redistribution needs a separate licence |
   | **Massive** (formerly Polygon) | US only | ? | Only the terms index was read |
   | **Stooq** | — | — | **Ruled out:** robots.txt `Disallow: /`, and CSV downloads sit behind a JavaScript proof-of-work challenge |
+
+  **Price history (A), free and paid**, checked on 2026-10-21 from each provider's
+  pricing page and docs (FMP's figures come from search results because its site
+  returns 403). Prices are per month in USD unless noted.
+
+  | Provider | Covers for A | Price | Licence and robots.txt |
+  |---|---|---|---|
+  | **Alpha Vantage** | Free: daily stocks, latest 100 sessions only (docs: "The "full" outputsize is available to premium keys"); full daily FX history; daily crypto; daily WTI and Brent, other commodities monthly (sourced from FRED). Premium adds full daily history, adjusted closes (`TIME_SERIES_DAILY_ADJUSTED`) and 200+ indices (`INDEX_DATA`). Weekly and monthly series carry no premium note | $49.99 (75 requests/minute, no daily limit) up to $249.99 (1,200/minute); yearly $499–$2,499 | As in the table above. The premium page also says "historical index data" needs a separate entitlement via its Alpha X Terminal, which conflicts with `INDEX_DATA` being a premium-key endpoint. Ask before paying for indices |
+  | **EODHD** | "Historian" plan: end of day for all its exchanges, 30+ years, with dividends and splits. Its exchange page names US, LSE and XETRA but not SGX, Paris, ASX, NSE, Hong Kong or Tokyo (it says 70+ exchanges are in its `exchanges-list` endpoint). Indices and futures not confirmed | Historian $19.99 ($199/year), 100,000 calls/day; intraday plan $29.99; the fundamentals plan ($59.99) has no prices; all-in-one $99.99 | Non-professional users may "store, manipulate, and analyze" for "private, non-commercial purposes", but not redistribute or display. Nothing on AI. `/api/` disallowed (keyed API, so its terms decide) |
+  | **Tiingo** | "Power" plan: same coverage as free (US and Chinese stocks, ETFs, funds, 30+ years); nothing outside the US and China | $30 ($300/year), 10,000/hour, 100,000/day; internal commercial use $50 | Internal use only, as above |
+  | **Twelve Data** | "Grow" plan adds end of day for global stocks and ETFs, and commodities (20+ markets); "Pro" 70+ markets. Some exchanges (ASX, Cboe Canada, Cboe Europe) are extra yearly add-ons | Grow $79, Pro $229, Ultra $999; about 17% off yearly | Prices are for personal use; commercial pricing is on a separate page that wasn't read. Terms as in the table above |
+  | **FMP** | Starter: US; Premium adds UK and Canada; Ultimate: global. Futures and indices not confirmed | Starter $22, Premium $59, Ultimate $149 (billed yearly); free tier 250 requests/day | Not read (site returns 403) |
+  | **Massive** (formerly Polygon) | US stocks only. Its free Basic plan gives 2 years of end of day at 5 requests/minute. Its indices, currency and futures plans weren't read | Starter $29 (5 years), Developer $79 (10 years), Advanced $199 (20+ years) | Plans marked for individual use; business pricing separate. robots.txt has no rules |
+  | **Databento** | The only clean source found for futures: daily bars for CME, CBOT, NYMEX and COMEX, 16+ years. Its own calculator shows 30 days of daily bars for under $0.01 | Pay as you go per GB, with $125 of free credits for new users (expire after 6 months); Standard $199 | Licensed per dataset, with personal and commercial use separate; check its licence manager. robots.txt disallows only `/portal` |
+  | **CoinGecko** (crypto only) | Daily history: 1 year on the free Demo plan, 2 years on Basic, from 2013 on higher plans | Demo free (10,000 calls/month, 100/minute); Basic $35 ($29 yearly), Analyst $129 | "Powered by CoinGecko" credit required; it discourages caching ("refresh the cache at least every 24 hours"). `api.coingecko.com` disallows `/api/v3` (keyed API, so its terms decide); the main site declares `ai-input=yes, ai-train=no` |
+  | **FRED** (free) | US indices, FX and commodity series. Which series and how much history each has weren't checked | Free with a key; no published rate limit | Third-party series ("Copyright" in their notes) need the owner's permission for non-personal use. Apps must show "This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis." Nothing on AI. `fred.stlouisfed.org` blocks only graphs and search, with a 1-second crawl delay; `api.stlouisfed.org` timed out from here |
+  | **ECB data API** | — | — | **Ruled out:** `data-api.ecb.europa.eu` robots.txt blocks ClaudeBot, Claude-Web, anthropic-ai and ChatGPT-User by name, and also `python-requests` and `curl` |
+
+  So no free option covers the scripts' default windows. Alpha Vantage's 100
+  sessions are enough for `stock_price_history.py` (default `1mo`). They are not
+  enough for the chart scripts (`6mo`, about 126 sessions) or `stock_risk.py`
+  (`1y`) unless those move to weekly bars. **Cheapest paid fit for A:** EODHD
+  Historian ($19.99), if its `exchanges-list` confirms the ten exchanges and
+  indices. Add Databento for futures. **Single-API fit for A and C–F:** Alpha Vantage
+  premium ($49.99). Every personal plan above forbids showing the data to others,
+  which matters if either web app is ever served beyond your own machine.
 
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
@@ -54,7 +80,8 @@ before the top picks because it's about the repo's existing sources, not new one
   real share of the budget.
 
   **Decisions needed before building:** whether a free Alpha Vantage key and its
-  limit are acceptable; which uncovered features to drop or which scripts to
+  limits (25 requests a day, 100 daily sessions) are acceptable, or which paid plan
+  to take; which uncovered features to drop or which scripts to
   remove; what contact to declare to the SEC, if EDGAR is added. Re-check Finnhub
   and FMP with a real key, since their free tiers couldn't be confirmed.
 
