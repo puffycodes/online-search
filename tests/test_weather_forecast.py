@@ -160,3 +160,36 @@ class TestMain:
         out = capsys.readouterr().out
         assert "FORECAST" in out
         assert out.rstrip().endswith(wf.ATTRIBUTION)
+
+
+class TestFetchDailyForecast:
+    def _capture(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(wf, "fetch_json", lambda url, params: calls.append(params) or {"daily": {}})
+        return calls
+
+    def test_days_from_today(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        wf.fetch_daily_forecast(1, 2, days=3)
+        assert calls[0]["forecast_days"] == 3 and "start_date" not in calls[0]
+
+    def test_date_window(self, monkeypatch):
+        import datetime as dt
+        calls = self._capture(monkeypatch)
+        wf.fetch_daily_forecast(1, 2, start=dt.date(2026, 10, 25), end=dt.date(2026, 10, 27))
+        assert calls[0]["start_date"] == "2026-10-25" and calls[0]["end_date"] == "2026-10-27"
+        assert "forecast_days" not in calls[0]
+
+
+class TestForecastDay:
+    def test_record(self):
+        daily = {
+            "time": ["2026-10-25"], "weathercode": [61], "temperature_2m_max": [14.0],
+            "temperature_2m_min": [8.0], "precipitation_sum": [3.2],
+            "precipitation_probability_max": [80], "windspeed_10m_max": [20.0],
+            "uv_index_max": [2.6], "sunrise": ["2026-10-25T08:26"], "sunset": ["2026-10-25T18:42"],
+            "daylight_duration": [36960.0],
+        }
+        day = wf.forecast_day(daily, 0)
+        assert day["date"] == "2026-10-25" and day["condition"] == "Slight rain"
+        assert day["uv_category"] == "Moderate" and day["sunrise"] == "08:26"

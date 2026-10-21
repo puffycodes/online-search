@@ -166,11 +166,15 @@ before the top picks because it's about the repo's existing sources, not new one
 
 ## Top picks
 
-Chosen on 2026-10-19, in suggested order. Each is described in full in its section
-below; remove it from both places when it's done.
+Chosen on 2026-10-21, in suggested order (the 2026-10-19 picks, the broken-link
+checker and the `web-search` test runs, are done). Each is described in full in its
+section below; remove it from both places when it's done.
 
-Both picks were done on 2026-10-21 (the broken-link checker and the `web-search` test
-runs). Choose the next ones from the sections below.
+1. **RSS/Atom feed reader** (Web pages): small and in the `url_*` family; the design
+   question is politeness for feeds an agent picks itself (robots.txt, as
+   `url_content.py --respect-robots` does).
+2. **Targeted test runs for `url-summary`** (Repo and tooling): the approach that
+   found two bugs in the web-search scripts.
 
 ## Combining existing scripts
 
@@ -179,9 +183,6 @@ No new data source, so nothing new to vet; mostly agent work or small glue scrip
 - [ ] **Stock deep-dive agent**: one request chains fundamentals, intrinsic value,
   analyst targets, holders, the earnings calendar and the trend for one ticker into
   a single report, the way the research summary agent chains its tools.
-- [ ] **Trip weather**: forecast, air quality and pollen, UV and daylight for a place
-  and a date range ("what's Paris like next week?"), from the existing weather
-  scripts.
 
 ## Weather and environment
 

@@ -4,6 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Open-Meteo forecast API (no API key).
+- Offer the fetch with a start and end date inside the 16-day horizon, and the one-day record builder, for trip_weather.py to reuse.
 - Use weather.py's geocode(), place_fields(), weather_description(), daily_value(), sun_fields(), format_sun() and format_daylight().
 
 ## Actions

@@ -20,6 +20,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/weather-history.md`](#claude-code-agent-weather-history) — Claude Code subagent that calls `weather_history.py` and reports the weather on a past date or period at a named location
 - [`air_quality.py`](#air_qualitypy) — current air quality (US AQI, European AQI, pollutant levels, and pollen counts in Europe) for a named location, sharing `weather.py`'s geocoding
 - [`.claude/agents/air-quality.md`](#claude-code-agent-air-quality) — Claude Code subagent that calls `air_quality.py` and reports the current air quality / AQI for a named location
+- [`trip_weather.py`](#trip_weatherpy) — weather for a trip (a place and up to 31 days, up to a year ahead): the forecast where there is one, typical weather from the same dates in past years beyond it, UV, sun times, and air quality and pollen where forecast, merged by date from the other weather scripts
+- [`.claude/agents/trip-weather.md`](#claude-code-agent-trip-weather) — Claude Code subagent that calls `trip_weather.py` and reports the weather for a trip, keeping forecast and typical weather clearly apart
 
 **[Market & Stock Data](#market--stock-data)**
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
@@ -365,7 +367,8 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ### API reference
 
-- `fetch_daily_forecast(latitude, longitude, days=5, unit="celsius")` — Fetches the `daily` object for a coordinate pair.
+- `fetch_daily_forecast(latitude, longitude, days=5, unit="celsius", start=None, end=None)` — Fetches the `daily` object for a coordinate pair: `days` days from today, or, given `start` and `end` (dates within the 16-day horizon), just that window ([`trip_weather.py`](#trip_weatherpy) uses it).
+- `forecast_day(daily, i)` — Day `i` of that block as a day record (the shape `get_forecast()` returns); shared with `trip_weather.py`.
 - `uv_category(uv)` — The WHO category for a daily maximum UV index (rounded half up first), or `None` when missing.
 - `get_forecast(location, days=5, unit="celsius")` — Orchestrates geocoding (via `weather.geocode()`) and the daily-forecast fetch; returns `{location, admin1, country, latitude, longitude, unit, days}` where `days` is a list of `{date, weather_code, condition, temp_max, temp_min, precipitation_sum, precipitation_probability_max, windspeed_max, uv_index_max, uv_category, sunrise, sunset, daylight_hours, polar}` in chronological order, or `None` if the location can't be found.
 - `format_forecast(row)` — Renders a `get_forecast()` record as two human-readable tables — date, condition, high, low, precipitation amount (mm), chance of rain (%) and max wind; then date, UV index and category, sunrise, sunset and daylight — with its place line from `weather.format_place()`.
@@ -726,6 +729,8 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - `us_aqi_category(us_aqi)` — Maps a US AQI value to its EPA category label (`Good`, `Moderate`, `Unhealthy for Sensitive Groups`, `Unhealthy`, `Very Unhealthy`, `Hazardous`); returns `None` if `us_aqi` is `None`.
 - `fetch_current_air_quality(latitude, longitude)` — Fetches the `current` object for a coordinate pair from Open-Meteo's air quality endpoint.
+- `fetch_hourly_air_quality(latitude, longitude, start, end)` — Fetches the hourly air-quality forecast (`HOURLY_FIELDS`: US and European AQI and pollen) between two dates. The API accepts up to `MAX_FORECAST_DAYS` (7) days ahead, but values run out after about 4–5 days (pollen about 3). Used by [`trip_weather.py`](#trip_weatherpy); this script's own CLI still reports current conditions only.
+- `daily_maxima(hourly)` — Reduces that hourly block to each local day's worst hour: `{date: {us_aqi, us_aqi_category, european_aqi, <plant>_pollen…, hours}}`, `hours` counting the hours with a US AQI; days with no values are left out.
 - `get_air_quality(location)` — Orchestrates geocoding (via `weather.geocode()`) and the current-air-quality fetch; returns the flattened `{location, admin1, country, latitude, longitude, us_aqi, us_aqi_category, european_aqi, pm2_5, pm10, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, alder_pollen, birch_pollen, grass_pollen, mugwort_pollen, olive_pollen, ragweed_pollen, time}` record, or `None` if the location can't be found.
 - `format_pollen(row)` — Renders a record's pollen counts as one `Pollen (grains/m³): alder …, birch …` line, or `Pollen: not available (Europe only)` when every pollen value is `None` or missing.
 - `format_air_quality(row)` — Renders a `get_air_quality()` record as a multi-line human-readable string (its place line comes from `weather.format_place()`).
@@ -788,6 +793,164 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Pollen counts exist only for places in Europe, and are raw grains/m³ with no low/high bands.
 - Reports current conditions only — there is no forecast or historical air quality to fall back on, so it says so rather than fabricating one.
 - Inherits all the limitations of [`air_quality.py`](#air_qualitypy) itself (geocoding takes only the top match for an ambiguous name, the two AQI scales aren't comparable, Open-Meteo's model resolution versus dedicated ground stations, live-snapshot results).
+
+---
+
+## trip_weather.py
+
+Weather for a trip: one place and a range of dates, merged by date from the other Open-Meteo scripts. Days within the 16-day forecast get [`weather_forecast.py`](#weather_forecastpy)'s forecast (condition, high / low, rain and its chance, UV, sunrise, sunset, daylight). Days further ahead get **typical weather**: the same calendar dates in each of the last few years from [`weather_history.py`](#weather_historypy)'s archive, averaged and clearly labelled as not a forecast. Days within the air-quality forecast also get [`air_quality.py`](#air_qualitypy)'s worst hour of US AQI, European AQI and pollen. No API key required.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `weather.py`, `weather_forecast.py`, `weather_history.py`, `air_quality.py` and `cli_utils.py` (run from the repo root)
+
+### Usage
+
+```bash
+python3 trip_weather.py LOCATION --start YYYY-MM-DD [--end YYYY-MM-DD] [--years N] [--unit celsius|fahrenheit] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `LOCATION` (positional) | — | Place name, e.g. `"Paris"`, `"Kyoto"` |
+| `--start` | — (required) | First day of the trip; from yesterday (time zones) up to a year ahead |
+| `--end` | `--start` | Last day of the trip; at most 31 days in all |
+| `--years N` | 5 | Past years averaged for typical weather (1–20) |
+| `--unit` | `celsius` | `celsius` or `fahrenheit` |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
+
+#### Example output
+
+From a live run on 2026-10-21 (abridged):
+
+```
+Trip weather for Paris, Île-de-France Region, France, 2026-10-23 to 2026-11-12
+
+Forecast
+Date        Condition                   High °C   Low °C  Precip mm  Precip %    UV  UV level        Sunrise  Sunset  Daylight
+------------------------------------------------------------------------------------------------------------------------------
+2026-10-23  Slight rain                    13.7      9.9       4.72        91   0.8  Low               08:23   18:45    10h23m
+2026-10-24  Slight rain                    13.9      8.4       12.7        91   0.9  Low               08:24   18:44    10h20m
+…
+2026-11-04  Light drizzle                  11.9      8.2       1.05         -   1.3  Low               08:42   18:25     9h44m
+
+Typical weather, from the same dates in 2021-2025 (not a forecast)
+Date          High °C        (range)   Low °C        (range)  Precip mm  Wet years      Sunrise  Sunset  Daylight
+-----------------------------------------------------------------------------------------------------------------
+2026-11-05       13.2 (11.1 to 16.8)      7.3  (4.6 to 10.3)        0.6     2 of 5        08:44   18:24     9h40m
+2026-11-06       12.5 (10.9 to 14.3)      7.2  (0.5 to 11.2)        4.1     3 of 5        08:45   18:22     9h37m
+…
+
+Air quality (the day's worst hour)
+Date          US AQI  Category                          EU AQI  Pollen (grains/m³)
+----------------------------------------------------------------------------------
+2026-10-23        34  Good                                  28  none
+2026-10-24        34  Good                                  26  none
+2026-10-25        29  Good                                  34  -  [16 h of forecast]
+
+Note: 2026-11-05 onwards is beyond the forecast: typical weather for those dates in 2021-2025, not a forecast.
+Note: Air quality is only forecast about 4-5 days ahead (pollen about 3, and only in Europe); later days have none.
+
+Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.
+```
+
+Pollen shows the plants above zero, `none` when all are zero, and `-` when there is no pollen data (outside Europe, or past the pollen forecast).
+
+#### Tool usage (`--json`)
+
+```json
+{
+  "location": "Paris", "admin1": "Île-de-France Region", "country": "France",
+  "latitude": 48.85341, "longitude": 2.3488, "unit": "°C",
+  "start_date": "2026-11-03", "end_date": "2026-11-05",
+  "typical_years": [2021, 2025],
+  "days": [
+    {"date": "2026-11-03", "source": "forecast", "weather_code": 51, "condition": "Light drizzle", "temp_max": 13.8, "temp_min": 10.6, "precipitation_sum": 2.0, "precipitation_probability_max": 25, "windspeed_max": 14.3, "uv_index_max": 2.1, "uv_category": "Low", "sunrise": "08:40", "sunset": "18:27", "daylight_hours": 9.78, "polar": null, "air": null},
+    {"date": "2026-11-05", "source": "typical", "years": 5, "temp_max": 13.2, "temp_min": 7.3, "temp_max_range": [11.1, 16.8], "temp_min_range": [4.6, 10.3], "precipitation_sum": 0.6, "wet_years": 2, "snowfall_sum": 0.0, "sunrise": "08:44", "sunset": "18:24", "daylight_hours": 9.67, "polar": null, "air": null}
+  ],
+  "summary": {"forecast_days": 2, "typical_days": 1, "air_quality_days": 0, "forecast_wet_days": 2, "highest": {"date": "2026-11-03", "temp_max": 13.8, "source": "forecast"}, "lowest": {"date": "2026-11-05", "temp_min": 7.3, "source": "typical"}},
+  "notes": ["2026-11-05 onwards is beyond the forecast: typical weather for those dates in 2021-2025, not a forecast.", "Air quality is only forecast about 4-5 days ahead (pollen about 3, and only in Europe); later days have none."],
+  "attribution": "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0."
+}
+```
+
+(Abridged: one day of each kind.) A day with air quality has `air`: `{us_aqi, us_aqi_category, european_aqi, alder_pollen … ragweed_pollen, hours}`, each the day's maximum, with `hours` the hours that had a US AQI.
+
+### How it works
+
+1. **Check the dates** (`parse_args()`): the trip starts no earlier than yesterday in UTC (a place's "today" can be a day behind), ends within 366 days, and is at most 31 days long; anything else exits with status 2 before any request.
+2. **Geocode** the place once with `weather.geocode()`.
+3. **Forecast** (`forecast_records()`): days up to today + 15 are fetched in one request with `weather_forecast.fetch_daily_forecast(start=…, end=…)` and built with `weather_forecast.forecast_day()`. A day the forecast returns empty (seen on the 16th day) is treated as beyond it.
+4. **Typical weather** (`typical_records()`): for the remaining days, one archive request per past year (`weather_history.fetch_daily_history()` over the same dates, `shift_year()` moving 29 February to the 28th) and, per date, `typical_record()`: average high and low, their range, average precipitation, wet years (at least 1 mm), average snowfall, and last year's sun times.
+5. **Air quality**: if the trip starts within 7 days, `air_quality.fetch_hourly_air_quality()` over the trip's first days, reduced by `air_quality.daily_maxima()` to each day's worst hour.
+6. **Merge and summarize** by date, add the notes, and print the three tables (or the JSON), ending with the Open-Meteo credit.
+
+### Configuration
+
+| Constant | Default | Description |
+|---|---|---|
+| `MAX_TRIP_DAYS` | 31 | Longest trip |
+| `MAX_DAYS_AHEAD` | 366 | How far ahead a trip may end |
+| `DEFAULT_YEARS` / `MAX_YEARS` | 5 / 20 | `--years` default and maximum |
+| `FORECAST_DAYS` | 16 | From `weather_forecast.MAX_FORECAST_DAYS` |
+| `WET_DAY_MM` | 1.0 | From `weather_history.WET_DAY_MM` |
+
+### API reference
+
+- `get_trip_weather(location, start, end, years=5, unit="celsius", today=None)` — the whole record, or `None` for an unknown place.
+- `forecast_records(latitude, longitude, dates, unit)` / `typical_records(latitude, longitude, dates, years, unit)` / `typical_record(date, samples)` — the two kinds of day record.
+- `summarize(days)`, `format_trip(row)`, `format_pollen(air)` — summary and report.
+- `shift_year(date, years)`, `date_range(start, end)`, `today_utc()` — date helpers.
+
+### Error handling
+
+- A place that can't be geocoded exits with status 1 (`No location found matching '…'`); so does a network or API error. With `--json` the error is `{"error": "..."}` on stderr.
+- A malformed date, an end before the start, a trip over 31 days, a start in the past, an end more than a year ahead, or `--years` outside 1–20 exits with status 2, before any request.
+
+### Notes / limitations
+
+- **Typical weather is history, not a forecast**: a five-year average says what is usual, not what will happen, and the report labels it that way everywhere. It has no condition or UV (the archive has no UV), and its sun times are last year's.
+- Typical weather costs one archive request per past year (5 by default), on top of the geocoding, forecast and air-quality requests.
+- The air-quality forecast runs out after about 4–5 days and pollen after about 3 (Europe only), so most trips have air quality only for their first days, or none.
+- The US and European AQI use different scales; they are reported side by side, never combined.
+- Inherits the other weather scripts' limits: geocoding takes the top match for an ambiguous name, and days follow the place's local calendar.
+
+---
+
+## Claude Code agent: `trip-weather`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/trip-weather.md`. It calls no API itself — it shells out to [`trip_weather.py`](#trip_weatherpy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer "what's Paris like next week?", "weather for my trip to Kyoto from 3 to 10 November", "what should I pack for Lisbon next month?" or "what's Reykjavik usually like over Christmas?" with the forecast where there is one, typical weather beyond it, and UV, sun times, air quality and pollen.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects it for questions about the weather for a trip, a stay or travel dates at a place, especially more than about two weeks away. The next few days stay with `weather-forecast`, right now with `weather`, and past dates with `weather-history`.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "trip-weather"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Turns the user's dates ("next week", "the first week of June", "over Christmas") into `--start` / `--end` and says which dates it used; a stay over 31 days is split or narrowed.
+2. Runs `python3 trip_weather.py "LOCATION" --start … --end … --json`.
+3. Leads with the overall picture (range of highs and lows, how rainy, anything notable), then the forecast days, then the typical days, always labelled as typical weather over the named years and not a forecast, then air quality and pollen where forecast, and ends with the Open-Meteo credit.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`trip_weather.py`](#trip_weatherpy) |
+
+### Notes / limitations
+
+- Requires `trip_weather.py` and the weather modules it imports (plus `requests`) to be runnable from the repo root.
+- Inherits all the limitations of [`trip_weather.py`](#trip_weatherpy) itself (typical weather is history, short air-quality forecast, 31-day trips).
 
 ---
 

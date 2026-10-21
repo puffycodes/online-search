@@ -85,6 +85,58 @@ def fetch_current_air_quality(latitude, longitude):
     return data.get("current") or {}
 
 
+# The forecast is hourly only. The API accepts up to 7 days, but values run
+# out after about 4-5 days (pollen after about 3); later hours are null.
+MAX_FORECAST_DAYS = 7
+HOURLY_FIELDS = ",".join(["us_aqi", "european_aqi", *POLLEN_FIELDS])
+
+
+def fetch_hourly_air_quality(latitude, longitude, start, end):
+    """The ``hourly`` block of the air-quality forecast from ``start`` to
+    ``end`` (dates, inclusive, local time). Used by trip_weather.py."""
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": HOURLY_FIELDS,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "timezone": "auto",
+    }
+    data = fetch_json(AIR_QUALITY_URL, params)
+    return data.get("hourly") or {}
+
+
+def daily_maxima(hourly):
+    """Each local day's worst hour from fetch_hourly_air_quality()'s block.
+
+    Returns {date: {us_aqi, us_aqi_category, european_aqi, <plant>_pollen...,
+    hours}}, where each value is the day's maximum over the hours that have
+    one (None if none do) and ``hours`` counts the hours with a US AQI, so
+    a day the forecast only partly covers can be told apart. Days with no
+    value at all are left out.
+    """
+    times = hourly.get("time") or []
+    fields = ["us_aqi", "european_aqi", *POLLEN_FIELDS]
+    days = {}
+    for i, stamp in enumerate(times):
+        date = stamp.split("T", 1)[0]
+        day = days.setdefault(date, {field: [] for field in fields})
+        for field in fields:
+            values = hourly.get(field) or []
+            value = values[i] if i < len(values) else None
+            if value is not None:
+                day[field].append(value)
+    result = {}
+    for date, values in days.items():
+        if not any(values[field] for field in fields):
+            continue
+        maxima = {field: max(values[field]) if values[field] else None for field in fields}
+        maxima["us_aqi_category"] = us_aqi_category(maxima["us_aqi"])
+        maxima["hours"] = len(values["us_aqi"])
+        result[date] = maxima
+    return result
+
+
 def get_air_quality(location):
     """Look up a location and return its current air quality as a flat
     dict, or None if the location can't be found."""

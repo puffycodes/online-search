@@ -192,3 +192,34 @@ class TestMain:
         assert "Looking up air quality for 'X'" in out
         assert "Air quality for X" in out
         assert out.rstrip().endswith(aq.ATTRIBUTION)
+
+
+class TestFetchHourlyAirQuality:
+    def test_params(self, monkeypatch):
+        import datetime as dt
+        calls = []
+        monkeypatch.setattr(aq, "fetch_json", lambda url, params: calls.append((url, params)) or {"hourly": {"time": []}})
+        assert aq.fetch_hourly_air_quality(1, 2, dt.date(2026, 10, 22), dt.date(2026, 10, 24)) == {"time": []}
+        url, params = calls[0]
+        assert url == aq.AIR_QUALITY_URL and params["hourly"] == aq.HOURLY_FIELDS
+        assert (params["start_date"], params["end_date"], params["timezone"]) == ("2026-10-22", "2026-10-24", "auto")
+
+
+class TestDailyMaxima:
+    def test_worst_hour_per_day_and_partial_days(self):
+        hourly = {
+            "time": ["2026-10-22T00:00", "2026-10-22T01:00", "2026-10-23T00:00", "2026-10-24T00:00"],
+            "us_aqi": [40, 120, 30, None],
+            "european_aqi": [20, 35, None, None],
+            "birch_pollen": [0.5, 2.0, None, None],
+        }
+        days = aq.daily_maxima(hourly)
+        assert set(days) == {"2026-10-22", "2026-10-23"}
+        first = days["2026-10-22"]
+        assert (first["us_aqi"], first["european_aqi"], first["birch_pollen"]) == (120, 35, 2.0)
+        assert first["us_aqi_category"] == "Unhealthy for Sensitive Groups" and first["hours"] == 2
+        assert first["grass_pollen"] is None
+        assert days["2026-10-23"]["european_aqi"] is None and days["2026-10-23"]["hours"] == 1
+
+    def test_empty(self):
+        assert aq.daily_maxima({}) == {}

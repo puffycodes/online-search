@@ -5,6 +5,7 @@
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Open-Meteo air quality API (no API key).
 - Use weather.py's geocode() and place_fields().
+- Offer an hourly air-quality forecast fetch between two dates and its reduction to each day's worst hour, for trip_weather.py to reuse; the CLI itself stays current-only.
 
 ## Actions
 
