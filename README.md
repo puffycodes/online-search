@@ -5925,6 +5925,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - `--text` extraction is blunt (drops script/style, flattens the rest to one line, no paragraph breaks) — the agent summarizes from that flattened text, so nav/footer/cookie-banner text mixed into the extracted content can occasionally bleed into a summary.
 - The combined "how these pages relate" take, when given multiple URLs, is a judgment call made by the agent itself, not a deterministic script — it's included only when a real relationship exists, and omitted rather than invented for unrelated pages.
 - Sequential, one URL at a time — summarizing many URLs in one request means that many separate network round trips, not a single batched call.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/url-summary/test-runs.md`](docs/features/agent/url-summary/test-runs.md) lists targeted live runs of its judgement rules (adding `https://`, truncation, a page with no title, the robots.txt disallow note, failed URLs kept in the report, a combined take only for related pages); all passed on 2026-10-21. The `ai-input=no` note is untested for want of a live site that sets it for every client.
 - Inherits all the limitations of [`url_content.py`](#url_contentpy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET, hard character-cutoff truncation).
 
 ---

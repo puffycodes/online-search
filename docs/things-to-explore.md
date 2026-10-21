@@ -173,8 +173,6 @@ section below; remove it from both places when it's done.
 1. **RSS/Atom feed reader** (Web pages): small and in the `url_*` family; the design
    question is politeness for feeds an agent picks itself (robots.txt, as
    `url_content.py --respect-robots` does).
-2. **Targeted test runs for `url-summary`** (Repo and tooling): the approach that
-   found two bugs in the web-search scripts.
 
 ## Combining existing scripts
 
@@ -300,6 +298,8 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 - [ ] **More targeted test runs**: `docs/features/agent/hottest-tech-discussion-summary/test-runs.md`
   has caught real edge cases in the research summary agent. The same approach (a
   fixed input per judgement rule, with pass criteria) could cover other agents with
-  judgement steps: `url-summary` and `hn-search`'s opinion sampling. `web-search`'s
-  fallback rules got theirs on 2026-10-21 (`docs/features/agent/web-search/test-runs.md`);
-  still untested there: a real quota message and an empty result list.
+  judgement steps: `hn-search`'s opinion sampling. `web-search`'s fallback rules and
+  `url-summary`'s judgement rules got theirs on 2026-10-21
+  (`docs/features/agent/<agent>/test-runs.md`). Still untested: `web-search` with a real
+  quota message or an empty result list, and `url-summary`'s `ai-input=no` note (no live
+  site found that sets it for every client).
