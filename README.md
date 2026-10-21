@@ -81,6 +81,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/web-search.md`](#claude-code-agent-web-search) — Claude Code subagent that tries, in order, `web_search_brave.py`, `web_search_serper.py`, `web_search_tavily.py`, `web_search_serpapi.py`, `web_search_exa.py`, then `web_search_duckduckgo.py`, and reports the first one that succeeds (`web_search_perplexity.py` is a standalone tool, not part of this fallback chain)
 - [`url_availability.py`](#url_availabilitypy) — checks whether a web page at a given URL is reachable, via an HTTP GET request and status-code classification, optionally finding a dead page's last Wayback Machine copy (no API key)
 - [`.claude/agents/url-availability.md`](#claude-code-agent-url-availability) — Claude Code subagent that calls `url_availability.py` and reports whether a named URL is up, down, or returning an error, with a dead page's Wayback Machine copy on request
+- [`url_broken_links.py`](#url_broken_linkspy) — checks every link on a web page (via `url_links.py` and `url_availability.py`) and reports the broken, unreachable and blocked ones, politely: a link cap, a per-host delay, robots.txt honoured for each linked site, optional Wayback copies (no API key)
+- [`.claude/agents/url-broken-links.md`](#claude-code-agent-url-broken-links) — Claude Code subagent that calls `url_broken_links.py` and reports which links on a named page are broken, with archived copies on request
 - [`url_content.py`](#url_contentpy) — retrieves the raw content (HTML/text/JSON/etc.) of a web page at a given URL, via an HTTP GET request, with an optional `--text` mode (BeautifulSoup) to extract just the human-readable text (no API key), and `--respect-robots` to honour the site's robots.txt and AI opt-out first
 - [`.claude/agents/url-content.md`](#claude-code-agent-url-content) — Claude Code subagent that calls `url_content.py` and reports or summarizes the content at a named URL
 - [`url_links.py`](#url_linkspy) — retrieves a web page at a given URL and extracts every hyperlink (`<a href>`) in its HTML content, resolved to absolute URLs, via BeautifulSoup (no API key)
@@ -4940,7 +4942,7 @@ These are set as constants near the top of the file — edit them directly to ch
 
 ### API reference
 
-- `check_url(url, timeout=TIMEOUT_SECONDS)` — Issues the `GET` request and returns `{url, available, status_code, reason, final_url, elapsed_ms}`. HTTP-level errors (4xx/5xx) are returned as `available: False`, not raised; connection-level failures propagate as `requests.RequestException` for the caller to handle.
+- `check_url(url, timeout=TIMEOUT_SECONDS, user_agent=USER_AGENT)` — Issues the `GET` request (with `user_agent` as the User-Agent; `url_broken_links.py` passes its own) and returns `{url, available, status_code, reason, final_url, elapsed_ms}`. HTTP-level errors (4xx/5xx) are returned as `available: False`, not raised; connection-level failures propagate as `requests.RequestException` for the caller to handle.
 - `unreachable_result(url, error)` — The `available: False` record for a connection-level failure, with `status_code` / `reason` / `final_url` / `elapsed_ms` set to `None` and `error` set; used only with `--wayback`.
 - `fetch_wayback(url, timeout=TIMEOUT_SECONDS)` — Queries the Wayback Machine availability API and returns `{url, timestamp, archived_at, status}` for the most recent snapshot, or `None` if there is none. `archived_at` is `None` (and `status` kept as given) if the archive returns an unexpected format. Request failures, including a `429`, propagate as `requests.RequestException`; a non-JSON body raises `ValueError`.
 - `add_wayback(result, timeout=TIMEOUT_SECONDS)` — Sets `result["archived"]` from `fetch_wayback()` and `result["archive_error"]` to `None`, or, if the lookup fails, `archived` to `None` and `archive_error` to the error message.
@@ -5003,6 +5005,180 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Requires `url_availability.py` (and its `requests` dependency) to be present and runnable from the repo root.
 - Checks reachability via HTTP status only, not page content — a "soft 404" (`200 OK` with an error message in the body) is reported as available; the agent says so if the user seems to be asking about content correctness rather than server reachability.
 - Inherits all the limitations of [`url_availability.py`](#url_availabilitypy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false `4xx`/`5xx`, single-attempt GET, Wayback Machine rate limiting and exact-URL matching).
+
+---
+
+## url_broken_links.py
+
+Checks every link on a web page and reports the broken ones. It joins [`url_links.py`](#url_linkspy) (fetch the page, extract its links) and [`url_availability.py`](#url_availabilitypy) (check each link, look up Wayback copies), and is built to be polite on big pages: a cap on links, a per-host delay, each URL checked once, and each linked site's robots.txt honoured. No API key required.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/) and [`beautifulsoup4`](https://pypi.org/project/beautifulsoup4/)
+- the repo's own `url_links.py`, `url_availability.py`, `robots.py` and `cli_utils.py` modules (run from the repo root so they import)
+
+```bash
+pip install requests beautifulsoup4
+```
+
+### Usage
+
+```bash
+python3 url_broken_links.py URL [--max-links N] [--delay SECONDS] [--scope all|internal|external] [--wayback] [--timeout SECONDS] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `URL` (positional) | — | The page whose links to check; must start with `http://` or `https://` |
+| `--max-links N` | 100 | Check at most `N` links (1–1000), in page order |
+| `--delay SECONDS` | 1.0 | Minimum gap between the start of requests to the same host |
+| `--scope` | `all` | `internal` checks only links to the page's own host, `external` only links elsewhere |
+| `--wayback` | off | Look up the most recent Wayback Machine copy of each broken or unreachable link |
+| `--timeout SECONDS` | 10 | Request timeout, for the page, each link, robots.txt and Wayback lookups |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
+
+#### Example output
+
+From a live run on 2026-10-21 (abridged):
+
+```
+$ python3 url_broken_links.py https://en.wikipedia.org/wiki/Link_rot --scope external --max-links 50 --wayback
+Checking the links on: https://en.wikipedia.org/wiki/Link_rot
+
+Page: https://en.wikipedia.org/wiki/Link_rot
+Links found: 380; checked: 50 (left out: 1 non-web, 84 back to this page, 46 duplicate, 137 outside --scope external, 62 over the cap of 50)
+Result: 39 ok, 4 redirected, 0 broken, 1 blocked, 1 unreachable, 5 skipped by robots.txt
+
+Unreachable (1):
+  http://www2003.org/cdrom/papers/refereed/p097/P97%20sources/p97-fetterly.html  ""A large-scale study of the evolution of web pages""
+    www2003.org: its robots.txt couldn't be fetched (ConnectTimeout)
+    Archived copy: lookup failed (429 Client Error: Too Many Requests for url: …)
+
+Blocked (refused this client; may work in a browser) (1):
+  403 Forbidden  https://digitalcommons.odu.edu/cgi/viewcontent.cgi?article=1008&context=computerscience_fac_pubs  ""Object Persistence and Availability in Digital Libraries""
+
+Not checked (robots.txt disallows it or couldn't be read) (5):
+  https://www.wikidata.org/wiki/Special:EntityPage/Q1193907  "Edit links"
+    www.wikidata.org's robots.txt disallows /wiki/Special:EntityPage/Q1193907
+  …
+
+Redirected (4):
+  http://www.iwaw.net/05/papers/iwaw05-mccown1.pdf
+    -> https://www.deepsouthresources.com
+    Note: redirects to a home page; the linked page may be gone
+  …
+```
+
+#### Tool usage (`--json`)
+
+```json
+{
+  "url": "https://example.com/docs",
+  "final_url": "https://example.com/docs/",
+  "link_count": 4,
+  "checked": 3,
+  "max_links": 100,
+  "scope": "all",
+  "counts": {"ok": 1, "redirected": 0, "broken": 1, "blocked": 0, "unreachable": 1, "skipped_robots": 0},
+  "skipped": {"non_http": 1, "same_page": 0, "duplicates": 0, "out_of_scope": 0, "over_cap": 0},
+  "ai_input_warning": null,
+  "robots_disallow_note": null,
+  "links": [
+    {"url": "https://example.com/ok", "text": "OK", "internal": true, "status": "ok", "status_code": 200, "reason": "OK", "final_url": "https://example.com/ok", "error": null, "note": null},
+    {"url": "https://example.com/gone", "text": "Gone", "internal": true, "status": "broken", "status_code": 404, "reason": "Not Found", "final_url": "https://example.com/gone", "error": null, "note": null},
+    {"url": "https://down.example/x", "text": "", "internal": false, "status": "unreachable", "status_code": null, "reason": null, "final_url": null, "error": "DNS failure", "note": null}
+  ]
+}
+```
+
+With `--wayback`, broken and unreachable records also carry `archived` (`{url, timestamp, archived_at, status}` or `null`) and `archive_error`, as in [`url_availability.py`](#url_availabilitypy). A page with broken links is a normal result (exit 0).
+
+### How it works
+
+1. **Fetch the page** with `url_links.fetch_links()`, sending this script's own User-Agent. The page is the user's choice, so it is fetched regardless of its robots.txt, which is only reported on (`ai_input_warning`, `robots_disallow_note`, as `url_content.py --warn-robots` does).
+2. **Choose the links** (`select_links()`), in page order: only `http(s)` links, `#fragment` dropped, links back to the page itself and repeats skipped, then `--scope`, then the `--max-links` cap. Everything left out is counted by reason in `skipped`.
+3. **Check each link** (`check_link()`):
+   - The host's robots.txt is read once (`RobotsCache`, through `robots.py`), and a link it disallows for `online-search-url-broken-links` is skipped, not fetched. An unreadable robots.txt counts as a full disallow (RFC 9309), except that a host that can't be connected to at all (DNS failure, refused connection, connect timeout) is reported as unreachable.
+   - Requests to one host start at least `--delay` seconds apart (`HostThrottle`).
+   - `url_availability.check_url()` GETs the link, following redirects, and `classify()` sorts the answer: `ok`, `redirected`, `broken` (4xx/5xx), `blocked` (401, 403, 429) or, with no answer, `unreachable`. A redirect from a specific page to a site's front page gets a `note`.
+4. **Wayback copies** (`--wayback`, `add_wayback_copies()`): `url_availability.add_wayback()` for each broken or unreachable link, at least 3 seconds apart; after the first `429` the rest are marked as not looked up.
+5. **Report**: problem links first (broken, unreachable, blocked, not checked), then redirects; or the JSON object.
+
+### Configuration
+
+Constants at the top of the file:
+
+| Constant | Default | Description |
+|---|---|---|
+| `TIMEOUT_SECONDS` | 10 | Default `--timeout` |
+| `MAX_LINKS` / `MAX_LINKS_LIMIT` | 100 / 1000 | Default and highest `--max-links` |
+| `DELAY_SECONDS` | 1.0 | Default `--delay` |
+| `USER_AGENT` / `ROBOTS_TOKEN` | `online-search-url-broken-links` | Sent on every request; matched against robots.txt `User-agent` groups |
+| `BLOCKED_STATUSES` | `{401, 403, 429}` | Statuses reported as `blocked` rather than `broken` |
+| `WAYBACK_DELAY` | 3.0 | Minimum gap between Wayback lookups |
+| `UNREACHABLE_ROBOTS_ERRORS` | `ConnectionError`, `ConnectTimeout` | robots.txt failures that mean the host itself is unreachable |
+
+### API reference
+
+- `select_links(links, page_url, scope, max_links)` — `(selected, skipped)`: the `{url, text, internal}` links to check and the counts of those left out.
+- `classify(status_code, url, final_url)` — `ok`, `redirected`, `broken` or `blocked`.
+- `lands_on_home_page(url, final_url)` — whether a link to a specific page redirected to a site's front page.
+- `check_link(link, robots_cache, throttle, timeout)` — one link's record.
+- `add_wayback_copies(records, throttle, timeout)` — Wayback lookups for the dead links, stopping at the first `429`.
+- `page_notes(robots_cache, page_url)` — the page's own robots.txt notes.
+- `check_page(url, max_links, delay, scope, wayback, timeout)` — the whole run, returning the JSON-ready dict; raises what `url_links.fetch_links()` raises when the page itself can't be fetched.
+- `HostThrottle(delay)` / `RobotsCache(throttle, timeout)` — the per-host spacing and the per-host robots.txt cache.
+
+### Error handling
+
+- A missing scheme, a page that can't be fetched (network error, 4xx/5xx) or isn't HTML, or a missing `beautifulsoup4` exits with status 1: `Error: …` on stderr, or `{"error": "..."}` with `--json`.
+- Invalid `--max-links`, `--delay`, `--scope` or `--timeout` values exit with status 2, before any request.
+- A failing link never fails the run; it's a record with its status and `error`.
+
+### Notes / limitations
+
+- **Slow by design**: 100 links on one host take at least 100 seconds, plus a robots.txt request per host. Agents run it with a 10-minute command timeout.
+- **HTTP status only**: a page that returns `200 OK` with "not found" in its body (a soft 404) counts as ok; the home-page redirect note catches the commonest disguised case.
+- **Blocked isn't broken**: sites behind bot protection often answer automated clients with 403 or 429, so those are reported separately.
+- **GET, not HEAD**, as in `url_availability.py`, so a link to a large file downloads it.
+- Only links in `<a href>` are checked, not images, scripts or stylesheets.
+- The Wayback Machine rate-limits quickly; a run with many dead links may get only the first few lookups.
+
+---
+
+## Claude Code agent: `url-broken-links`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/url-broken-links.md`. It calls no API itself — it shells out to [`url_broken_links.py`](#url_broken_linkspy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer "check this page for broken links", "are any of the links on this article dead?" or "find the 404s on my homepage and archived copies of them" by running the script and summarizing its JSON output.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent when the user gives a page URL and wants its links checked, based on the `description` field in its frontmatter. Checking one URL stays with `url-availability`, and listing links with `url-links`.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "url-broken-links"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Adds `https://` to a bare domain or path.
+2. Runs `python3 url_broken_links.py "URL" --json` with a 10-minute command timeout, adding `--scope internal|external` when the user asks for one kind of link, `--wayback` when they want archived copies or replacements, and a larger `--max-links` only when asked. It never lowers `--delay`.
+3. Leads with how many links were checked and how many are broken or unreachable, then lists those (text, URL, status or error, archived copy), redirects to a front page as likely broken, blocked links as "may work in a browser", links skipped because of robots.txt, and what was left out over the cap or outside the scope.
+
+### Configuration
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`url_broken_links.py`](#url_broken_linkspy) |
+
+### Notes / limitations
+
+- Requires `url_broken_links.py` and the modules it imports (plus `requests` and `beautifulsoup4`) to be runnable from the repo root.
+- Inherits all the limitations of [`url_broken_links.py`](#url_broken_linkspy) itself (slow by design, HTTP status only, Wayback rate limiting).
 
 ---
 
@@ -5270,7 +5446,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### API reference
 
 - `extract_links(html, base_url)` — Parses `html` and returns every `<a href>` as `{text, url}`, with `url` resolved against `base_url` and `text` whitespace-collapsed. Skips anchors with no/empty `href`. Raises `ImportError` if `beautifulsoup4` isn't installed (imported lazily, so the rest of the script works without it).
-- `fetch_links(url, timeout=TIMEOUT_SECONDS)` — Issues the `GET` request and returns `{url, final_url, status_code, content_type, link_count, links}`. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-HTML `Content-Type`, and `ImportError` if `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
+- `fetch_links(url, timeout=TIMEOUT_SECONDS, user_agent=USER_AGENT)` — Issues the `GET` request (with `user_agent` as the User-Agent; `url_broken_links.py` passes its own) and returns `{url, final_url, status_code, content_type, link_count, links}`. Raises `requests.HTTPError` on a 4xx/5xx response, `ValueError` on a non-HTML `Content-Type`, and `ImportError` if `beautifulsoup4` isn't installed; connection-level failures propagate as `requests.RequestException` for the caller to handle.
 - `format_result(result)` — Renders a `fetch_links()` record as a multi-line human-readable string, including a "Redirected to:" line when `final_url` differs from `url` and a numbered list of links (text on one line, URL indented below it; `(no text)` for a link with no visible text).
 - `parse_args(argv=None)` — Parses the `url` positional and `--timeout` / `--json` CLI flags.
 - `main(argv=None)` — Entry point; validates the URL scheme, calls `fetch_links()`, handles top-level errors, and prints the result (either human-readable or JSON, depending on `--json`).

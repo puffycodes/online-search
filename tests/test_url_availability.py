@@ -27,6 +27,18 @@ class TestCheckUrl:
         assert result["final_url"] == "https://example.com/"
         assert result["elapsed_ms"] >= 0
 
+    def test_user_agent(self, monkeypatch):
+        captured = []
+
+        def fake_get(url, **kwargs):
+            captured.append(kwargs["headers"]["User-Agent"])
+            return FakeResponse(status_code=200, reason="OK", url=url)
+
+        monkeypatch.setattr(ua.requests, "get", fake_get)
+        ua.check_url("https://example.com")
+        ua.check_url("https://example.com", user_agent="custom/1.0")
+        assert captured == [ua.USER_AGENT, "custom/1.0"]
+
     def test_unavailable_on_404(self, monkeypatch):
         response = FakeResponse(status_code=404, reason="Not Found", url="https://example.com/x")
         monkeypatch.setattr(ua.requests, "get", lambda url, **kwargs: response)

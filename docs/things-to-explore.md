@@ -169,10 +169,7 @@ before the top picks because it's about the repo's existing sources, not new one
 Chosen on 2026-10-19, in suggested order. Each is described in full in its section
 below; remove it from both places when it's done.
 
-1. **Broken-link checker** (Combining existing scripts): joins `url_links.py` and
-   `url_availability.py`; the main design question is staying polite on big pages (a
-   cap on links, a delay, each host checked sparingly).
-2. **Targeted test runs for `web-search`** (Repo and tooling): every research flow
+1. **Targeted test runs for `web-search`** (Repo and tooling): every research flow
    depends on it, and its fallback rules (missing key, quota message, transient
    error) have never been tested on purpose.
 
@@ -180,9 +177,6 @@ below; remove it from both places when it's done.
 
 No new data source, so nothing new to vet; mostly agent work or small glue scripts.
 
-- [ ] **Broken-link checker**: run `url_links.py` on a page, check each link with
-  `url_availability.py`, and offer `--wayback` copies of the dead ones. Mind the
-  number of requests on a page with hundreds of links (a cap and a delay).
 - [ ] **Stock deep-dive agent**: one request chains fundamentals, intrinsic value,
   analyst targets, holders, the earnings calendar and the trend for one ticker into
   a single report, the way the research summary agent chains its tools.

@@ -126,6 +126,13 @@ fetch; for that middle case, the `url-content` and `url-summary` agents pass
 fetch the page gets a one-line note in the report. (The second note is what
 catches Lobsters: its `ai-input=no` applies only to the search engines it names.)
 
+`url_broken_links.py` (added 2026-10-21) fetches the links it finds on a page,
+so it reads each linked host's robots.txt once and skips any link disallowed for
+`online-search-url-broken-links`; an unreadable robots.txt counts as a full
+disallow (RFC 9309). It also spaces requests to one host at least a second apart
+and caps the links checked. The page itself, the user's choice, is fetched and
+its robots.txt only reported on, as with `--warn-robots`.
+
 ## Allowed
 
 - **Hacker News API** ([docs](https://github.com/HackerNews/API)):
