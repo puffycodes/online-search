@@ -984,7 +984,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### Notes / limitations
 
 - Requires `trip_weather.py` and the weather modules it imports (plus `requests`) to be runnable from the repo root.
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/trip-weather/test-runs.md`](docs/features/agent/trip-weather/test-runs.md) lists targeted live runs of its judgement rules ("next week", forecast plus typical, a stay over 31 days, past dates, packing advice with air quality, °F); all passed on 2026-10-21 and found the daylight-saving error in sun times that `weather.local_daily()` now fixes.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/trip-weather/test-runs.md`](docs/features/agent/trip-weather/test-runs.md) lists targeted live runs of its judgement rules ("next week", forecast plus typical, a stay over 31 days, past dates, packing advice with air quality, °F, an ambiguous place name); all passed on 2026-10-21 and found the daylight-saving error in sun times that `weather.local_daily()` now fixes.
 - Inherits all the limitations of [`trip_weather.py`](#trip_weatherpy) itself (typical weather is history, short air-quality forecast, 31-day trips).
 
 ---
@@ -3741,7 +3741,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 - Requires `hn_search.py`, `hn_thread.py`, their `hn.py` / `cli_utils.py` dependencies, and the `requests` package to be runnable from the repo root.
 - Inherits the limitations of [`hn_search.py`](#hn_searchpy) (whole-word matching, text-first relevance ranking, no comment scores, 100 results per search) and [`hn_thread.py`](#hn_threadpy) (a big thread is read as a sample of its highest-ranked comments).
 - A summary of "what HN thinks" is only as representative as the handful of comments retrieved.
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/hn-search/test-runs.md`](docs/features/agent/hn-search/test-runs.md) lists targeted live runs of its judgement rules (a distinctive and an ambiguous name, hiring demand, a linked thread, "lately", no matches, a topic inside one thread); all passed on 2026-10-21. They found that comment searches by relevance return an arbitrary slice (comments have no score) and that hiring demand is best measured inside each monthly thread; the agent's instructions now cover both.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/hn-search/test-runs.md`](docs/features/agent/hn-search/test-runs.md) lists targeted live runs of its judgement rules (a distinctive and an ambiguous name, hiring demand, a linked thread, "lately", no matches, a topic inside one thread, one author's comments); all passed on 2026-10-21. They found that comment searches by relevance return an arbitrary slice (comments have no score) and that hiring demand is best measured inside each monthly thread; the agent's instructions now cover both.
 - Its off-topic filtering is the agent's own judgment, not a feature of the script, so an occasional off-topic comment can still get through, especially for names with many meanings.
 
 ---

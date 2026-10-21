@@ -50,7 +50,7 @@ The cases are independent and can run in parallel; the opinion cases take about 
   - Finds the year's "Who is hiring?" threads (`--author whoishiring --type ask --include-job-threads`) and searches inside each with `"rust" --story ITEM --include-job-threads`.
   - Compares with one or two other skills, reports per-month counts, and says what they are and aren't (posts mentioning the word, replies mixed in).
 - **Found on 2026-10-21:** the agent's first step, a site-wide `"rust" --type comment --include-job-threads` search, returned only general Rust discussion. It recovered by finding the threads first. That method is now written into the agent's instructions.
-- **Last checked:** 2026-10-21, passed (after the agent's own recovery).
+- **Last checked:** 2026-10-21, passed (after the agent's own recovery). Rerun the same day in a session started after the fix: passed. The agent went straight to the ten 2026 threads, searched `"rust"`, `"python"` and `"typescript"` inside each (totals 264 / 779 / 713, matching the saved files), read the Rust matches and set aside 7 replies. One slip in its caveats: it said it read 244 Rust comments with 20 unread, but at `--limit 30` it read 253 and left 11 (February and April) unread.
 
 ### 4. Summarizing a linked thread
 
@@ -87,9 +87,19 @@ The cases are independent and can run in parallel; the opinion cases take about 
   - `hn_search.py "microsoft" --story 41002195`, with enough results to allow skips, and comments sampled from more than one period of the thread.
   - Groups the views, reports how many comments were used and set aside, and says which part of the thread the sample covers.
 - **Found on 2026-10-21:** a `--story` search by relevance came back newest first (July 20–23), because comments have no score and relevance ties on the word. The agent noticed and added a second search with `--until 2024-07-19` for day one. A direct check showed the same for site-wide comment searches (`"zig"` and `"kubernetes"` by relevance returned only 2015 comments). The agent's instructions now say to pick the period with `--sort date` and `--since` / `--until` for comment searches and to sample a long thread in more than one window; the README's `hn_search.py` notes say so too.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun the same day in a session started after the fix: passed. The agent searched by date in two windows (day one, then 20 July on) and read the thread's top-ranked comments, and said which part of the thread each covered.
+- **Found on the rerun:** `--since` / `--until` work in whole days, so a date-sorted search of day one (152 matches) only reached its last hours (16:30–23:59 UTC); the thread's first eleven hours were out of reach. The agent said so and used `hn_thread.py`'s top-ranked comments, which skew early, to cover them.
+
+### 8. One author's comments
+
+- **Rules:** `--author` with `--type comment` for what one user has said; `--sort date` with `--since` / `--until` windows for comments; "a sample, not a poll".
+- **Question:** `What has pg commented about startups?`
+- **A correct run:**
+  - `hn_search.py "startups" --type comment --author pg --sort date` over several date windows (last time five, 2008 to 2014), no story search or `hn_thread.py`.
+  - Groups views by theme, links each quoted comment, gives how many comments were used and set aside, and says it's one person's comments, not a full index of his views.
+- **Found on 2026-10-21:** 44 of the comments returned for `"startups"` (complete texts, not cut) contain only "startup", and the story title doesn't have the plural either. Algolia matches singular and plural forms despite whole-word matching, so `total_matches` (1,548) counts both. The README's `hn_search.py` notes say a plural "may need its own search"; for English plurals it doesn't.
+- **Last checked:** 2026-10-21, passed (six quotes spot-checked against the saved JSON).
 
 ## Not covered
 
-- **Invalid arguments** (exit 2: fix rather than retry), e.g. `--min-points` with `--type comment`. No natural question triggers them; check the run notes when one turns up.
-- **An author question** (`--author`), e.g. "what has pg commented about startups?".
+- **Invalid arguments** (exit 2: fix rather than retry), e.g. `--min-points` with `--type comment`. No natural question triggers them; check the run notes when one turns up. Seen once, in the case 7 rerun on 2026-10-21: `hn_thread.py --top 0` exited 2, and the agent fixed the argument (`--top 30`) rather than retrying it.

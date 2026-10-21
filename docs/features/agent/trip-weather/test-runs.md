@@ -52,7 +52,7 @@ The dates below are for today = Wednesday 2026-10-21.
 - **Question:** `What was the weather like in Rome last week during my trip?`
 - **A correct run:** runs nothing, gives no figures, and points to the `weather-history` agent with the dates worked out (2026-10-12 to 2026-10-18).
 - **Found on 2026-10-21:** the agent added the Open-Meteo credit line although nothing was fetched. Harmless, but the credit rule now says it's for reports with figures from the tool.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun the same day in a session started after the fix: passed, with no command run and no credit line.
 
 ### 5. Packing advice and air quality
 
@@ -67,9 +67,15 @@ The dates below are for today = Wednesday 2026-10-21.
 - **Question:** `We're taking the kids to Orlando from December 20 to 27 — what kind of temperatures in °F should we expect?`
 - **A correct run:** `--unit fahrenheit`, eight typical days labelled as such, a cold-snap caveat from the ranges, and advice to re-check once the dates are within the forecast.
 - **Found on 2026-10-21:** the agent noticed that the typical days' sun times were an hour late (sunset 18:33 instead of about 17:33). The cause was Open-Meteo applying the place's offset *today* (EDT) to every date, including December (EST). It affected `weather_history.py` and forecast days after a daylight-saving change too. Fixed the same day in `weather.local_daily()`, which converts sunrise and sunset to each date's own offset; the agent's one-hour correction is no longer needed.
+- **Last checked:** 2026-10-21, passed. Rerun the same day after the fix: passed, with sunsets of 17:33–17:37 EST straight from the tool and no correction by the agent. It ended with two credit lines (the short one, then the tool's `attribution` text); redundant but harmless.
+
+### 7. An ambiguous place name
+
+- **Rule:** add a qualifier from context when a place name is ambiguous; turn "the weekend" into the coming Saturday and Sunday.
+- **Question:** `We're driving down from Chicago to Springfield for the weekend. What's the weather going to be like?` (with the don't-ask instruction above).
+- **A correct run:** `trip_weather.py "Springfield, Illinois" --start 2026-10-24 --end 2026-10-25`, resolved to Springfield, Illinois; the report names the place it used and says both days are forecast. Last time the agent also chose `--unit fahrenheit` as clearly expected for a US trip, which the rule allows.
 - **Last checked:** 2026-10-21, passed.
 
 ## Not covered
 
-- An ambiguous place name (e.g. "Springfield"), where the agent should add a qualifier from context.
 - A trip partly within the air-quality forecast (only the first days have AQI); covered in the script's tests, not yet in a live run.

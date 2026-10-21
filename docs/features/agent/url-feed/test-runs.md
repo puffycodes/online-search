@@ -49,7 +49,7 @@ Check each run against the saved files (`feed_url`, `discovered`, `item_count`, 
 - **Request:** `What has https://blog.python.org published since January 1st, 2025?` (its feed's 50 items went back only to 2025-12-02).
 - **A correct run:** `--since 2025-01-01 --limit 100 --warn-robots`; all 50 items listed or summarized, and the report says the feed starts in December 2025, so earlier posts aren't in it.
 - **Found on 2026-10-21:** the agent left `--limit` at 10, so the list stopped at 10 posts from September 2026; it said so honestly but couldn't tell how far the feed reached. The agent's instructions now say to pass `--limit 100` with `--since` unless the user asked for a number.
-- **Last checked:** 2026-10-21, passed with the limit issue (fixed afterwards; rerun to confirm).
+- **Last checked:** 2026-10-21, passed with the limit issue (fixed afterwards). Rerun the same day in a session started after the fix: passed, with `--since 2025-01-01 --limit 100 --warn-robots`, all 50 items (2025-12-02 to 2026-10-13) and the gap before December 2025 stated.
 
 ### 5. A site without a feed
 

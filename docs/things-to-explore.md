@@ -299,11 +299,12 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   judgement steps. `web-search`, `url-summary` and `hn-search` got theirs on 2026-10-21
   (`docs/features/agent/<agent>/test-runs.md`). Still untested: `web-search` with a real
   quota message or an empty result list, `url-summary`'s `ai-input=no` note (no live
-  site found that sets it for every client), and `hn-search`'s invalid-argument and
-  `--author` paths. `trip-weather` and `url-feed` got theirs on 2026-10-21 too; they found
+  site found that sets it for every client), and `hn-search`'s invalid-argument path
+  (seen once in a rerun, handled correctly). `trip-weather` and `url-feed` got theirs on 2026-10-21 too; they found
   Open-Meteo's daylight-saving error in sun times (fixed in `weather.local_daily()`)
   and a `--since` run cut short by the default `--limit` (fixed in the agent).
   `package-vulnerabilities` got its runs on 2026-10-21 as well; all passed, with no
   changes needed. Still without runs: `air-quality` (its new `--forecast`) and
-  `url-broken-links`; and the fixes to `hn-search`, `trip-weather` and `url-feed` want a
-  confirming rerun in a session started after them.
+  `url-broken-links`. The fixes to `hn-search`, `trip-weather` and `url-feed` were
+  confirmed by reruns on 2026-10-21, which also added an `--author` case to `hn-search`
+  and an ambiguous-place case to `trip-weather`.
