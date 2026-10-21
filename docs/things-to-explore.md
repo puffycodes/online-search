@@ -71,6 +71,68 @@ before the top picks because it's about the repo's existing sources, not new one
   premium ($49.99). Every personal plan above forbids showing the data to others,
   which matters if either web app is ever served beyond your own machine.
 
+  **Chosen for price history (A)**, 2026-10-21, for stability:
+  1. **EODHD Historian** ($19.99) is the main source, for stocks, FX and crypto.
+     It is a documented keyed API whose business is end-of-day data, and its terms
+     allow personal storage and analysis. Coverage was tested with a free key on
+     2026-10-21 (7 of the day's 20 calls). `exchanges-list` returns 70 exchanges,
+     including US (`US`), London (`LSE`), XETRA (`XETRA`), Euronext Paris (`PA`),
+     Toronto (`TO`), ASX (`AU`), `FOREX` and crypto (`CC`). It has no entry for
+     Singapore, India, Hong Kong, Tokyo or indices, and it isn't complete:
+     `/api/eod/` returned daily OHLCV with `adjusted_close` for `GSPC.INDX`
+     (S&P 500) and `0700.HK`. The other symbols tried all returned 404 "Ticker
+     Not Found.": `D05.SG` and `D05.SGX` (DBS), `RELIANCE.NSE` and `7203.TSE`
+     (Toyota). Those suffixes were guesses, so Singapore, India and Tokyo may exist
+     under other codes, but most likely they aren't covered.
+  2. **Databento** (pay as you go) covers futures: CME, CBOT, NYMEX and COMEX
+     daily bars, licensed from the exchanges. It sells individual contracts, so a
+     Yahoo-style continuous front month (`GC=F`) needs its rolling symbology.
+  3. **FRED** (free) is optional, for US indices and commodities, and only if
+     EODHD has no indices. Index series are licensed for personal use only, and
+     FRED's "not endorsed" notice is required.
+
+  That leaves Singapore (`.SI`), India (`.NS`) and Tokyo (`.T`) uncovered. The
+  options are:
+  - drop those three markets;
+  - send them to Alpha Vantage through a shared module that routes by Yahoo
+    suffix, with Databento for `=F` and EODHD for everything else, and converts
+    each provider's response to the `extract_series()` shape so the price scripts
+    barely change. Free Alpha Vantage gives those markets only about 100 daily
+    sessions, short of the charts' `6mo` and `stock_risk.py`'s `1y`. Full history
+    takes premium, which makes $69.98/month together with EODHD;
+  - use Alpha Vantage premium ($49.99) alone, if it covers all ten exchanges. That
+    is one provider and one set of terms, and it can later cover C–F as well;
+  - ask EODHD support whether the three markets exist under other codes or plans.
+
+  **Alpha Vantage tested** with a free key (`ALPHAVANTAGE_API_KEY` in `.env`, next
+  to `EODHD_API_KEY`) on 2026-10-21, using 17 of the day's 25 calls.
+  `TIME_SERIES_DAILY` returned 100 sessions for `AAPL`, `TSCO.LON`, `MBG.DEX`,
+  `MC.PAR`, `SHOP.TRT` and `RELIANCE.BSE` (India's Bombay exchange; no NSE
+  listing turned up). `outputsize=full` was refused as "a premium feature for the
+  TIME_SERIES_DAILY endpoint". `D05.SGX`, `7203.TYO` and `0700.HKG` returned
+  "Invalid API call", and `BHP.AUS` returned an empty response (possibly a rate
+  limit; inconclusive). Those suffixes were guesses, but `SYMBOL_SEARCH` agrees:
+  for DBS, Toyota, Tencent and BHP it returned only US, London, Frankfurt and
+  other foreign listings, never a Singapore, Tokyo, Hong Kong or ASX one. For
+  Reliance it returned `RELIANCE.BSE`.
+
+  | Market | EODHD | Alpha Vantage |
+  |---|---|---|
+  | US, London, Germany, Paris, Toronto | yes | yes |
+  | ASX | listed, not tested | ? |
+  | Hong Kong | yes | no |
+  | India | no | yes (BSE listing only) |
+  | Singapore, Tokyo | no | no |
+
+  So Alpha Vantage alone is out, and combining the two adds only India. India
+  would come from the BSE listing, so `.NS` tickers would map to `.BSE`, whose
+  prices differ slightly, and free Alpha Vantage gives only about 100 sessions.
+  Singapore and Tokyo need a third provider or must be dropped. Twelve Data Grow
+  ($79) and FMP Ultimate ($149) claim global coverage, but neither is confirmed for
+  these markets. **Simplest stable setup:** EODHD plus Databento for futures,
+  dropping Singapore and Tokyo, and either dropping India or adding free Alpha
+  Vantage for it. The agents' DBS (`D05.SI`) examples would need rewriting.
+
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
   US fundamentals and insider data to save Alpha Vantage requests. **No free
