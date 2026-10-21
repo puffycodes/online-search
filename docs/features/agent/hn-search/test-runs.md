@@ -97,7 +97,7 @@ The cases are independent and can run in parallel; the opinion cases take about 
 - **A correct run:**
   - `hn_search.py "startups" --type comment --author pg --sort date` over several date windows (last time five, 2008 to 2014), no story search or `hn_thread.py`.
   - Groups views by theme, links each quoted comment, gives how many comments were used and set aside, and says it's one person's comments, not a full index of his views.
-- **Found on 2026-10-21:** 44 of the comments returned for `"startups"` (complete texts, not cut) contain only "startup", and the story title doesn't have the plural either. Algolia matches singular and plural forms despite whole-word matching, so `total_matches` (1,548) counts both. The README's `hn_search.py` notes say a plural "may need its own search"; for English plurals it doesn't.
+- **Found on 2026-10-21:** 44 of the comments returned for `"startups"` (complete texts, not cut) contain only "startup", and the story title doesn't have the plural either. Algolia matches singular and plural forms despite whole-word matching, so `total_matches` (1,548) counts both. A direct check confirmed it both ways (`"deploy"` and `"deploys"` give the same count; `"deployed"` doesn't), and the README's `hn_search.py` notes, which said a plural may need its own search, were corrected.
 - **Last checked:** 2026-10-21, passed (six quotes spot-checked against the saved JSON).
 
 ## Not covered
