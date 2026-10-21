@@ -138,7 +138,7 @@ class TestMain:
         self._wire(monkeypatch, _payload(_sessions(100, start=dt.date(2026, 6, 1))))
         av.main(["RELIANCE.BSE", "--start", "2026-01-01", "--json"])
         notes = json.loads(capsys.readouterr().out)["notes"]
-        assert len(notes) == 1 and "--full" in notes[0]
+        assert len(notes) == 1 and "premium" in notes[0]
 
     def test_text_table(self, monkeypatch, capsys, api_key):
         self._wire(monkeypatch, _payload(["2026-10-20"]))

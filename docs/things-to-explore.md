@@ -136,9 +136,19 @@ before the top picks because it's about the repo's existing sources, not new one
   **Built on 2026-10-21:** `eodhd_price_history.py` and
   `alphavantage_price_history.py`, which share `daily_prices.py`. They take each
   provider's own ticker notation and emit `stock_price_history.py`'s row shape.
-  No agent calls them yet. Still to do: decide the markets, route Yahoo-style
-  tickers to a provider, move the four price scripts and their agents over, and
-  add Databento for futures.
+  No agent calls them yet.
+
+  **Markets decided on 2026-10-21:** leave out Singapore (`.SI`) and Tokyo (`.T`)
+  for now, to revisit later; take India from Alpha Vantage (`.NS` → `.BSE`); take
+  everything else from EODHD.
+
+  **Price history moved on 2026-10-21:** `price_source.py` routes Yahoo-style
+  tickers to those providers, and the four price scripts and their 5 agents now
+  use it. `^GSPC`, `^IXIC` and `^HSI` map to EODHD's `.INDX` codes, but `^FTSE`
+  (`FTSE.INDX`) returns no data; EODHD's code for it is still to find. Still to
+  do: add Databento for futures; revisit Singapore and Tokyo; replace the
+  screener, the `quoteSummary` scripts and the stock web app's quote, which
+  still call Yahoo.
 
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for

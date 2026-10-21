@@ -102,7 +102,7 @@ def history_note(rows, first, full):
         return None
     return (
         f"Only the latest {COMPACT_SESSIONS} sessions are available (from "
-        f"{rows[0]['date']}); the full history (--full) needs a premium key."
+        f"{rows[0]['date']}); the full history needs a premium Alpha Vantage key."
     )
 
 

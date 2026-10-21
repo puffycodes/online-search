@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Pull the past daily open / high / low / close prices of a single stock,
-using Yahoo Finance's public chart endpoint. No API key or authentication
-required.
+index, currency pair or crypto coin, from EODHD or Alpha Vantage through
+price_source.py (which needs EODHD_API_KEY and, for India, ALPHAVANTAGE_API_KEY).
 
-Give it a ticker in Yahoo's notation (AAPL, VOD.L, D05.SI, SAP.DE, ...) and
-either a --range keyword, an explicit --start/--end window, or --last N to
-get just the most recent N sessions.
+Give it a ticker in Yahoo's notation (AAPL, VOD.L, SAP.DE, RELIANCE.NS,
+^GSPC, EURUSD=X, BTC-USD, ...) and either a --range keyword, an explicit
+--start/--end window, or --last N to get just the most recent N sessions.
+Singapore (.SI), Tokyo (.T) and futures (=F) aren't supported for now.
 
 Supports --json for structured output so an agent can parse stdout instead
 of the human-readable report. On failure the process exits non-zero and
@@ -18,6 +19,7 @@ import json
 
 import requests
 
+import price_source
 import yahoo_finance as yf
 from cli_utils import die, use_utf8_output
 
@@ -67,7 +69,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "symbol",
-        help="Ticker in Yahoo notation, e.g. AAPL, VOD.L, D05.SI, SAP.DE",
+        help="Ticker in Yahoo notation, e.g. AAPL, VOD.L, SAP.DE, RELIANCE.NS, ^GSPC",
     )
     yf.add_window_args(parser, DEFAULT_RANGE, "Return only the most recent N trading sessions")
     parser.add_argument(
@@ -86,7 +88,7 @@ def main(argv=None):
         params = yf.build_params(
             range_=args.range, start=args.start, end=args.end, last=args.last
         )
-        result = yf.fetch_history(args.symbol, params)
+        result = price_source.fetch_history(args.symbol, params)
         meta, rows = extract_rows(result)
     except (requests.RequestException, ValueError, KeyError) as exc:
         die(f"failed to fetch prices for {args.symbol!r}: {exc}", args.json)
@@ -95,6 +97,7 @@ def main(argv=None):
         rows = rows[-args.last:]
 
     symbol, exchange, currency = yf.meta_summary(meta, args.symbol)
+    notes = meta.get("notes") or []
 
     if args.json:
         print(
@@ -103,6 +106,8 @@ def main(argv=None):
                     "symbol": symbol,
                     "exchange": exchange,
                     "currency": currency,
+                    "source": meta.get("source"),
+                    "notes": notes,
                     "prices": rows,
                 },
                 indent=2,
@@ -110,11 +115,14 @@ def main(argv=None):
         )
         return
 
+    for note in notes:
+        print(f"Note: {note}")
     if not rows:
         print(f"No settled price data found for {symbol}.")
         return
 
-    print(f"{symbol} - {exchange} ({currency}) - {len(rows)} session(s)\n")
+    source = f" - {meta['source']}" if meta.get("source") else ""
+    print(f"{symbol} - {exchange} ({currency}){source} - {len(rows)} session(s)\n")
     show_adj = any(r["adj_close"] not in (None, r["close"]) for r in rows)
 
     def cell(value, width=12):

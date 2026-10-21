@@ -3,8 +3,9 @@
 ## Requirement
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
-- Use Yahoo Finance's chart endpoint (unofficial; no API key).
-- Use yahoo_finance.py's add_window_args(), build_params(), fetch_history(), extract_series(), session_datetime() and parse_date().
+- Use price_source.py's fetch_history() for the data: EODHD (EODHD_API_KEY), or Alpha Vantage (ALPHAVANTAGE_API_KEY) for Indian tickers, chosen from the Yahoo-notation ticker. Until 2026-10-21 this used Yahoo Finance's chart endpoint, which fails the source audit.
+- Show any notes price_source returns (e.g. a free plan returning less history than asked).
+- Use yahoo_finance.py's add_window_args(), build_params(), extract_series(), session_datetime() and parse_date().
 - Use indicators.py's rebase().
 - Use matplotlib to draw the chart.
 
@@ -12,7 +13,7 @@
 
 - Run as python3 stock_rebased_chart.py from the repo root.
 - Take:
-    - {{Symbols}}: one or more tickers in Yahoo notation, e.g. AAPL MSFT VOD.L.
+    - {{Symbols}}: one or more tickers in Yahoo notation, e.g. AAPL MSFT VOD.L. Singapore (.SI), Tokyo (.T) and futures (=F) aren't supported for now and fail before any request.
     - The time window, one of:
         - A range: 5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y or max (default: 6mo).
         - The last N sessions (cannot be combined with a range).

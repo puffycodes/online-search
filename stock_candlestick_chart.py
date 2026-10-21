@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Fetch the past price history of a single stock from Yahoo Finance's public
-chart endpoint and render it as a candlestick chart with matplotlib. No API
-key or authentication required.
+Fetch the past price history of a single stock, index, currency pair or
+crypto coin from EODHD or Alpha Vantage through price_source.py (which needs
+EODHD_API_KEY and, for India, ALPHAVANTAGE_API_KEY) and render it as a
+candlestick chart with matplotlib.
 
-Give it a ticker in Yahoo's notation (AAPL, VOD.L, D05.SI, SAP.DE, ...) and
+Give it a ticker in Yahoo's notation (AAPL, VOD.L, SAP.DE, RELIANCE.NS, ...) and
 either a --range keyword, an explicit --start/--end window, or --last N to
 plot just the most recent N sessions. Pick the bar size with --interval
-(1d, 1wk, 1mo).
+(1d, 1wk, 1mo; weekly and monthly bars are built from the daily ones).
+Singapore (.SI), Tokyo (.T) and futures (=F) aren't supported for now.
 
 Simple moving averages of the close are overlaid as lines; the windows
 default to 5, 10, 20 and 50 bars and can be changed (or switched off) with
@@ -29,6 +31,7 @@ import argparse
 
 import requests
 
+import price_source
 import yahoo_finance as yf
 from cli_utils import die, use_utf8_output
 from indicators import moving_average, moving_average_cross, moving_average_cross_flip
@@ -301,7 +304,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "symbol",
-        help="Ticker in Yahoo notation, e.g. AAPL, VOD.L, D05.SI, SAP.DE",
+        help="Ticker in Yahoo notation, e.g. AAPL, VOD.L, SAP.DE, RELIANCE.NS, ^GSPC",
     )
     yf.add_window_args(parser, DEFAULT_RANGE, "Plot only the most recent N bars")
     parser.add_argument(
@@ -354,7 +357,7 @@ def main(argv=None):
             interval=args.interval, range_=args.range,
             start=args.start, end=args.end, last=args.last,
         )
-        result = yf.fetch_history(args.symbol, params)
+        result = price_source.fetch_history(args.symbol, params)
         meta, rows = extract_rows(result)
     except (requests.RequestException, ValueError, KeyError) as exc:
         die(f"failed to fetch prices for {args.symbol!r}: {exc}")
@@ -381,6 +384,8 @@ def main(argv=None):
         if flip_dir is not None:
             flip_dir = flip_dir[-args.last:]
 
+    for note in meta.get("notes") or []:
+        print(f"Note: {note}")
     if not rows:
         die(f"no price data found for {args.symbol!r}")
 

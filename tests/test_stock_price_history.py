@@ -6,6 +6,7 @@ import pytest
 import requests
 
 import stock_price_history as sch
+import price_source
 import yahoo_finance as yf
 
 
@@ -65,7 +66,7 @@ class TestExtractRows:
 class TestMain:
     def _wire(self, monkeypatch, rows, meta=None):
         monkeypatch.setattr(yf, "build_params", lambda **k: {})
-        monkeypatch.setattr(yf, "fetch_history", lambda sym, params: object())
+        monkeypatch.setattr(price_source, "fetch_history", lambda sym, params: object())
         monkeypatch.setattr(sch, "extract_rows", lambda result: (meta or {"symbol": "AAA"}, list(rows)))
 
     def test_last_trims_rows_json(self, monkeypatch, capsys):
@@ -76,12 +77,24 @@ class TestMain:
         payload = json.loads(capsys.readouterr().out)
         assert [r["date"] for r in payload["prices"]] == ["2024-01-04", "2024-01-05"]
 
+    def test_source_and_notes(self, monkeypatch, capsys):
+        rows = [{"date": "2024-01-01", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0,
+                 "adj_close": 1.0, "volume": 10}]
+        meta = {"symbol": "AAA", "source": "EODHD", "notes": ["limited to one year"]}
+        self._wire(monkeypatch, rows, meta)
+        sch.main(["AAA", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["source"] == "EODHD" and payload["notes"] == ["limited to one year"]
+        sch.main(["AAA"])
+        out = capsys.readouterr().out
+        assert "Note: limited to one year" in out and "- EODHD - 1 session(s)" in out
+
     def test_fetch_error_exits_json(self, monkeypatch, capsys):
         def boom(sym, params):
             raise requests.RequestException("delisted")
 
         monkeypatch.setattr(yf, "build_params", lambda **k: {})
-        monkeypatch.setattr(yf, "fetch_history", boom)
+        monkeypatch.setattr(price_source, "fetch_history", boom)
         with pytest.raises(SystemExit):
             sch.main(["AAA", "--json"])
         assert json.loads(capsys.readouterr().err)["error"].endswith("delisted")

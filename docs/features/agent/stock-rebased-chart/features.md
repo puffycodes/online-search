@@ -7,18 +7,18 @@
 
 ## Actions
 
-- Take one or more stocks, market indices, currency pairs, cryptocurrencies or futures contracts / commodities named by the user.
-    - For a stock, resolve the company to its Yahoo Finance ticker, adding the exchange suffix for non-US listings (e.g. .L, .SI, .DE, .PA, .TO, .AX, .NS, .HK, .T).
+- Take one or more stocks, market indices, currency pairs, or cryptocurrencies named by the user.
+    - For a stock, resolve the company to its Yahoo-notation ticker, adding the exchange suffix for non-US listings (e.g. .L, .DE, .PA, .TO, .AX, .NS, .HK); the tool gets the data from EODHD, or Alpha Vantage for Indian stocks.
+    - Singapore (.SI) and Tokyo (.T) listings and futures (=F) aren't supported for now: say so instead of running the tool.
     - For anything else, use Yahoo's own symbol:
-        - Index: ^ prefix (e.g. ^GSPC S&P 500, ^FTSE FTSE 100, ^N225 Nikkei 225).
+        - Index: ^ prefix (e.g. ^GSPC S&P 500, ^IXIC Nasdaq Composite, ^HSI Hang Seng); ^FTSE returns no data, so report an index with no data as unavailable.
         - Currency pair: BASEQUOTE=X (e.g. EURUSD=X); for USD-based pairs the base is dropped (JPY=X is USD/JPY). The price is the quote currency per one unit of the base.
         - Cryptocurrency: COIN-CURRENCY (e.g. BTC-USD).
-        - Futures / commodity: =F suffix, a continuous front-month series (e.g. GC=F gold, CL=F crude oil).
     - If unsure of a ticker, say so rather than guess.
     - Instruments from different exchanges, currencies and asset classes can be mixed.
     - Put the stock the user treats as the anchor first.
 - When the user compares stocks against a market or index ("vs the S&P 500", "did they beat the market?"), draw that index as the benchmark rather than as another stock.
-    - "The market" with no index named → the main index of the stocks' own exchange (e.g. ^GSPC US, ^FTSE London, ^STI Singapore).
+    - "The market" with no index named → the main index of the stocks' own exchange (e.g. ^GSPC US, ^HSI Hong Kong); ^FTSE returns no data, so for London say so and offer ^GSPC.
     - Indices compared with each other, or no market mentioned → no benchmark.
 - Pick the time window from what the user asked:
     - "last N days/weeks" → the last N sessions.

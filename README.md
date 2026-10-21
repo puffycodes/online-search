@@ -33,8 +33,9 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks, indices, currency pairs, crypto coins or commodity futures
 - [`stock_risk.py`](#stock_riskpy) — how risky one or more instruments' prices have been: annualized volatility, the worst peak-to-trough drawdown and its recovery, distance from the high, and the correlation of each pair, via `indicators.py`
 - [`.claude/agents/stock-risk.md`](#claude-code-agent-stock-risk) — Claude Code subagent that calls `stock_risk.py` and reports how volatile named stocks, indices, currency pairs, crypto coins or commodity futures have been, their worst falls, and how closely they moved together
-- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for Yahoo Finance chart-endpoint fetch + payload parsing and the cookie + crumb `quoteSummary` fetch, used by the four price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py`, `stock_holders.py` and `app/stock_information/`
-- [`eodhd_price_history.py`](#eodhd_price_historypy) — past daily open / high / low / close prices of a stock, index, currency pair or crypto coin from EODHD's end-of-day API (requires a free `EODHD_API_KEY`); a candidate replacement for Yahoo's price data
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the price scripts' window flags and chart-result parsing (their data now comes from `price_source.py`), Yahoo's chart-endpoint fetch (still used by `app/stock_information/` for its quote) and the cookie + crumb `quoteSummary` fetch, used by the four price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py`, `stock_holders.py` and `app/stock_information/`
+- [`price_source.py`](#price_sourcepy) — shared price-history source for the four price scripts: routes a Yahoo-notation ticker to EODHD (Alpha Vantage for India) and returns the bars in the shape they already parse; Singapore, Tokyo and futures are refused for now
+- [`eodhd_price_history.py`](#eodhd_price_historypy) — past daily open / high / low / close prices of a stock, index, currency pair or crypto coin from EODHD's end-of-day API (requires a free `EODHD_API_KEY`); the main provider behind `price_source.py`
 - [`alphavantage_price_history.py`](#alphavantage_price_historypy) — past daily open / high / low / close prices of a stock from Alpha Vantage's `TIME_SERIES_DAILY` API (requires a free `ALPHAVANTAGE_API_KEY`; free keys get the latest 100 sessions)
 - [`daily_prices.py`](#daily_pricespy) — shared helper module for the two keyed price scripts: the `--start`/`--end`/`--last` window, the price row and the text table
 - [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py`, `stock_fundamental.py` and `stock_intrinsic_value.py`
@@ -1008,13 +1009,14 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ## stock_price_history.py
 
-Prints the past daily open / high / low / close prices (plus adjusted close and volume) of one stock, using [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`). No API key or authentication required.
+Prints the past daily open / high / low / close prices (plus adjusted close and volume) of one stock, index, currency pair or crypto coin, from [EODHD](https://eodhd.com/) (or [Alpha Vantage](https://www.alphavantage.co/) for Indian stocks) through [`price_source.py`](#price_sourcepy). Needs an `EODHD_API_KEY`, plus an `ALPHAVANTAGE_API_KEY` for Indian stocks. Until 2026-10-21 it used Yahoo Finance's chart endpoint, which fails the [source audit](docs/source-audit.md).
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `cli_utils.py` module (no install — run from the repo root so it imports)
+- the repo's own `price_source.py` (with the modules it imports), `yahoo_finance.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+- an `EODHD_API_KEY`, plus an `ALPHAVANTAGE_API_KEY` for Indian stocks, in `.env` or the environment
 
 ```bash
 pip install requests
@@ -1028,7 +1030,7 @@ python3 stock_price_history.py SYMBOL [--range RANGE | --last N] [--start YYYY-M
 
 | Flag | Default | Description |
 |---|---|---|
-| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`), crypto (`BTC-USD`) and futures / commodities (`GC=F`) |
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `SAP.DE`, `RY.TO`, `RELIANCE.NS`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`) and crypto (`BTC-USD`). Not Singapore (`.SI`), Tokyo (`.T`) or futures (`=F`) for now |
 | `--range RANGE` | `1mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Return only the most recent `N` trading sessions (mutually exclusive with `--range`) |
 | `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
@@ -1039,7 +1041,7 @@ python3 stock_price_history.py SYMBOL [--range RANGE | --last N] [--start YYYY-M
 #### Example output
 
 ```
-AAPL - NasdaqGS (USD) - 5 session(s)
+AAPL - USA Stocks (USD) - EODHD - 5 session(s)
 
 Date                Open        High         Low       Close         Volume
 ---------------------------------------------------------------------------
@@ -1063,8 +1065,10 @@ python3 stock_price_history.py VOD.L --last 3 --json
 ```json
 {
   "symbol": "VOD.L",
-  "exchange": "LSE",
+  "exchange": "London Exchange",
   "currency": "GBp",
+  "source": "EODHD",
+  "notes": [],
   "prices": [
     { "date": "2026-08-26", "open": 117.8, "high": 118.2, "low": 117.075, "close": 117.9, "adj_close": 117.9, "volume": 29045061 },
     { "date": "2026-08-27", "open": 117.9, "high": 117.9, "low": 115.55, "close": 117.1, "adj_close": 117.1, "volume": 47994529 },
@@ -1077,35 +1081,34 @@ With `--json`, results print as a JSON object on stdout. On failure, an exit cod
 
 ### How it works
 
-Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_candlestick_chart.py`. This script keeps its own row shaping and output.
+Step 1 and the payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy) and step 2 in [`price_source.py`](#price_sourcepy), shared with `stock_candlestick_chart.py`. This script keeps its own row shaping and output.
 
 1. **Build the query window** — `yahoo_finance.build_params()` turns the args into params: `--start/--end` become `period1`/`period2` epoch bounds (the end is padded a day so the final session is inclusive); `--last N` fetches a generous calendar window (`N*2 + 10` days) to be trimmed later; otherwise `range` is passed through. `interval=1d` and `includeAdjustedClose=true` are always set.
-2. **Fetch** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised as an error rather than parsed.
+2. **Fetch** — [`price_source.fetch_history()`](#price_sourcepy) routes the Yahoo ticker to EODHD (Alpha Vantage for `.NS`), translates the window to dates, fetches daily bars (building weekly / monthly ones from them), and returns them in the chart-result shape `yahoo_finance.extract_series()` reads, with the provider in `meta.source` and any notes in `meta.notes`. An unknown ticker, an unsupported market (`.SI`, `.T`, `=F`) or a missing key raises an error.
 3. **Extract settled sessions** — `yahoo_finance.extract_series()` pulls `timestamp`, `indicators.quote[0]`'s `open` / `high` / `low` / `close` / `volume`, `indicators.adjclose[0].adjclose`, and the resolved `gmtoffset` into parallel lists; `extract_rows()` here zips them into row dicts. Rows whose `close` is `null` (an in-progress session or a data gap) are skipped, so only settled sessions are reported; any other field may still be `null` individually. Each timestamp is shifted by `meta.gmtoffset` before taking the calendar date, so dates match the exchange's local trading day.
 4. **Trim and display** — For `--last N`, keeps the final `N` rows. Prints a table of date / open / high / low / close / (adj close if it differs) / volume, then a one-line "Most recent session" OHLC summary. `--json` emits `{symbol, exchange, currency, prices[]}` instead.
 
 ### Configuration
 
-`DEFAULT_RANGE` is a constant at the top of this file; the shared fetch constants (`VALID_RANGES`, `REQUEST_TIMEOUT`, `HEADERS`) live in [`yahoo_finance.py`](#yahoo_financepy). Edit them directly to change behavior:
+`DEFAULT_RANGE` is a constant at the top of this file; `VALID_RANGES` lives in [`yahoo_finance.py`](#yahoo_financepy) and the routing tables in [`price_source.py`](#price_sourcepy); the API keys come from `.env`. Edit them directly to change behavior:
 
 | Constant | Where | Default | Description |
 |---|---|---|---|
 | `DEFAULT_RANGE` | this file | `"1mo"` | Window used when no `--range`, `--last`, or `--start` is given |
-| `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
-| `REQUEST_TIMEOUT` | `yahoo_finance.py` | 15 | Request timeout in seconds |
-| `HEADERS` | `yahoo_finance.py` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
+| `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's range vocabulary, turned into dates by `price_source.window()`) |
+| `EODHD_EXCHANGES`, `ALPHAVANTAGE_EXCHANGES`, `UNSUPPORTED_EXCHANGES` | `price_source.py` | — | Which Yahoo suffix goes to which provider; see [`price_source.py`](#price_sourcepy) |
 
 ### API reference
 
 - `extract_rows(result)` — Returns `(meta, rows)` where `rows` is the list of `{date, open, high, low, close, adj_close, volume}` dicts for settled sessions only. Calls `yahoo_finance.extract_series()` for the raw arrays, then rounds to 4 dp and formats `date` as a `YYYY-MM-DD` string.
 - `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, and `--json`.
-- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, trims for `--last`, resolves the report header via `yahoo_finance.meta_summary()`, and prints the report (human-readable or JSON). Fatal errors go through `cli_utils.die()`.
+- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `price_source.fetch_history()`, extracts rows, trims for `--last`, resolves the report header via `yahoo_finance.meta_summary()`, and prints the report (human-readable or JSON). Fatal errors go through `cli_utils.die()`.
 
-See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history()`, and `meta_summary()`.
+See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `meta_summary()`, and [`price_source.py`](#price_sourcepy) for `fetch_history()`.
 
 ### Error handling
 
-- If the request fails (network error, timeout, non-2xx) or Yahoo returns an error body (`"No data found, symbol may be delisted"` for an unknown ticker), the script prints an error and exits with status code 1 — plain text on stderr normally, or `{"error": "..."}` on stderr when `--json` is passed.
+- If the request fails (network error, timeout, a provider refusal), the ticker is unknown (EODHD's `"Ticker Not Found."`), its market isn't supported (`.SI`, `.T`, `=F`) or its API key is missing, the script prints an error and exits with status code 1 — plain text on stderr normally, or `{"error": "..."}` on stderr when `--json` is passed.
 - An invalid `--range` value is rejected by argument parsing (exit code 2); passing both `--range` and `--last` is likewise rejected.
 - A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
 - A `--last` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
@@ -1113,12 +1116,12 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history(
 
 ### Notes / limitations
 
-- Relies on an undocumented, unofficial Yahoo Finance endpoint — public and free, but with no guarantee it stays available or unchanged.
-- The ticker must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, `.T`, …). The script does not resolve company names to tickers.
-- Non-stock symbols work too, since the chart endpoint serves them the same way: indices (`^GSPC`, `^FTSE`), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), crypto (`BTC-USD`) and continuous front-month futures (`GC=F`, `CL=F`). Currency pairs always report `volume` 0; crypto has a row for every calendar day including weekends; futures jump at contract rolls and their volume is unreliable (Yahoo sometimes repeats a day's figure). Markets that trade around the clock usually include today's still-moving bar.
+- Data comes from EODHD (Alpha Vantage for Indian stocks) through [`price_source.py`](#price_sourcepy), on free keys by default: EODHD gives one year of history at 20 calls a day, Alpha Vantage the latest 100 sessions at 25 a day. History shorter than asked is flagged in a note.
+- The ticker must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, …; the full list is `price_source.EODHD_EXCHANGES`). Singapore (`.SI`) and Tokyo (`.T`) aren't supported for now. The script does not resolve company names to tickers.
+- Non-stock symbols work too: indices (`^GSPC`, `^IXIC`, `^HSI`; `^FTSE` returns no data), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), and crypto (`BTC-USD`). Futures (`=F`) aren't supported for now. A currency pair's volume isn't real traded volume; crypto has a row for every calendar day including weekends; markets that trade around the clock can include today's still-moving bar.
 - `open` is the first trade of the session, `high` / `low` the intraday extremes, `close` the raw session close; `adj_close` is `close` back-adjusted for splits and dividends and is the right field for comparing prices across a long span (only `close` is adjusted — `open` / `high` / `low` are as-traded).
 - Prices are end-of-day snapshots in the listing currency, and some markets quote in minor units — e.g. LSE returns `GBp` (pence), not pounds.
-- Date bucketing uses `meta.gmtoffset`; for exchanges Yahoo reports with an unusual offset the calendar date could in principle be off by a day near midnight boundaries.
+- Dates are the provider's own session dates (`price_source` sets `gmtoffset` to 0, so no shift is applied).
 
 ---
 
@@ -1128,7 +1131,7 @@ A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/
 
 ### Purpose
 
-Lets Claude Code answer questions like "what did AAPL close at yesterday?", "Tesla's OHLC last week", or "DBS high and low for August" by running the script and summarizing its JSON output, instead of guessing or using stale training data. Despite the name, it reports the full daily open / high / low / close, not just the close, and works for indices, currency pairs, crypto coins and commodity futures as well as stocks ("where did the S&P 500 close yesterday?", "EUR/USD last week", "gold's high and low in September").
+Lets Claude Code answer questions like "what did AAPL close at yesterday?", "Tesla's OHLC last week", or "Reliance high and low for August" by running the script and summarizing its JSON output, instead of guessing or using stale training data. Despite the name, it reports the full daily open / high / low / close, not just the close, and works for indices, currency pairs and crypto coins as well as stocks ("where did the S&P 500 close yesterday?", "EUR/USD last week").
 
 ### How it's invoked
 
@@ -1139,7 +1142,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### What it does
 
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`); if the ticker is uncertain it says so rather than guessing.
+1. Resolves the company to a Yahoo-notation ticker, adding the exchange suffix for non-US listings (`.L`, `.DE`, `.NS`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`) or crypto coin (`BTC-USD`); Singapore, Tokyo and futures are declined for now; if the ticker is uncertain it says so rather than guessing.
 2. Chooses the window from the user's phrasing — `--last 2` for "yesterday" / "last session", `--last N` for "past N days", `--start`/`--end` for a named month or span, `--range ytd|1y|5y|…` for a longer horizon, otherwise the default `--range 1mo`.
 3. Runs `python3 stock_price_history.py SYMBOL <window flags> --json` from the repo root, parses the `{symbol, exchange, currency, prices[]}` object (each price row carrying `open`, `high`, `low`, `close`, `adj_close`, `volume`), and leads with the figure the user asked for — the most recent close by default, or the full OHLC when they asked for open / high / low / a range — followed by a compact table if a series was requested. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
 
@@ -1154,9 +1157,9 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ### Notes / limitations
 
-- Requires `stock_price_history.py` and its `yahoo_finance.py` helper module (plus the `requests` dependency) to be present and runnable from the repo root.
+- Requires `stock_price_history.py` and its `price_source.py` / `yahoo_finance.py` helper modules (plus the `requests` dependency and an `EODHD_API_KEY`, with `ALPHAVANTAGE_API_KEY` for Indian stocks) to be present and runnable from the repo root.
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's prices or a "symbol may be delisted" error.
-- Inherits all the limitations of [`stock_price_history.py`](#stock_price_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
+- Inherits all the limitations of [`stock_price_history.py`](#stock_price_historypy) itself (free-plan history limits, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
 
 ---
 
@@ -1177,7 +1180,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### What it does
 
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`); if the ticker is uncertain it says so rather than guessing.
+1. Resolves the company to a Yahoo-notation ticker, adding the exchange suffix for non-US listings (`.L`, `.DE`, `.NS`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`) or crypto coin (`BTC-USD`); Singapore, Tokyo and futures are declined for now; if the ticker is uncertain it says so rather than guessing.
 2. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` for "this year" / "past year", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise `--range 6mo`.
 3. Runs `python3 stock_price_history.py SYMBOL <window flags> --json > /tmp/stock_trend.json` from the repo root, then a `python3` heredoc that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions (`n/a` when the series is shorter than that sub-window), the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages.
 4. Reports a one-line verdict (up trend / down trend / roughly flat over the dates examined) plus a few supporting lines, calling out when the short-window trend disagrees with the overall one, and closes with a caveat that this is not a prediction or investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
@@ -1194,23 +1197,24 @@ The agent's frontmatter restricts it to `Bash` (run the script and the analysis 
 
 ### Notes / limitations
 
-- Requires `stock_price_history.py` (with its `yahoo_finance.py` helper and the `requests` dependency) and `indicators.py` to be present and runnable from the repo root — the analysis step must run with the repo root on `sys.path` so `import indicators` resolves.
+- Requires `stock_price_history.py` (with its `price_source.py` / `yahoo_finance.py` helpers, the `requests` dependency and the API keys) and `indicators.py` to be present and runnable from the repo root — the analysis step must run with the repo root on `sys.path` so `import indicators` resolves.
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's trend or a "symbol may be delisted" error.
 - The verdict is a straight-line fit over past closes (see [`indicators.py`](#indicatorspy) limitations): a mechanical description, not a forecast, and sensitive to the window chosen and to `flat_threshold`.
-- Inherits all the limitations of [`stock_price_history.py`](#stock_price_historypy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
+- Inherits all the limitations of [`stock_price_history.py`](#stock_price_historypy) itself (free-plan history limits, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
 
 ---
 
 ## stock_candlestick_chart.py
 
-Fetches the past price history of one stock from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_price_history.py`](#stock_price_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/), with simple moving averages of the close overlaid as lines (5 / 10 / 20 / 50 bars by default; via [`indicators.py`](#indicatorspy)) and moving-average-cross flips of a second window pair (20 / 50 by default) marked with arrows. No API key or authentication required. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
+Fetches the past price history of one stock, index, currency pair or crypto coin from EODHD (Alpha Vantage for Indian stocks) — sharing the fetch layer ([`price_source.py`](#price_sourcepy)) with [`stock_price_history.py`](#stock_price_historypy) — and renders it as a candlestick (OHLC) chart with [matplotlib](https://matplotlib.org/), with simple moving averages of the close overlaid as lines (5 / 10 / 20 / 50 bars by default; via [`indicators.py`](#indicatorspy)) and moving-average-cross flips of a second window pair (20 / 50 by default) marked with arrows. Needs an `EODHD_API_KEY` (plus `ALPHAVANTAGE_API_KEY` for Indian stocks). The chart is written to a PNG by default, or shown in an interactive window with `--show`.
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
 - [`matplotlib`](https://pypi.org/project/matplotlib/)
-- the repo's own `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
+- the repo's own `price_source.py` (with the modules it imports), `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
+- an `EODHD_API_KEY`, plus an `ALPHAVANTAGE_API_KEY` for Indian stocks, in `.env` or the environment
 
 ```bash
 pip install requests matplotlib
@@ -1224,7 +1228,7 @@ python3 stock_candlestick_chart.py SYMBOL [--range RANGE | --last N] [--start YY
 
 | Flag | Default | Description |
 |---|---|---|
-| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`), crypto (`BTC-USD`) and futures / commodities (`GC=F`) |
+| `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `SAP.DE`, `RY.TO`, `RELIANCE.NS`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`) and crypto (`BTC-USD`). Not Singapore (`.SI`), Tokyo (`.T`) or futures (`=F`) for now |
 | `--range RANGE` | `6mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Plot only the most recent `N` bars (mutually exclusive with `--range`) |
 | `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
@@ -1251,10 +1255,10 @@ The chart draws one candle per bar: a thin wick from the session low to high, an
 
 ### How it works
 
-Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_price_history.py`. This script keeps its own bar shaping and the whole render stage.
+Step 1 and the payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy) and step 2 in [`price_source.py`](#price_sourcepy), shared with `stock_price_history.py`. This script keeps its own bar shaping and the whole render stage.
 
 1. **Build the query window** — `yahoo_finance.build_params(interval=…)`: `--start/--end` become `period1`/`period2` epoch bounds (end padded a day so the final bar is inclusive); `--last N` fetches a generous calendar window sized to the interval (`N*2 + 10` days for daily, wider for weekly/monthly) to be trimmed later; otherwise `range` is passed through. `interval` is whatever `--interval` selects.
-2. **Fetch** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint for the symbol. A bad ticker comes back as a JSON error body (`{"chart": {"error": {...}}}`), which is raised rather than parsed.
+2. **Fetch** — [`price_source.fetch_history()`](#price_sourcepy) routes the Yahoo ticker to EODHD (Alpha Vantage for `.NS`), translates the window to dates, fetches daily bars (building weekly / monthly ones from them), and returns them in the chart-result shape `yahoo_finance.extract_series()` reads, with the provider in `meta.source` and any notes in `meta.notes`. An unknown ticker, an unsupported market (`.SI`, `.T`, `=F`) or a missing key raises an error.
 3. **Extract bars** — `yahoo_finance.extract_series()` pulls `timestamp`, `indicators.quote[0]`'s `open` / `high` / `low` / `close` / `volume`, and `gmtoffset` into parallel lists; `extract_rows()` here zips them into row dicts. Any bar missing an OHLC value (an in-progress or gapped period) is skipped. Each timestamp is shifted by `meta.gmtoffset` before taking the date (kept as a `datetime`).
 4. **Moving averages** — `indicators.moving_average()` computes each `--ma` window over the close of the **full** fetched series; for `--last N` the average lists are then sliced with the same `[-N:]` as the bars, so a window still shows correct values at the chart's left edge whenever the padded fetch reached back far enough. A window longer than the bars available plots nothing.
 5. **Cross-flip markers** — when `--flip-ma` is on, `indicators.moving_average_cross_flip()` and `indicators.moving_average_cross()` run over the full-series close to give, per bar, `"above"` / `"below"` on the bars where the flip fires and `None` elsewhere; this list is sliced with the same `[-N:]` as the bars for `--last N`.
@@ -1262,7 +1266,7 @@ Steps 1–2 (window building and fetching) plus the raw-payload navigation in st
 
 ### Configuration
 
-The interval/range/colour constants at the top of this file are local; the shared fetch constants (`VALID_RANGES`, `REQUEST_TIMEOUT`, `HEADERS`) live in [`yahoo_finance.py`](#yahoo_financepy). Edit them directly to change behavior:
+The interval/range/colour constants at the top of this file are local; `VALID_RANGES` lives in [`yahoo_finance.py`](#yahoo_financepy) and the routing tables in [`price_source.py`](#price_sourcepy); the API keys come from `.env`. Edit them directly to change behavior:
 
 | Constant | Where | Default | Description |
 |---|---|---|---|
@@ -1274,9 +1278,8 @@ The interval/range/colour constants at the top of this file are local; the share
 | `COLOR_UP` / `COLOR_DOWN` | this file | `#1a9850` / `#d73027` | Green edge for up bars, red fill for down bars; also the fill of the up / down cross-flip arrows |
 | `COLOR_WICK` / `COLOR_GRID` / `COLOR_SURFACE` | this file | greys / white | Wick, gridline, and background colours |
 | `COLOR_MA` | this file | 6 hues (blue, purple, gold, brown, pink, grey) | Moving-average line colours, assigned in window order and cycled if exhausted |
-| `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
-| `REQUEST_TIMEOUT` | `yahoo_finance.py` | 15 | Request timeout in seconds |
-| `HEADERS` | `yahoo_finance.py` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
+| `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's range vocabulary, turned into dates by `price_source.window()`) |
+| `EODHD_EXCHANGES`, `ALPHAVANTAGE_EXCHANGES`, `UNSUPPORTED_EXCHANGES` | `price_source.py` | — | Which Yahoo suffix goes to which provider; see [`price_source.py`](#price_sourcepy) |
 
 ### API reference
 
@@ -1285,13 +1288,13 @@ The interval/range/colour constants at the top of this file are local; the share
 - `_parse_flip_ma_arg(value)` — argparse `type` for `--flip-ma`: turns `"20,50"` into the tuple `(20, 50)` (order kept — first is the fast window); `""` / `"none"` / `"off"` give `None`. Raises `argparse.ArgumentTypeError` unless the value is exactly two positive integers.
 - `render_chart(symbol, exchange, currency, interval, rows, ma_series, flip_dir, flip_ma, out_path, show, with_volume)` — Draws the candlestick figure, the moving-average lines from `ma_series` (a `{window: [value|None, …]}` dict aligned to `rows`), the cross-flip arrows from `flip_dir` (a `["above"|"below"|None, …]` list aligned to `rows`; `flip_ma` is the `(fast, slow)` pair, used only for the legend label) when it is not `None`, and the optional volume panel, then saves or shows it. Imports matplotlib lazily and selects the `Agg` backend unless `--show`.
 - `parse_args(argv=None)` — Parses the positional `symbol` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--interval`, `--volume`, `--ma`, `--flip-ma`, `--output`, and `--show`.
-- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `yahoo_finance.fetch_history()`, extracts rows, computes the `--ma` averages via `indicators.moving_average()` and (unless `--flip-ma none`) the per-bar flip directions via `indicators.moving_average_cross_flip()` + `indicators.moving_average_cross()`, trims them all for `--last`, resolves the title fields via `yahoo_finance.meta_summary()` and the output path, and renders. Fatal errors go through `cli_utils.die()`.
+- `main(argv=None)` — Entry point; calls `yahoo_finance.build_params()` / `price_source.fetch_history()`, extracts rows, computes the `--ma` averages via `indicators.moving_average()` and (unless `--flip-ma none`) the per-bar flip directions via `indicators.moving_average_cross_flip()` + `indicators.moving_average_cross()`, trims them all for `--last`, resolves the title fields via `yahoo_finance.meta_summary()` and the output path, and renders. Fatal errors go through `cli_utils.die()`.
 
-See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history()`, and `meta_summary()`.
+See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `meta_summary()`, and [`price_source.py`](#price_sourcepy) for `fetch_history()`.
 
 ### Error handling
 
-- If the request fails (network error, timeout, non-2xx) or Yahoo returns an error body (`"No data found, symbol may be delisted"` for an unknown ticker), the script prints `Error: …` to stderr and exits with status code 1.
+- If the request fails (network error, timeout, a provider refusal), the ticker is unknown (EODHD's `"Ticker Not Found."`), its market isn't supported (`.SI`, `.T`, `=F`) or its API key is missing, the script prints `Error: …` to stderr and exits with status code 1.
 - An invalid `--range` or `--interval` value, or a `--ma` list that isn't comma-separated positive integers (or `none`), is rejected by argument parsing (exit code 2); passing both `--range` and `--last` is likewise rejected.
 - A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
 - A `--last` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
@@ -1300,9 +1303,9 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, `fetch_history(
 
 ### Notes / limitations
 
-- Relies on an undocumented, unofficial Yahoo Finance endpoint — public and free, but with no guarantee it stays available or unchanged.
-- The ticker must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, `.T`, …). The script does not resolve company names to tickers.
-- Non-stock symbols work too, since the chart endpoint serves them the same way: indices (`^GSPC`, `^FTSE`), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), crypto (`BTC-USD`) and continuous front-month futures (`GC=F`, `CL=F`). Currency pairs always report `volume` 0; crypto has a row for every calendar day including weekends; futures jump at contract rolls and their volume is unreliable (Yahoo sometimes repeats a day's figure). Markets that trade around the clock usually include today's still-moving bar.
+- Data comes from EODHD (Alpha Vantage for Indian stocks) through [`price_source.py`](#price_sourcepy), on free keys by default: EODHD gives one year of history at 20 calls a day, Alpha Vantage the latest 100 sessions at 25 a day. History shorter than asked is flagged in a note.
+- The ticker must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, …; the full list is `price_source.EODHD_EXCHANGES`). Singapore (`.SI`) and Tokyo (`.T`) aren't supported for now. The script does not resolve company names to tickers.
+- Non-stock symbols work too: indices (`^GSPC`, `^IXIC`, `^HSI`; `^FTSE` returns no data), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), and crypto (`BTC-USD`). Futures (`=F`) aren't supported for now. A currency pair's volume isn't real traded volume; crypto has a row for every calendar day including weekends; markets that trade around the clock can include today's still-moving bar.
 - Candle bodies and the moving averages use the **raw** open/high/low/close — prices are not split/dividend-adjusted, so a split inside the window shows up as a large gap.
 - Moving averages are computed only from bars in the fetched window (plus the `--last` padding). A window near or above the number of bars available renders a short line or nothing at all — widen `--range` / `--last` to give a long average enough history.
 - The figure width scales with the bar count (`~0.11 in` per bar), so a long daily range produces a very wide, short image — use `--interval 1wk` or `1mo` for multi-year spans.
@@ -1328,7 +1331,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### What it does
 
-1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`); if the ticker is uncertain it says so rather than guessing.
+1. Resolves the company to a Yahoo-notation ticker, adding the exchange suffix for non-US listings (`.L`, `.DE`, `.NS`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`) or crypto coin (`BTC-USD`); Singapore, Tokyo and futures are declined for now; if the ticker is uncertain it says so rather than guessing.
 2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`. Adds `--interval 1wk` / `1mo` for long horizons or when weekly/monthly candles are asked for, `--volume` when volume is mentioned (never for a currency pair, which has no volume), `--ma` only when the user asks for specific moving averages (the script overlays `5,10,20,50` by default) or asks for none, and `--flip-ma` only when the user names a crossover pair (the script marks `20/50` cross flips by default) or asks for none.
 3. Runs `python3 stock_candlestick_chart.py SYMBOL <window flags> [--interval …] [--volume] [--ma …] [--flip-ma …] -o /tmp/<TICKER>_candlestick.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
 4. Reads the PNG to verify it rendered, then reports a one- or two-sentence summary (ticker, exchange, period, interval, and a brief read of the trend) ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
@@ -1344,23 +1347,24 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ### Notes / limitations
 
-- Requires `stock_candlestick_chart.py` and its `yahoo_finance.py` + `indicators.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
+- Requires `stock_candlestick_chart.py` and its `price_source.py` + `yahoo_finance.py` + `indicators.py` helper modules (plus the `requests` + `matplotlib` dependencies and the API keys) to be present and runnable from the repo root.
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's chart or a "symbol may be delisted" error.
 - The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
-- Inherits all the limitations of [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
+- Inherits all the limitations of [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) itself (free-plan history limits, Yahoo-notation tickers only, raw unadjusted prices, wide images for long daily ranges).
 
 ---
 
 ## stock_rebased_chart.py
 
-Fetches closing-price history for a series of stocks from [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) — sharing the fetch layer ([`yahoo_finance.py`](#yahoo_financepy)) with [`stock_price_history.py`](#stock_price_historypy) and [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) — rescales each series with [`indicators.py`](#indicatorspy)'s `rebase()` so its price on a common reference date reads as 100, and plots the rebased series together on one chart with [matplotlib](https://matplotlib.org/). No API key or authentication required. This is a relative-performance comparison chart: it answers "which of these stocks has done better *since a given date*", not "which is priced higher". `--benchmark` adds an index (or any symbol) as a distinct dashed line to read the others against. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
+Fetches closing-price history for a series of stocks from EODHD (Alpha Vantage for Indian stocks) — sharing the fetch layer ([`price_source.py`](#price_sourcepy)) with [`stock_price_history.py`](#stock_price_historypy) and [`stock_candlestick_chart.py`](#stock_candlestick_chartpy) — rescales each series with [`indicators.py`](#indicatorspy)'s `rebase()` so its price on a common reference date reads as 100, and plots the rebased series together on one chart with [matplotlib](https://matplotlib.org/). Needs an `EODHD_API_KEY` (plus `ALPHAVANTAGE_API_KEY` for Indian stocks). This is a relative-performance comparison chart: it answers "which of these stocks has done better *since a given date*", not "which is priced higher". `--benchmark` adds an index (or any symbol) as a distinct dashed line to read the others against. The chart is written to a PNG by default, or shown in an interactive window with `--show`.
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
 - [`matplotlib`](https://pypi.org/project/matplotlib/)
-- the repo's own `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
+- the repo's own `price_source.py` (with the modules it imports), `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
+- an `EODHD_API_KEY`, plus an `ALPHAVANTAGE_API_KEY` for Indian stocks, in `.env` or the environment
 
 ```bash
 pip install requests matplotlib
@@ -1374,7 +1378,7 @@ python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--range RANGE | --last N] [-
 
 | Flag | Default | Description |
 |---|---|---|
-| `SYMBOL` (positional, 1+) | — | One or more tickers in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, `SAP.DE`, `RY.TO`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`), crypto (`BTC-USD`) and futures / commodities (`GC=F`) |
+| `SYMBOL` (positional, 1+) | — | One or more tickers in Yahoo notation: `AAPL`, `VOD.L`, `SAP.DE`, `RY.TO`, `RELIANCE.NS`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`) and crypto (`BTC-USD`). Not Singapore (`.SI`), Tokyo (`.T`) or futures (`=F`) for now |
 | `--range RANGE` | `6mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Fetch only the most recent `N` sessions (mutually exclusive with `--range`) |
 | `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
@@ -1407,10 +1411,10 @@ The S&P 500 is drawn as a black dashed line behind the three stocks, so a stock 
 
 ### How it works
 
-Steps 1–2 (window building and fetching) plus the raw-payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy), shared with `stock_price_history.py` and `stock_candlestick_chart.py`. This script keeps its own row shaping, the rebasing step, and the render stage.
+Step 1 and the payload navigation in step 3 live in [`yahoo_finance.py`](#yahoo_financepy) and step 2 in [`price_source.py`](#price_sourcepy), shared with `stock_price_history.py` and `stock_candlestick_chart.py`. This script keeps its own row shaping, the rebasing step, and the render stage.
 
 1. **Build the query window** — `yahoo_finance.build_params()`: `--start/--end` become `period1`/`period2` epoch bounds (end padded a day so the final session is inclusive); `--last N` fetches a generous calendar window (`N*2 + 10` days) to be trimmed later; otherwise `range` is passed through. `interval` stays at the default `"1d"`.
-2. **Fetch each symbol independently** — `yahoo_finance.fetch_history()` GETs the v8 chart endpoint once per symbol. A symbol whose fetch fails (bad ticker, network error) or has no settled close in the window is dropped with a warning to stderr rather than aborting the whole run; the chart is drawn from whichever symbols succeed. A `--benchmark` symbol is fetched the same way, after the others; at least one non-benchmark symbol must succeed.
+2. **Fetch each symbol independently** — `price_source.fetch_history()` fetches once per symbol, as in [`stock_price_history.py`](#stock_price_historypy), printing any `Note:` it returns to stderr. A symbol whose fetch fails (bad ticker, network error) or has no settled close in the window is dropped with a warning to stderr rather than aborting the whole run; the chart is drawn from whichever symbols succeed. A `--benchmark` symbol is fetched the same way, after the others; at least one non-benchmark symbol must succeed.
 3. **Extract closes** — `yahoo_finance.extract_series()` pulls `timestamp`, `indicators.quote[0].close`, and `gmtoffset` into parallel lists per symbol; `fetch_closes()` here zips them into `(date, close)` pairs, skipping sessions with a `null` close. Each timestamp is shifted by `meta.gmtoffset` before taking the calendar date.
 4. **Resolve the base date** — If `--base-date` isn't given, it defaults to the first fetched date of the first symbol named on the command line (falling back to whichever symbol did fetch successfully if that one failed). The benchmark is never used for this. This is a calendar date, not a numeric index, so it stays meaningful even if different symbols' sessions don't line up 1:1 (different exchange holidays, IPOs, etc.).
 5. **Rebase** — For each surviving symbol, finds the index of the base date in *that symbol's own* date list and calls `indicators.rebase(closes, index)`. A symbol with no settled close exactly on the base date is dropped with a warning rather than approximated to a nearby date. The benchmark follows the same rule; if it is dropped, the chart is still drawn without it.
@@ -1418,7 +1422,7 @@ Steps 1–2 (window building and fetching) plus the raw-payload navigation in st
 
 ### Configuration
 
-The constants at the top of this file are local; the shared fetch constants (`VALID_RANGES`, `REQUEST_TIMEOUT`, `HEADERS`) live in [`yahoo_finance.py`](#yahoo_financepy). Edit them directly to change behavior:
+The constants at the top of this file are local; `VALID_RANGES` lives in [`yahoo_finance.py`](#yahoo_financepy) and the routing tables in [`price_source.py`](#price_sourcepy); the API keys come from `.env`. Edit them directly to change behavior:
 
 | Constant | Where | Default | Description |
 |---|---|---|---|
@@ -1426,9 +1430,8 @@ The constants at the top of this file are local; the shared fetch constants (`VA
 | `DEFAULT_OUTPUT` | this file | `"rebased_chart.png"` | PNG path used when `-o` isn't passed |
 | `COLOR_LINES` | this file | 8 hues (blue, orange, green, red, purple, brown, pink, grey) | Per-symbol line colours, assigned in the order symbols are drawn and cycled if exhausted |
 | `BENCHMARK_COLOR` | this file | `"#000000"` (black) | Colour of the `--benchmark` line, which is also dashed and heavier; it takes no slot from `COLOR_LINES` |
-| `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's own range vocabulary) |
-| `REQUEST_TIMEOUT` | `yahoo_finance.py` | 15 | Request timeout in seconds |
-| `HEADERS` | `yahoo_finance.py` | browser `User-Agent` | Required — Yahoo rejects requests without a browser-like User-Agent |
+| `VALID_RANGES` | `yahoo_finance.py` | `["5d", "1mo", …, "max"]` | Accepted `--range` keywords (Yahoo's range vocabulary, turned into dates by `price_source.window()`) |
+| `EODHD_EXCHANGES`, `ALPHAVANTAGE_EXCHANGES`, `UNSUPPORTED_EXCHANGES` | `price_source.py` | — | Which Yahoo suffix goes to which provider; see [`price_source.py`](#price_sourcepy) |
 
 ### API reference
 
@@ -1439,11 +1442,11 @@ The constants at the top of this file are local; the shared fetch constants (`VA
 - `parse_args(argv=None)` — Parses one-or-more positional `symbols` plus `--range` / `--last` (mutually exclusive), `--start`, `--end`, `--base-date`, `--benchmark`, `--output`, and `--show`. Removes the benchmark from `symbols` (case-insensitively) and exits 2 if nothing else is left.
 - `main(argv=None)` — Entry point; builds the shared query params via `yahoo_finance.build_params()`, loads each symbol and then the benchmark via `load_closes()`, resolves the base date, rebases each series via `rebase_rows()`, and renders.
 
-See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_history()`, and [`indicators.py`](#indicatorspy) for `rebase()`.
+See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, [`price_source.py`](#price_sourcepy) for `fetch_history()`, and [`indicators.py`](#indicatorspy) for `rebase()`.
 
 ### Error handling
 
-- A symbol whose request fails (network error, timeout, non-2xx) or that returns a Yahoo error body prints a `Warning: …` to stderr and is dropped from the chart rather than aborting the run.
+- A symbol whose request fails (network error, timeout, non-2xx) or that the provider rejects (unknown or unsupported ticker, missing key) prints a `Warning: …` to stderr and is dropped from the chart rather than aborting the run.
 - If **every** symbol fails to fetch, or none has a settled close in the window, the script prints `Error: no price data found for any symbol` and exits with status code 1.
 - A symbol with no settled close exactly on the resolved base date prints a `Warning: …` to stderr and is dropped; if that leaves no symbols at all, the script prints `Error: no symbol has a settled close on <date>` and exits with status code 1.
 - An invalid `--range`, `--base-date`, `--start`, or `--end` is rejected (argument parsing exit code 2 for `--range`, or status code 1 with an explanatory message for a malformed date); passing both `--range` and `--last` is likewise rejected.
@@ -1454,12 +1457,12 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `fetch_histo
 
 ### Notes / limitations
 
-- Relies on an undocumented, unofficial Yahoo Finance endpoint — public and free, but with no guarantee it stays available or unchanged.
+- Data comes from EODHD (Alpha Vantage for Indian stocks) through [`price_source.py`](#price_sourcepy), on free keys by default: EODHD gives one year of history at 20 calls a day, Alpha Vantage the latest 100 sessions at 25 a day. History shorter than asked is flagged in a note.
 - Rebasing requires an **exact** match on the base date in each symbol's own settled-session list — a symbol that doesn't trade on that calendar date (a market holiday specific to its exchange, a weekend, a later IPO date) is dropped rather than matched to its nearest neighbouring session. Pick a base date inside every symbol's trading history, and be aware that a date only one of several exchanges observes as a holiday can silently drop a symbol.
 - Uses the raw (unadjusted) `close`, not `adj_close` — a split or large dividend inside the window will show up as a distortion relative to the other series. For spans that might cross one, consider whether the tickers involved have upcoming corporate actions.
-- Tickers must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, `.T`, …); currency is not normalized across symbols, so comparing a USD-denominated stock against a GBp-denominated one is still valid (rebasing is currency-agnostic — it's a ratio) but the two would need converting to compare absolute price levels.
-- Non-stock symbols work too, since the chart endpoint serves them the same way: indices (`^GSPC`, `^FTSE`), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), crypto (`BTC-USD`) and continuous front-month futures (`GC=F`, `CL=F`). Currency pairs always report `volume` 0; crypto has a row for every calendar day including weekends; futures jump at contract rolls and their volume is unreliable (Yahoo sometimes repeats a day's figure). Markets that trade around the clock usually include today's still-moving bar. Crypto's weekend rows mean a weekend base date drops every non-crypto symbol.
-- A benchmark from a different market is subject to the same exact-date rule: `D05.SI --benchmark ^GSPC` loses the benchmark whenever the first Singapore session falls on a US holiday. Pick a base date both markets traded, or a benchmark from the stocks' own market (`^STI`).
+- Tickers must be in Yahoo's notation, including the exchange suffix for non-US listings (`.L`, `.DE`, `.PA`, `.TO`, `.AX`, `.NS`, `.HK`, …; not `.SI` or `.T` for now); currency is not normalized across symbols, so comparing a USD-denominated stock against a GBp-denominated one is still valid (rebasing is currency-agnostic — it's a ratio) but the two would need converting to compare absolute price levels.
+- Non-stock symbols work too: indices (`^GSPC`, `^IXIC`, `^HSI`; `^FTSE` returns no data), currency pairs (`EURUSD=X`; `JPY=X` is USD/JPY, priced in the quote currency), and crypto (`BTC-USD`). Futures (`=F`) aren't supported for now. A currency pair's volume isn't real traded volume; crypto has a row for every calendar day including weekends; markets that trade around the clock can include today's still-moving bar. Crypto's weekend rows mean a weekend base date drops every non-crypto symbol.
+- A benchmark from a different market is subject to the same exact-date rule: `0700.HK --benchmark ^GSPC` loses the benchmark whenever the first Hong Kong session falls on a US holiday. Pick a base date both markets traded, or a benchmark from the stocks' own market (`^HSI`).
 - `--show` needs a working matplotlib GUI backend and a display; in a headless environment omit it and read the PNG.
 
 ---
@@ -1481,7 +1484,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### What it does
 
-1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`), and passes every one as a separate positional argument; if a ticker is uncertain it says so rather than guessing. Mixed exchanges, currencies and asset classes are fine — rebasing is a ratio.
+1. Resolves each company to a Yahoo-notation ticker, adding the exchange suffix for non-US listings (`.L`, `.DE`, `.NS`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`) or crypto coin (`BTC-USD`); Singapore, Tokyo and futures are declined for now, and passes every one as a separate positional argument; if a ticker is uncertain it says so rather than guessing. Mixed exchanges, currencies and asset classes are fine — rebasing is a ratio.
 2. Chooses the window from the user's phrasing — `--last N` or a `--range` keyword for "recent" / "past N months" / "this year", `--start`/`--end` for a named month or span, otherwise the script default of `--range 6mo`.
 3. Chooses the base date: for a "since \<date>" that is also the window start it sets `--start` and lets `--base-date` default to the first date in the first symbol's series; it passes `--base-date` explicitly only when the reference date sits *inside* a longer window, picking a trading day (a symbol with no settled close on that exact date is dropped with a warning).
 4. Passes `--benchmark` when the user compares stocks against a market or index ("vs the S&P 500", "against the market", "did they beat the FTSE?"): the named index, or for "the market" the main index of the stocks' own exchange (`^GSPC` for US stocks, `^FTSE` for London, `^STI` for Singapore, …). When the user simply compares two indices with each other, both stay plain symbols.
@@ -1499,23 +1502,24 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 
 ### Notes / limitations
 
-- Requires `stock_rebased_chart.py` and its `yahoo_finance.py` + `indicators.py` + `cli_utils.py` helper modules (plus the `requests` + `matplotlib` dependencies) to be present and runnable from the repo root.
+- Requires `stock_rebased_chart.py` and its `price_source.py` + `yahoo_finance.py` + `indicators.py` + `cli_utils.py` helper modules (plus the `requests` + `matplotlib` dependencies and the API keys) to be present and runnable from the repo root.
 - Only as good as the tickers it picks — a wrong or ambiguous symbol yields the wrong company's line or a "symbol may be delisted" warning that silently drops it from the chart.
 - The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
 - Reads approximate levels off the chart axis for its summary — it does not compute exact ending percentages.
-- Inherits all the limitations of [`stock_rebased_chart.py`](#stock_rebased_chartpy) itself (unofficial Yahoo endpoint, Yahoo-notation tickers only, an **exact** base-date match required per symbol, raw unadjusted closes, `--show` unavailable).
+- Inherits all the limitations of [`stock_rebased_chart.py`](#stock_rebased_chartpy) itself (free-plan history limits, Yahoo-notation tickers only, an **exact** base-date match required per symbol, raw unadjusted closes, `--show` unavailable).
 
 ---
 
 ## stock_risk.py
 
-Describes how risky one or more instruments' prices have been over a window — annualized **volatility**, the worst peak-to-trough **drawdown** and whether it recovered, how far the last close sits **below the high**, and the **correlation** of each pair — using [Yahoo Finance](https://finance.yahoo.com/)'s public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`), shared with the other price scripts through [`yahoo_finance.py`](#yahoo_financepy). The figures come from [`indicators.py`](#indicatorspy)'s `volatility()`, `max_drawdown()` and `correlation()`; this script adds the fetching, the choice of price basis, the annualization and the date alignment between symbols. No API key or authentication required. For what each figure means in plain English, see [`docs/indicators.md`](docs/indicators.md) (sections 7–10).
+Describes how risky one or more instruments' prices have been over a window — annualized **volatility**, the worst peak-to-trough **drawdown** and whether it recovered, how far the last close sits **below the high**, and the **correlation** of each pair — using daily prices from EODHD (Alpha Vantage for Indian stocks), shared with the other price scripts through [`price_source.py`](#price_sourcepy). The figures come from [`indicators.py`](#indicatorspy)'s `volatility()`, `max_drawdown()` and `correlation()`; this script adds the fetching, the choice of price basis, the annualization and the date alignment between symbols. Needs an `EODHD_API_KEY` (plus `ALPHAVANTAGE_API_KEY` for Indian stocks). For what each figure means in plain English, see [`docs/indicators.md`](docs/indicators.md) (sections 7–10).
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
+- the repo's own `price_source.py` (with the modules it imports), `yahoo_finance.py`, `indicators.py`, and `cli_utils.py` modules (no install — run from the repo root so they import)
+- an `EODHD_API_KEY`, plus an `ALPHAVANTAGE_API_KEY` for Indian stocks, in `.env` or the environment
 
 ```bash
 pip install requests
@@ -1529,7 +1533,7 @@ python3 stock_risk.py SYMBOL [SYMBOL ...] [--benchmark SYMBOL] [--range RANGE | 
 
 | Flag | Default | Description |
 |---|---|---|
-| `SYMBOL ...` (positional) | — | One or more tickers in Yahoo notation: `AAPL`, `VOD.L`, `D05.SI`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`), crypto (`BTC-USD`) and futures / commodities (`GC=F`). Repeats (in any letter case) are measured once |
+| `SYMBOL ...` (positional) | — | One or more tickers in Yahoo notation: `AAPL`, `VOD.L`, `RELIANCE.NS`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`) and crypto (`BTC-USD`); not `.SI`, `.T` or `=F` for now. Repeats (in any letter case) are measured once |
 | `--benchmark SYMBOL` | — | One more series (e.g. `^GSPC`) to read the others against: it gets the same figures and joins every correlation pair. A benchmark also listed as a symbol is measured once, as the benchmark |
 | `--range RANGE` | `1y` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Use only the most recent `N` sessions (mutually exclusive with `--range`) |
@@ -1542,21 +1546,21 @@ python3 stock_risk.py SYMBOL [SYMBOL ...] [--benchmark SYMBOL] [--range RANGE | 
 $ python3 stock_risk.py AAPL MSFT --benchmark ^GSPC
 Measuring risk for AAPL, MSFT, ^GSPC...
 
-AAPL - NasdaqGS (USD)
+AAPL - USA Stocks (USD) - EODHD
   251 session(s), 2025-10-20 -> 2026-10-19  [adj_close, 252 sessions/year]
   change      : +31.3%  (261.2748 -> 342.9400)
   volatility  : 24.1% a year
   worst fall  : -13.8%  2025-12-02 (285.4131) -> 2026-01-20 (246.0303), recovered 2026-05-06
   from high   : -0.2%  (high 343.4600 on 2026-10-16)
 
-MSFT - NasdaqGS (USD)
+MSFT - USA Stocks (USD) - EODHD
   251 session(s), 2025-10-20 -> 2026-10-19  [adj_close, 252 sessions/year]
   change      : +4.1%  (512.5727 -> 533.5200)
   volatility  : 33.0% a year
   worst fall  : -34.5%  2025-10-28 (537.6464) -> 2026-06-25 (352.1670), recovered 2026-10-12
   from high   : -1.8%  (high 543.4500 on 2026-10-13)
 
-^GSPC (benchmark) - SNP (USD)
+^GSPC (benchmark) - Index (points) - EODHD
   251 session(s), 2025-10-20 -> 2026-10-19  [adj_close, 252 sessions/year]
   change      : +14.2%  (6,735.1299 -> 7,690.7300)
   volatility  : 12.7% a year
@@ -1584,8 +1588,10 @@ python3 stock_risk.py VOD.L --range 3mo --json
   "symbols": [
     {
       "symbol": "VOD.L",
-      "exchange": "LSE",
+      "exchange": "London Exchange",
       "currency": "GBp",
+      "source": "EODHD",
+      "notes": [],
       "basis": "adj_close",
       "sessions": 63,
       "start": "2026-07-20",
@@ -1614,7 +1620,7 @@ python3 stock_risk.py VOD.L --range 3mo --json
 }
 ```
 
-- `symbols` — one object per symbol that loaded, in the order given; `benchmark` is the same shape, or `null`.
+- `symbols` — one object per symbol that loaded, in the order given; `benchmark` is the same shape, or `null`. `source` names the provider (`EODHD` or `Alpha Vantage`) and `notes` carries anything it flagged, such as a free-plan history limit.
 - `change`, `volatility`, `max_drawdown.drawdown` and `from_high` are unrounded fractions (`0.24` = 24%); prices are rounded to 4 dp. `volatility` is `null` with fewer than 3 sessions. The `max_drawdown` dates and prices are all `null` when the series never closed below an earlier high, and `recovery_date` is `null` until it closes back at or above the peak.
 - `correlations` — `{a, b, sessions, start, end, correlation}` for every pair of loaded series, benchmark included; `correlation` is `null` with fewer than 3 shared sessions or when one series never moved.
 - `skipped` — `{symbol, reason}` for each symbol (or the benchmark) that failed to fetch, had no settled prices, or had a price of zero or below.
@@ -1624,7 +1630,7 @@ With `--json`, the progress line is suppressed and the result prints as a JSON o
 ### How it works
 
 1. **Build the query window** — `yahoo_finance.build_params()`, exactly as for [`stock_price_history.py`](#stock_price_historypy).
-2. **Fetch each symbol** — `load_symbol()` calls `yahoo_finance.fetch_history()` for each symbol and the benchmark in turn. A fetch error, an empty window or a non-positive price becomes a skip reason rather than a failure; `--last N` keeps the final `N` sessions.
+2. **Fetch each symbol** — `load_symbol()` calls `price_source.fetch_history()` for each symbol and the benchmark in turn. A fetch error, an empty window or a non-positive price becomes a skip reason rather than a failure; `--last N` keeps the final `N` sessions.
 3. **Pick the price basis** — `extract_closes()` skips sessions with a `null` close (in-progress or gapped), dates each session by `meta.gmtoffset`, and uses the **adjusted close** when every kept session has one, otherwise the raw close for the whole series. It never mixes the two, which would invent a jump where the basis switched.
 4. **Annualize** — `periods_per_year()` returns `365` if any session falls on a Saturday or Sunday (crypto trades every day) and `252` otherwise, so each series' volatility is scaled to a year by its own calendar.
 5. **Per-symbol figures** — `summarize()` computes the change, `indicators.volatility()`, `indicators.max_drawdown()` (with its indices mapped back to dates and prices) and the highest close with the last close's distance from it.
@@ -1638,7 +1644,8 @@ With `--json`, the progress line is suppressed and the result prints as a JSON o
 | `DEFAULT_RANGE` | this file | `"1y"` | Window used when no `--range`, `--last`, or `--start` is given |
 | `TRADING_DAYS_PER_YEAR` | this file | `252` | Sessions per year for a series with no weekend sessions |
 | `CALENDAR_DAYS_PER_YEAR` | this file | `365` | Sessions per year for a series that trades at weekends |
-| `VALID_RANGES`, `REQUEST_TIMEOUT`, `HEADERS` | `yahoo_finance.py` | — | Shared fetch constants; see [`yahoo_finance.py`](#yahoo_financepy) |
+| `VALID_RANGES` | `yahoo_finance.py` | — | Accepted `--range` keywords; see [`yahoo_finance.py`](#yahoo_financepy) |
+| routing tables | `price_source.py` | — | Which Yahoo suffix goes to which provider; see [`price_source.py`](#price_sourcepy) |
 
 ### API reference
 
@@ -1653,7 +1660,7 @@ With `--json`, the progress line is suppressed and the result prints as a JSON o
 
 ### Error handling
 
-- If every symbol fails to fetch or has no prices (the benchmark alone doesn't count), the script exits with status 1 — plain `Error: no price data for any symbol (<SYMBOL>: <reason>; …)` on stderr, or `{"error": "..."}` with `--json`. An unknown ticker's reason is Yahoo's `"No data found, symbol may be delisted"`.
+- If every symbol fails to fetch or has no prices (the benchmark alone doesn't count), the script exits with status 1 — plain `Error: no price data for any symbol (<SYMBOL>: <reason>; …)` on stderr, or `{"error": "..."}` with `--json`. An unknown ticker's reason ends with EODHD's `"Ticker Not Found."`.
 - If only some symbols fail, the run succeeds: they are listed under `skipped` (or warned about on stderr) and every pair involving them is left out.
 - An invalid `--range`, `--range` together with `--last`, a `--last` below 1, no symbol, or only the benchmark is rejected by argument parsing (exit code 2), before any request is made.
 - A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
@@ -1663,9 +1670,9 @@ With `--json`, the progress line is suppressed and the result prints as a JSON o
 - Every figure describes the window measured — past swings and falls are no promise of future ones — and they move a lot with the window: a 1-month drawdown can't show a slide that took a year, and volatility and correlation over a week or two are mostly noise.
 - Volatility treats a big rise like a big fall; correlation says whether two series moved in step, not by how much, nor why. See the [`indicators.py`](#indicatorspy) limitations.
 - The weekend test for annualization is a heuristic: a crypto window too short to include a weekend (e.g. `--last 3` on weekdays) is annualized over 252 sessions instead of 365.
-- The adjusted close folds dividends into the price, so `change` is closer to a total return than a price move; where Yahoo has no adjusted close for every session the raw close is used and a split or large dividend in the window can show up as a false fall (`basis` says which).
+- The adjusted close folds dividends into the price, so `change` is closer to a total return than a price move; where the source has no adjusted close for every session (always so for Indian stocks, from Alpha Vantage) the raw close is used and a split or large dividend in the window can show up as a false fall (`basis` says which).
 - Correlation is computed only on the dates both series traded; when one trades far more often (crypto against a stock), its weekend moves are left out, and `sessions` shows how many sessions the figure rests on.
-- Inherits the limits of the chart endpoint (see [`stock_price_history.py`](#stock_price_historypy)): unofficial and undocumented, Yahoo-notation tickers only, end-of-day data, minor-unit prices on some markets (LSE `GBp`), and a still-moving bar for today on markets that trade around the clock.
+- Inherits the limits of [`price_source.py`](#price_sourcepy) (see [`stock_price_history.py`](#stock_price_historypy)): free-plan history limits, Yahoo-notation tickers only, end-of-day data, minor-unit prices on some markets (LSE `GBp`), and a still-moving bar for today on markets that trade around the clock.
 
 ---
 
@@ -1686,7 +1693,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### What it does
 
-1. Resolves each company to a Yahoo ticker, adding the exchange suffix for non-US listings (`.L`, `.SI`, `.DE`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`), crypto coin (`BTC-USD`) or front-month future / commodity (`GC=F`); if a ticker is uncertain it says so rather than guessing.
+1. Resolves each company to a Yahoo-notation ticker, adding the exchange suffix for non-US listings (`.L`, `.DE`, `.NS`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`) or crypto coin (`BTC-USD`); Singapore, Tokyo and futures are declined for now; if a ticker is uncertain it says so rather than guessing.
 2. Adds `--benchmark` when the user compares against a market, or asks how risky one stock is and the stock's home index makes a useful reference; a comparison of named instruments lists them all as symbols instead.
 3. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` / `5y` for "this year" / "past year" / "past 5 years", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise the default `--range 1y`.
 4. Runs `python3 stock_risk.py SYMBOL [SYMBOL ...] [--benchmark SYMBOL] <window flags> --json` from the repo root and parses `{symbols, benchmark, correlations, skipped}`.
@@ -1703,16 +1710,16 @@ The agent's frontmatter restricts it to `Bash` (run the script).
 
 ### Notes / limitations
 
-- Requires `stock_risk.py` and its `yahoo_finance.py`, `indicators.py` and `cli_utils.py` helper modules (plus the `requests` dependency) to be present and runnable from the repo root.
+- Requires `stock_risk.py` and its `price_source.py`, `yahoo_finance.py`, `indicators.py` and `cli_utils.py` helper modules (plus the `requests` dependency and the API keys) to be present and runnable from the repo root.
 - Only as good as the tickers it picks — a wrong or ambiguous symbol yields the wrong company's figures or a skipped symbol.
 - The plain readings it gives (the rough scale for volatility, the bands for correlation) are rules of thumb written into the agent, not properties of the data.
-- Inherits all the limitations of [`stock_risk.py`](#stock_riskpy) itself (descriptive figures only, sensitive to the window, unofficial Yahoo endpoint, the weekend heuristic for annualization).
+- Inherits all the limitations of [`stock_risk.py`](#stock_riskpy) itself (descriptive figures only, sensitive to the window, free-plan history limits, the weekend heuristic for annualization).
 
 ---
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy) (for the window flags and chart-result parsing: since 2026-10-21 their data comes from [`price_source.py`](#price_sourcepy), which returns the same shape); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1743,19 +1750,70 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 - `fetch_quote_summary(symbol, modules)` — GETs `quoteSummary` for the given `modules` (with `formatted=false`) through a `crumb_session()`, trying each of `QUOTE_SUMMARY_HOSTS` with the crumb, then each without it. Returns the first `result` — a dict keyed by module, omitting any Yahoo has no data for — or raises `requests.RequestException` with the last error (an error envelope, a non-JSON body's HTTP status, or `no fundamentals in response`).
 - `summary_num(node, *path)` / `summary_text(node, *path)` — Dig a value out of a nested `quoteSummary` dict. `summary_num` unwraps Yahoo's `{"raw": …}` and returns a float or `None` (bools and strings are not numbers); `summary_text` returns a non-empty string or `None`.
 - `build_params(interval="1d", range_=None, start=None, end=None, last=None)` — Returns the chart-endpoint query params. The window is chosen by, in priority order: an explicit `start`/`end` pair (→ `period1`/`period2`, end padded a day), then `last` (→ a calendar look-back widened for `1wk` / `1mo` bars), then `range_`. Raises `ValueError` for `end` without `start` or an `end` not after `start`. `includeAdjustedClose=true` is always set. Callers pass `interval="1d"` (the default) for daily data.
-- `fetch_history(symbol, params)` — GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
+- `fetch_history(symbol, params)` — Used only by `app/stock_information/` now; the price scripts call `price_source.fetch_history()` instead. GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
 - `extract_series(result)` — Returns `(meta, series)` where `series` is a dict of parallel lists straight off the payload — `timestamp`, `open`, `high`, `low`, `close`, `volume` — plus `adjclose` (a list or `None`) and the resolved `gmtoffset`. Callers turn these into row dicts.
 - `meta_summary(meta, fallback_symbol=None)` — Pulls the display fields out of a chart result's `meta` block: returns `(symbol, exchange, currency)`, with `symbol` falling back to `fallback_symbol` then `"?"`, `exchange` to `"?"`, and `currency` to `""`. Used by `stock_price_history.py`, `stock_candlestick_chart.py` and `stock_risk.py` for their report headers.
 
 ### Notes / limitations
 
-- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it, and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it (and `price_source.window()`, which reads `build_params()` output), and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+
+---
+
+## price_source.py
+
+Shared price-history source for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy), in place of Yahoo Finance's chart endpoint (which fails the [source audit](docs/source-audit.md)). `fetch_history(symbol, params)` takes a ticker in Yahoo notation and the params `yahoo_finance.build_params()` makes, routes the ticker to a keyed provider, and returns the bars in the chart-result shape `yahoo_finance.extract_series()` already parses, so the scripts' row shaping didn't change. Not a CLI: it is imported, not run.
+
+| Yahoo ticker | Provider | Provider symbol |
+|---|---|---|
+| `AAPL` (no suffix) | EODHD | `AAPL.US` |
+| `.L`, `.DE`, `.PA`, `.TO`, `.AX`, `.HK` and the other suffixes in `EODHD_EXCHANGES` | EODHD | `.LSE`, `.XETRA`, `.PA`, `.TO`, `.AU`, `.HK`, … |
+| `^GSPC` | EODHD | `GSPC.INDX` |
+| `EURUSD=X` / `JPY=X` | EODHD | `EURUSD.FOREX` / `USDJPY.FOREX` |
+| `BTC-USD` | EODHD | `BTC-USD.CC` |
+| `.NS`, `.BO` (India) | Alpha Vantage | `.BSE` |
+| `.SI`, `.T`, `=F` | none | refused with a clear error, for now |
+
+The markets were decided on 2026-10-21 (see the Yahoo item in [`docs/things-to-explore.md`](docs/things-to-explore.md)): neither provider was found to cover Singapore or Tokyo, and futures wait for Databento.
+
+### Requirements
+
+- Python 3.7+ and [`requests`](https://pypi.org/project/requests/)
+- the repo's own `eodhd_price_history.py`, `alphavantage_price_history.py`, `daily_prices.py` and `cli_utils.py` (run from the repo root)
+- an `EODHD_API_KEY`, plus an `ALPHAVANTAGE_API_KEY` for Indian stocks, in `.env` or the environment
+
+### Constants
+
+| Constant | Description |
+|---|---|
+| `EODHD_EXCHANGES` | Yahoo suffix → (EODHD exchange code, exchange name, currency). Codes and names come from EODHD's `exchanges-list`; US, LSE, XETRA, PA, TO, AU and HK were tested on 2026-10-21. LSE and JSE quote in minor units (`GBp`, `ZAc`), as on Yahoo |
+| `ALPHAVANTAGE_EXCHANGES` | `.NS` and `.BO` → BSE in INR (Alpha Vantage has BSE listings, not NSE ones) |
+| `UNSUPPORTED_EXCHANGES` | `.SI` Singapore and `.T` Tokyo, refused for now |
+| `CRYPTO_QUOTES` | Quote currencies that mark `COIN-CCY` as crypto rather than a share class like `BRK-B` |
+| `RANGE_DAYS` | Calendar days behind each `--range` keyword (`5d` keeps the last 5 sessions, `ytd` starts on 1 January, `max` asks for everything) |
+| `ALPHAVANTAGE_MIN_GAP` | 1.1 seconds between Alpha Vantage calls; free keys refuse a second request within a second |
+
+### API reference
+
+- `route(symbol)`: returns `(provider, provider_symbol, exchange, currency)`, or raises `ValueError` for futures, Singapore, Tokyo or an unknown suffix. Indices get currency `points`; currency pairs and crypto their quote currency.
+- `window(params, today=None)`: turns `build_params()` output into inclusive `(first, final, keep)` dates; `keep` is 5 for the `5d` range.
+- `aggregate(rows, interval)`: daily rows as `1wk` or `1mo` bars, dated the Monday of the week or the 1st of the month: first open, high / low extremes, last close and adjusted close, summed volume.
+- `chart_result(symbol, exchange, currency, source, notes, rows)`: rows in the chart-result shape, with UTC-midnight timestamps and `gmtoffset` 0, plus `meta.source` and `meta.notes`.
+- `fetch_daily(provider, provider_symbol, first, final, api_key)`: the provider's daily rows and notes, through `eodhd_price_history.fetch_eod()` or `alphavantage_price_history.fetch_daily()` (spaced by `ALPHAVANTAGE_MIN_GAP`).
+- `fetch_history(symbol, params)`: the whole path. Raises `ValueError` for an unsupported ticker, a missing key or an unknown window, and `requests.RequestException` naming the provider (key redacted) when it fails or refuses.
+
+### Notes / limitations
+
+- **Free plans:** EODHD gives one year of history at 20 calls a day; Alpha Vantage the latest 100 sessions at 25 a day, with no adjusted close. A window reaching further back comes back shorter, with a note in `meta.notes` that the scripts print. Every symbol fetched is one call.
+- **Indices:** `^GSPC`, `^IXIC` and `^HSI` were confirmed; `^FTSE` (as `FTSE.INDX`) returns no data, so EODHD names it differently, and other indices are untested.
+- **No exchange or currency from the providers:** both come from the routing tables, so an LSE listing quoted in USD would still be labelled `GBp`.
+- **Dates** are the providers' session dates, with no exchange-local shift.
 
 ---
 
 ## eodhd_price_history.py
 
-Prints the past daily open / high / low / close prices (plus adjusted close and volume) of a stock, index, currency pair or crypto coin, using [EODHD](https://eodhd.com/)'s end-of-day API (`eodhd.com/api/eod/<symbol>`). It's one of the two keyed price sources chosen to replace Yahoo Finance (see the Yahoo item in [`docs/things-to-explore.md`](docs/things-to-explore.md)). It doesn't replace `stock_price_history.py` yet, and no agent calls it.
+Prints the past daily open / high / low / close prices (plus adjusted close and volume) of a stock, index, currency pair or crypto coin, using [EODHD](https://eodhd.com/)'s end-of-day API (`eodhd.com/api/eod/<symbol>`). It's one of the two keyed price sources chosen to replace Yahoo Finance (see the Yahoo item in [`docs/things-to-explore.md`](docs/things-to-explore.md)). [`price_source.py`](#price_sourcepy) uses its fetch for the four price scripts; run on its own, it takes EODHD's notation.
 
 ### Requirements
 
@@ -1855,7 +1913,7 @@ Set `EODHD_API_KEY` as an environment variable or in `.env` at the repo root (a 
 
 ## alphavantage_price_history.py
 
-Prints the past daily open / high / low / close prices and volume of a stock, using [Alpha Vantage](https://www.alphavantage.co/)'s `TIME_SERIES_DAILY` API. It's the second keyed price source, for the markets EODHD lacks (India). Like `eodhd_price_history.py`, it doesn't replace `stock_price_history.py` yet, and no agent calls it.
+Prints the past daily open / high / low / close prices and volume of a stock, using [Alpha Vantage](https://www.alphavantage.co/)'s `TIME_SERIES_DAILY` API. It's the second keyed price source, for the markets EODHD lacks (India). [`price_source.py`](#price_sourcepy) uses its fetch for Indian tickers (`.NS`, `.BO`).
 
 ### Requirements
 
@@ -1905,7 +1963,7 @@ python3 alphavantage_price_history.py RELIANCE.BSE --start 2025-01-01 --last 2 -
   "symbol": "RELIANCE.BSE",
   "source": "Alpha Vantage",
   "notes": [
-    "Only the latest 100 sessions are available (from 2026-05-27); the full history (--full) needs a premium key."
+    "Only the latest 100 sessions are available (from 2026-05-27); the full history needs a premium Alpha Vantage key."
   ],
   "prices": [
     { "date": "2026-10-16", "open": 1214.1, "high": 1215.0, "low": 1192.75, "close": 1210.0, "adj_close": null, "volume": 1021134 },

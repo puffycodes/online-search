@@ -7,6 +7,7 @@ import pytest
 import requests
 
 import stock_risk as sr
+import price_source
 import yahoo_finance as yf
 
 MON = dt.date(2024, 1, 1)  # a Monday
@@ -271,21 +272,21 @@ class TestLoadSymbol:
         def boom(symbol, params):
             raise requests.RequestException("symbol may be delisted")
 
-        monkeypatch.setattr(yf, "fetch_history", boom)
+        monkeypatch.setattr(price_source, "fetch_history", boom)
         assert sr.load_symbol("AAA", {}, None) == (
             "failed to fetch prices: symbol may be delisted")
 
     def test_no_rows_is_reason(self, monkeypatch, chart_result):
         chart_result["indicators"]["quote"][0]["close"] = [None, None, None]
-        monkeypatch.setattr(yf, "fetch_history", lambda symbol, params: chart_result)
+        monkeypatch.setattr(price_source, "fetch_history", lambda symbol, params: chart_result)
         assert sr.load_symbol("AAA", {}, None) == "no settled price data in the window"
 
     def test_non_positive_price_is_reason(self, monkeypatch, chart_result):
         chart_result["indicators"]["adjclose"][0]["adjclose"] = [10.1, 0.0, 12.1]
-        monkeypatch.setattr(yf, "fetch_history", lambda symbol, params: chart_result)
+        monkeypatch.setattr(price_source, "fetch_history", lambda symbol, params: chart_result)
         assert sr.load_symbol("AAA", {}, None) == "non-positive prices in the window"
 
     def test_last_trims(self, monkeypatch, chart_result):
-        monkeypatch.setattr(yf, "fetch_history", lambda symbol, params: chart_result)
+        monkeypatch.setattr(price_source, "fetch_history", lambda symbol, params: chart_result)
         _, rows, _ = sr.load_symbol("AAA", {}, 2)
         assert [d for d, _ in rows] == _days(1, 2)

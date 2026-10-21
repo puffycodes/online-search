@@ -6,6 +6,7 @@ import pytest
 import requests
 
 import stock_rebased_chart as src
+import price_source
 import yahoo_finance as yf
 
 
@@ -16,7 +17,7 @@ class TestFetchCloses:
             "timestamp": [1704067200, 1704153600, 1704240000],
             "indicators": {"quote": [{"close": [10.0, None, 12.0]}]},
         }
-        monkeypatch.setattr(yf, "fetch_history", lambda sym, params: result)
+        monkeypatch.setattr(price_source, "fetch_history", lambda sym, params: result)
         _, rows = src.fetch_closes("AAA", {})
         assert rows == [(dt.date(2024, 1, 1), 10.0), (dt.date(2024, 1, 3), 12.0)]
 

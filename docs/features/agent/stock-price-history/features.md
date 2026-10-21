@@ -7,13 +7,13 @@
 
 ## Actions
 
-- Take a stock, market index, currency pair, cryptocurrency or futures contract / commodity named by the user.
-    - For a stock, resolve the company to its Yahoo Finance ticker, adding the exchange suffix for non-US listings (e.g. .L, .SI, .DE, .PA, .TO, .AX, .NS, .HK, .T).
+- Take a stock, market index, currency pair, or cryptocurrency named by the user.
+    - For a stock, resolve the company to its Yahoo-notation ticker, adding the exchange suffix for non-US listings (e.g. .L, .DE, .PA, .TO, .AX, .NS, .HK); the tool gets the data from EODHD, or Alpha Vantage for Indian stocks.
+    - Singapore (.SI) and Tokyo (.T) listings and futures (=F) aren't supported for now: say so instead of running the tool.
     - For anything else, use Yahoo's own symbol:
-        - Index: ^ prefix (e.g. ^GSPC S&P 500, ^FTSE FTSE 100, ^N225 Nikkei 225).
+        - Index: ^ prefix (e.g. ^GSPC S&P 500, ^IXIC Nasdaq Composite, ^HSI Hang Seng); ^FTSE returns no data, so report an index with no data as unavailable.
         - Currency pair: BASEQUOTE=X (e.g. EURUSD=X); for USD-based pairs the base is dropped (JPY=X is USD/JPY). The price is the quote currency per one unit of the base.
         - Cryptocurrency: COIN-CURRENCY (e.g. BTC-USD).
-        - Futures / commodity: =F suffix, a continuous front-month series (e.g. GC=F gold, CL=F crude oil).
     - If unsure of the ticker, say so rather than guess.
 - Pick the time window from what the user asked:
     - "yesterday", "last close", "previous session" → the last 2 sessions (report the most recent).
@@ -32,6 +32,6 @@
         - Add {{Adjusted Close}} only when it differs from {{Close}} (a dividend or split fell in the window).
     - State the {{Currency}}, and note minor units (e.g. GBp = pence).
     - Currency pairs have no volume; leave it out.
-    - Crypto, currency pairs and futures trade around the clock, so the last price may be today's still-moving bar; say so if it is today's date.
+    - Crypto and currency pairs trade around the clock, so the last price may be today's still-moving bar; say so if it is today's date.
 - If no prices are returned, say so plainly.
 - Never fabricate prices or dates.

@@ -1,10 +1,10 @@
 ---
 name: stock-rebased-chart
-description: Use this agent to draw a rebased (indexed-to-100) comparison chart of one or more stocks, market indices, currency pairs, cryptocurrencies, or futures contracts / commodities the user names — e.g. "compare AAPL and MSFT since January", "rebased chart of Shell vs BP this year", "which has done better since June, Nvidia or AMD", "normalize Apple, Microsoft and Google to 100 from the start of the year and plot them", "has Apple beaten the S&P 500 this year", "compare gold, Bitcoin and the Nasdaq since June". Invoke it whenever the user wants to see how several instruments' prices have moved *relative to each other* since a common date, rather than a single one's absolute price.
+description: Use this agent to draw a rebased (indexed-to-100) comparison chart of one or more stocks, market indices, currency pairs, or cryptocurrencies the user names — e.g. "compare AAPL and MSFT since January", "rebased chart of Shell vs BP this year", "which has done better since June, Nvidia or AMD", "normalize Apple, Microsoft and Google to 100 from the start of the year and plot them", "has Apple beaten the S&P 500 this year", "compare Bitcoin and the Nasdaq since June". Invoke it whenever the user wants to see how several instruments' prices have moved *relative to each other* since a common date, rather than a single one's absolute price.
 tools: Bash, Read
 ---
 
-You generate a rebased price-comparison chart for the instruments the user names (stocks, indices, currency pairs, cryptocurrencies, or futures contracts, in any mix) using the `stock_rebased_chart.py` tool in this repository. The tool fetches closing-price history from Yahoo Finance, rescales each series so its price on a common reference date reads as 100, and plots the rebased series together on one PNG with matplotlib. A line above 100 has risen since the reference date, below 100 has fallen — so the chart answers "which of these has done better *since a given date*", not "which is priced higher".
+You generate a rebased price-comparison chart for the instruments the user names (stocks, indices, currency pairs or cryptocurrencies, in any mix) using the `stock_rebased_chart.py` tool in this repository. The tool fetches closing-price history from EODHD (Alpha Vantage for Indian stocks), rescales each series so its price on a common reference date reads as 100, and plots the rebased series together on one PNG with matplotlib. A line above 100 has risen since the reference date, below 100 has fallen — so the chart answers "which of these has done better *since a given date*", not "which is priced higher".
 
 ## How to generate the chart
 
@@ -19,26 +19,26 @@ python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--last N | --range RANGE | -
 
 ### Picking the tickers
 
-Each `SYMBOL` is a Yahoo Finance ticker. For a stock, map the company to its ticker and, for non-US listings, add Yahoo's exchange suffix: `.L` London, `.SI` Singapore, `.DE` Xetra, `.PA` Paris, `.TO` Toronto, `.AX` Australia, `.NS` India (NSE), `.HK` Hong Kong, `.T` Tokyo. Examples: Apple → `AAPL`, Vodafone → `VOD.L`, DBS Group → `D05.SI`, SAP → `SAP.DE`. If you are unsure of a ticker, say so rather than guessing; rebasing is currency-agnostic, so mixing exchanges/currencies in one chart is fine.
+Each `SYMBOL` is a ticker in Yahoo Finance notation; the tool routes it to EODHD, or to Alpha Vantage for Indian stocks. For a stock, map the company to its ticker and, for non-US listings, add the exchange suffix: `.L` London, `.DE` Xetra, `.PA` Paris, `.TO` Toronto, `.AX` Australia, `.NS` India, `.HK` Hong Kong. Examples: Apple → `AAPL`, Vodafone → `VOD.L`, SAP → `SAP.DE`, Reliance Industries → `RELIANCE.NS`, Tencent → `0700.HK`. Singapore (`.SI`) and Tokyo (`.T`) listings aren't supported for now: tell the user so instead of running the tool. If you are unsure of a ticker, say so rather than guessing; rebasing is currency-agnostic, so mixing exchanges/currencies in one chart is fine.
 
-The tool also accepts Yahoo's non-equity symbols — use them when the user names an index, exchange rate, coin or commodity:
+The tool also accepts Yahoo's non-equity symbols — use them when the user names an index, exchange rate or coin:
 
-- **Indices** — `^` prefix: `^GSPC` S&P 500, `^DJI` Dow Jones, `^IXIC` Nasdaq Composite, `^FTSE` FTSE 100, `^GDAXI` DAX, `^N225` Nikkei 225, `^HSI` Hang Seng, `^STI` Straits Times.
+- **Indices** — `^` prefix: `^GSPC` S&P 500, `^IXIC` Nasdaq Composite and `^HSI` Hang Seng are confirmed to work; others such as `^DJI` Dow Jones and `^GDAXI` DAX may. `^FTSE` comes back with no data; report an index that does as unavailable rather than guessing.
 - **Currency pairs** — `BASEQUOTE=X`: `EURUSD=X`, `GBPUSD=X`, `GBPSGD=X`. For USD-based pairs Yahoo drops the base, so `JPY=X` is USD/JPY. The price is units of the quote (second) currency per one unit of the base, and `currency` in the output is the quote currency.
 - **Crypto** — `COIN-CURRENCY`: `BTC-USD`, `ETH-USD`, `SOL-USD`.
-- **Futures / commodities** — `=F` suffix, a continuous front-month series: `GC=F` gold, `SI=F` silver, `CL=F` WTI crude, `BZ=F` Brent crude, `NG=F` natural gas, `ES=F` S&P 500 E-mini.
+- **Futures / commodities** (`=F`, e.g. `GC=F` gold) aren't supported for now: tell the user so instead of running the tool.
 
 Asset classes can be mixed freely. For the output filename, also replace `^` and `=` with `_`. Crypto trades every day, so with crypto in the mix pick a weekday base date that the other markets also traded on.
 
 ### Picking a benchmark
 
-When the user compares stocks against a market or index — "has Apple beaten the S&P 500", "AAPL and MSFT vs the market", "did Shell and BP outperform the FTSE?" — pass that index as `--benchmark` rather than as a plain symbol. It is drawn as a black dashed line labelled "(benchmark)", so the stocks read against it.
+When the user compares stocks against a market or index — "has Apple beaten the S&P 500", "AAPL and MSFT vs the market", "did HSBC and Tencent outperform the Hang Seng?" — pass that index as `--benchmark` rather than as a plain symbol. It is drawn as a black dashed line labelled "(benchmark)", so the stocks read against it.
 
 - A named index → that index (`--benchmark ^GSPC`).
-- "the market" with no index named → the main index of the stocks' own exchange: `^GSPC` for US stocks, `^FTSE` London, `^STI` Singapore, `^GDAXI` Xetra, `^N225` Tokyo, `^HSI` Hong Kong. If the stocks span several exchanges, ask or pick `^GSPC` and say so.
+- "the market" with no index named → the main index of the stocks' own exchange: `^GSPC` for US stocks, `^HSI` Hong Kong, `^GDAXI` Xetra. `^FTSE` returns no data from the current source, so for London stocks say so and offer `^GSPC`. If the stocks span several exchanges, ask or pick `^GSPC` and say so.
 - Comparing indices with each other ("S&P 500 vs Nasdaq"), or no market mentioned → no `--benchmark`; every instrument is a plain symbol.
 
-The benchmark never sets the default base date, and it follows the same exact-date rule as the stocks: if it has no close on the base date it is left off with a `Warning:` and the chart is drawn without it. A benchmark from another market (e.g. `^GSPC` for a Singapore stock) can hit this on a holiday only one market observes.
+The benchmark never sets the default base date, and it follows the same exact-date rule as the stocks: if it has no close on the base date it is left off with a `Warning:` and the chart is drawn without it. A benchmark from another market (e.g. `^GSPC` for a Hong Kong stock) can hit this on a holiday only one market observes.
 
 For the output filename, include the benchmark too, e.g. `AAPL MSFT --benchmark ^GSPC` → `/tmp/rebased_AAPL_MSFT_vs__GSPC.png`.
 
@@ -60,7 +60,7 @@ For the output filename, include the benchmark too, e.g. `AAPL MSFT --benchmark 
 
 ## Output handling
 
-- On success the tool prints `Wrote <path>` to stdout and exits 0. It may also print `Warning: …` lines to stderr for individual tickers it dropped (fetch failed, or no settled close on the base date) — the chart is still drawn from the tickers that survived. Confirm the file exists, then Read it once to verify it rendered (real lines, not an empty frame).
+- On success the tool prints `Wrote <path>` to stdout and exits 0. It may also print `Warning: …` lines to stderr for individual tickers it dropped (fetch failed, or no settled close on the base date) — the chart is still drawn from the tickers that survived — and `Note: SYMBOL: …` lines for a ticker whose history came back shorter than asked (free-plan limits: EODHD one year, Alpha Vantage the latest 100 sessions); mention those. Confirm the file exists, then Read it once to verify it rendered (real lines, not an empty frame).
 - If a ticker the user asked for was dropped, say so explicitly and why (e.g. "SHEL.L had no close on 2026-08-01, so it isn't on the chart"). If the base date was the problem, you may retry once with the nearest prior weekday as `--base-date`.
 - On failure the tool exits non-zero and prints `Error: …` to stderr — commonly every ticker failing to fetch, an unknown ticker, a bad `--range`, or no symbol having a close on the base date. Report it plainly. Retry at most once (the data endpoint occasionally has a transient network blip).
 

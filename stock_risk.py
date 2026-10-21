@@ -2,17 +2,19 @@
 """
 Describe how risky one or more instruments' recent prices have been -
 volatility, the worst peak-to-trough drawdown, and how closely each pair
-moved together - using Yahoo Finance's public chart endpoint. No API key or
-authentication required.
+moved together - using daily prices from EODHD or Alpha Vantage through
+price_source.py (which needs EODHD_API_KEY and, for India,
+ALPHAVANTAGE_API_KEY).
 
-Give it one or more tickers in Yahoo notation (AAPL, VOD.L, D05.SI, ^GSPC,
-EURUSD=X, BTC-USD, GC=F, ...) and either a --range keyword, an explicit
+Give it one or more tickers in Yahoo notation (AAPL, VOD.L, RELIANCE.NS,
+^GSPC, EURUSD=X, BTC-USD, ...; not Singapore .SI, Tokyo .T or futures =F for
+now) and either a --range keyword, an explicit
 --start/--end window, or --last N to use just the most recent N sessions.
 --benchmark SYMBOL (e.g. ^GSPC) adds one more series to read the others
 against: it gets the same figures and joins every correlation pair.
 
-Prices are the adjusted close (splits and dividends folded in) when Yahoo
-supplies it for every session, otherwise the raw close, so a split doesn't
+Prices are the adjusted close (splits and dividends folded in) when the
+source supplies it for every session, otherwise the raw close, so a split doesn't
 read as a crash. Volatility is annualized over 365 sessions a year for a
 series that trades at weekends (crypto) and 252 otherwise. Each correlation
 uses only the dates both series traded. All figures come from
@@ -34,6 +36,7 @@ import sys
 
 import requests
 
+import price_source
 import yahoo_finance as yf
 from cli_utils import die, use_utf8_output
 from indicators import correlation, max_drawdown, volatility
@@ -93,6 +96,8 @@ def summarize(symbol, meta, rows, basis):
         "symbol": symbol,
         "exchange": exchange,
         "currency": currency,
+        "source": meta.get("source"),
+        "notes": meta.get("notes") or [],
         "basis": basis,
         "sessions": len(prices),
         "start": iso(0),
@@ -136,7 +141,7 @@ def pair_correlation(name_a, rows_a, name_b, rows_b):
 def load_symbol(symbol, params, last):
     """(meta, rows, basis) for symbol, or a skip reason string on failure."""
     try:
-        result = yf.fetch_history(symbol, params)
+        result = price_source.fetch_history(symbol, params)
         meta, rows, basis = extract_closes(result)
     except (requests.RequestException, ValueError, KeyError) as exc:
         return f"failed to fetch prices: {exc}"
@@ -157,7 +162,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "symbols",
         nargs="+",
-        help="Tickers in Yahoo notation, e.g. AAPL VOD.L D05.SI BTC-USD",
+        help="Tickers in Yahoo notation, e.g. AAPL VOD.L RELIANCE.NS BTC-USD",
     )
     yf.add_window_args(parser, DEFAULT_RANGE, "Use only the most recent N sessions")
     parser.add_argument(
@@ -200,7 +205,9 @@ def print_report(payload):
     for row in rows:
         label = row["symbol"] + (" (benchmark)" if row is payload["benchmark"] else "")
         dd = row["max_drawdown"]
-        print(f"{label} - {row['exchange']} ({row['currency']})")
+        print(f"{label} - {row['exchange']} ({row['currency']}) - {row['source']}")
+        for note in row["notes"]:
+            print(f"  note        : {note}")
         print(f"  {row['sessions']} session(s), {row['start']} -> {row['end']}"
               f"  [{row['basis']}, {row['periods_per_year']} sessions/year]")
         print(f"  change      : {pct(row['change'])}  "

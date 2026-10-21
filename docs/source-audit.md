@@ -15,7 +15,7 @@ crawlers; for those the API's own terms decide.
 
 | Source | Used by | Verdict | Action |
 |---|---|---|---|
-| Yahoo Finance (chart, screener, quoteSummary) | `yahoo_finance.py`, every `stock_*.py`, `market_top_volume.py`, `stock_tech_buzz_agent.py`, `app/stock_information/`, 11 agents | **Violates** robots.txt and terms | **Open:** remove or replace with a licensed source |
+| Yahoo Finance (chart, screener, quoteSummary) | `yahoo_finance.py`, the `quoteSummary` `stock_*.py` scripts, `market_top_volume.py`, `stock_tech_buzz_agent.py`, `app/stock_information/`, 6 agents | **Violates** robots.txt and terms | **Open:** price history moved to EODHD / Alpha Vantage on 2026-10-21 (`price_source.py`); the rest still to remove or replace |
 | `ddgs` default `"auto"` backend | `web_search_duckduckgo.py` | **Violated** robots.txt of Google, Yahoo, Startpage, Mojeek, Grokipedia | **Fixed** 2026-10-20: backend pinned to DuckDuckGo |
 | DuckDuckGo HTML results | `web_search_duckduckgo.py` | Grey area: allowed by robots.txt, no search API offered | Kept, last in the `web-search` chain |
 | Open-Meteo | `weather.py`, `weather_forecast.py`, `weather_history.py`, `air_quality.py`, 4 agents | Allowed; **attribution was missing** | **Fixed** 2026-10-20: CC BY 4.0 credit on every result |
@@ -30,8 +30,8 @@ crawlers; for those the API's own terms decide.
 | SerpApi | `web_search_serpapi.py` | Allowed (keyed) | None |
 | Exa | `web_search_exa.py` | Allowed (keyed) | None; don't redistribute retrieved content |
 | Perplexity API | `web_search_perplexity.py` | Allowed (keyed) | None |
-| EODHD end-of-day API | `eodhd_price_history.py` (added 2026-10-21) | Allowed (keyed); personal, non-professional use | None; don't redistribute or display the data to others |
-| Alpha Vantage | `alphavantage_price_history.py` (added 2026-10-21) | Allowed (keyed); personal, non-commercial use | None |
+| EODHD end-of-day API | `eodhd_price_history.py`, and through `price_source.py` the four price scripts and 5 agents (added 2026-10-21) | Allowed (keyed); personal, non-professional use | None; don't redistribute or display the data to others |
+| Alpha Vantage | `alphavantage_price_history.py`, and through `price_source.py` Indian tickers in the four price scripts (added 2026-10-21) | Allowed (keyed); personal, non-commercial use | None |
 
 ## Violations
 
@@ -53,7 +53,11 @@ crawlers; for those the API's own terms decide.
   robots.txt-and-terms check first. Tracked in [`things-to-explore.md`](things-to-explore.md),
   with a replacement shortlist checked on 2026-10-20 (Alpha Vantage recommended,
   SEC EDGAR as a US supplement, Stooq ruled out), and the paid and free
-  price-history options checked on 2026-10-21 (ECB data API ruled out).
+  price-history options checked on 2026-10-21 (ECB data API ruled out). On
+  2026-10-21 the four price scripts (`stock_price_history.py`, the two chart
+  scripts and `stock_risk.py`) and their 5 agents moved to EODHD and Alpha
+  Vantage through `price_source.py`; the screener, `quoteSummary` scripts and the
+  stock web app's quote still call Yahoo.
 
 ### `ddgs` "auto" backend — fixed
 

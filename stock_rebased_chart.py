@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Fetch closing-price history for a series of stock symbols from Yahoo
-Finance's public chart endpoint, rebase each to 100 as of a common reference
-date, and plot the rebased series together with matplotlib. No API key or
-authentication required.
+Fetch closing-price history for a series of symbols from EODHD or Alpha
+Vantage through price_source.py (which needs EODHD_API_KEY and, for India,
+ALPHAVANTAGE_API_KEY), rebase each to 100 as of a common reference date, and
+plot the rebased series together with matplotlib.
 
-Give it one or more tickers in Yahoo's notation (AAPL, VOD.L, D05.SI,
-SAP.DE, ...) and either a --range keyword, an explicit --start/--end window,
+Give it one or more tickers in Yahoo's notation (AAPL, VOD.L, SAP.DE,
+RELIANCE.NS, ...; not Singapore .SI, Tokyo .T or futures =F for now) and either a --range keyword, an explicit --start/--end window,
 or --last N to fetch just the most recent N sessions. Pick the reference
 date with --base-date (YYYY-MM-DD); by default it is the first date in the
 first symbol's price series.
@@ -32,6 +32,7 @@ import sys
 
 import requests
 
+import price_source
 import yahoo_finance as yf
 from cli_utils import die, use_utf8_output
 from indicators import rebase
@@ -50,8 +51,10 @@ BENCHMARK_COLOR = "#000000"
 
 def fetch_closes(symbol, params):
     """Return a list of (date, close) pairs for symbol, oldest first."""
-    result = yf.fetch_history(symbol, params)
+    result = price_source.fetch_history(symbol, params)
     meta, series = yf.extract_series(result)
+    for note in meta.get("notes") or []:
+        print(f"Note: {symbol}: {note}", file=sys.stderr)
     gmtoffset = series["gmtoffset"]
     rows = []
     for ts, close in zip(series["timestamp"], series["close"]):
