@@ -18,7 +18,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/weather-forecast.md`](#claude-code-agent-weather-forecast) — Claude Code subagent that calls `weather_forecast.py` and reports the upcoming multi-day forecast, UV index or sunrise / sunset for a named location
 - [`weather_history.py`](#weather_historypy) — past weather for a named location on a date or over a range (back to 1940), with a range summary, from Open-Meteo's archive, sharing `weather.py`'s geocoding
 - [`.claude/agents/weather-history.md`](#claude-code-agent-weather-history) — Claude Code subagent that calls `weather_history.py` and reports the weather on a past date or period at a named location
-- [`air_quality.py`](#air_qualitypy) — current air quality (US AQI, European AQI, pollutant levels, and pollen counts in Europe) for a named location, sharing `weather.py`'s geocoding
+- [`air_quality.py`](#air_qualitypy) — current air quality (US AQI, European AQI, pollutant levels, and pollen counts in Europe) for a named location, or with `--forecast` each coming day's worst AQI and pollen (about 4–5 days ahead), sharing `weather.py`'s geocoding
 - [`.claude/agents/air-quality.md`](#claude-code-agent-air-quality) — Claude Code subagent that calls `air_quality.py` and reports the current air quality / AQI for a named location
 - [`trip_weather.py`](#trip_weatherpy) — weather for a trip (a place and up to 31 days, up to a year ahead): the forecast where there is one, typical weather from the same dates in past years beyond it, UV, sun times, and air quality and pollen where forecast, merged by date from the other weather scripts
 - [`.claude/agents/trip-weather.md`](#claude-code-agent-trip-weather) — Claude Code subagent that calls `trip_weather.py` and reports the weather for a trip, keeping forecast and typical weather clearly apart
@@ -624,7 +624,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ## air_quality.py
 
-Prints the current air quality — US AQI, European AQI, raw pollutant concentrations, and pollen counts (Europe only) — for a named location, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and air quality APIs. No API key or authentication required.
+Prints the current air quality — US AQI, European AQI, raw pollutant concentrations, and pollen counts (Europe only) — for a named location, or with `--forecast` each coming day's worst hour of US AQI, European AQI and pollen, using [Open-Meteo](https://open-meteo.com/)'s public geocoding and air quality APIs. No API key or authentication required.
 
 Requires `weather.py` to be present in the same directory — it imports `fetch_json`, `format_place`, and `geocode` directly from it rather than shelling out or duplicating that logic (the same sharing pattern [`weather_forecast.py`](#weather_forecastpy) uses). It also imports `die` from [`cli_utils.py`](#cli_utilspy).
 
@@ -643,12 +643,13 @@ pip install requests
 ### Usage
 
 ```bash
-python3 air_quality.py LOCATION [--json]
+python3 air_quality.py LOCATION [--forecast] [--json]
 ```
 
 | Flag | Default | Description |
 |---|---|---|
 | `LOCATION` (positional) | — | Free-text place name, e.g. `"London"`, `"New York"`, `"Tokyo"` |
+| `--forecast` | off | Report each coming day's worst hour (US AQI and category, European AQI, pollen) instead of current conditions; values run about 4–5 days ahead (pollen about 3, Europe only) |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
@@ -708,11 +709,37 @@ With `--json`, the leading progress line is suppressed and the result prints as 
 
 For a place in Europe, the pollen line lists each plant's count, e.g. `Pollen (grains/m³): alder 0.0, birch 0.0, grass 0.0, mugwort 0.0, olive 0.0, ragweed 0.0` (London in October, out of season).
 
+#### Forecast (`--forecast`)
+
+From a live run on 2026-10-21:
+
+```
+$ python3 air_quality.py Delhi --forecast
+Looking up the air quality forecast for 'Delhi'...
+
+Air quality forecast for Delhi, National Capital Territory of Delhi, India (each day's worst hour)
+
+Date          US AQI  Category                          EU AQI  Pollen (grains/m³)
+----------------------------------------------------------------------------------
+2026-10-21       176  Unhealthy                            128  -
+2026-10-22       187  Unhealthy                            141  -
+2026-10-23       185  Unhealthy                            132  -
+2026-10-24       170  Unhealthy                            122  -
+2026-10-25       167  Unhealthy                             91  -  [19 h of forecast]
+
+Note: Forecast values run out after about 4-5 days (pollen after about 3, and only in Europe).
+
+Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.
+```
+
+Each value is the day's **worst hour**. A day the forecast covers only partly is marked with its hours; pollen is `-` outside Europe or past the pollen forecast, `none` when every plant is at zero. With `--json` the result is `{location, admin1, country, latitude, longitude, days: [{date, us_aqi, us_aqi_category, european_aqi, alder_pollen … ragweed_pollen, hours}], note, attribution}`.
+
 ### How it works
 
 1. **Geocode** — Calls `weather.geocode()` (shared with [`weather.py`](#weatherpy)) to resolve the free-text `LOCATION` to its top-matching place.
 2. **Fetch current air quality** — Calls Open-Meteo's air quality endpoint (`air-quality-api.open-meteo.com/v1/air-quality`) with `current=us_aqi,european_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone` plus the six `<plant>_pollen` fields (`CURRENT_FIELDS`) and `timezone=auto` at that location's coordinates.
 3. **Categorize and display** — Maps the numeric US AQI to its EPA category label via `us_aqi_category()` (`US_AQI_CATEGORIES`), and prints location, both AQI values, the raw pollutant concentrations, the pollen counts on one line (via `format_pollen()`), and the observation time (or the equivalent JSON object with `--json`).
+4. **With `--forecast`** — instead of steps 2–3, `get_air_quality_forecast()` fetches the hourly forecast for every forecast day from the place's today (`fetch_hourly_air_quality()`), reduces it to each day's worst hour (`daily_maxima()`), and `format_forecast()` prints the table (shared with [`trip_weather.py`](#trip_weatherpy) as `forecast_table()`) with the forecast note.
 
 ### Configuration
 
@@ -729,13 +756,17 @@ These are set as constants near the top of the file — edit them directly to ch
 
 - `us_aqi_category(us_aqi)` — Maps a US AQI value to its EPA category label (`Good`, `Moderate`, `Unhealthy for Sensitive Groups`, `Unhealthy`, `Very Unhealthy`, `Hazardous`); returns `None` if `us_aqi` is `None`.
 - `fetch_current_air_quality(latitude, longitude)` — Fetches the `current` object for a coordinate pair from Open-Meteo's air quality endpoint.
-- `fetch_hourly_air_quality(latitude, longitude, start, end)` — Fetches the hourly air-quality forecast (`HOURLY_FIELDS`: US and European AQI and pollen) between two dates. The API accepts up to `MAX_FORECAST_DAYS` (7) days ahead, but values run out after about 4–5 days (pollen about 3). Used by [`trip_weather.py`](#trip_weatherpy); this script's own CLI still reports current conditions only.
+- `fetch_hourly_air_quality(latitude, longitude, start=None, end=None)` — Fetches the hourly air-quality forecast (`HOURLY_FIELDS`: US and European AQI and pollen): between two dates when given (as [`trip_weather.py`](#trip_weatherpy) asks), otherwise all `MAX_FORECAST_DAYS` (7) days from the place's today. Values run out after about 4–5 days (pollen about 3).
 - `daily_maxima(hourly)` — Reduces that hourly block to each local day's worst hour: `{date: {us_aqi, us_aqi_category, european_aqi, <plant>_pollen…, hours}}`, `hours` counting the hours with a US AQI; days with no values are left out.
+- `get_air_quality_forecast(location)` — Geocodes and returns `{location, admin1, country, latitude, longitude, days, note}` for `--forecast`, `days` in date order, or `None` for an unknown place.
+- `format_day_pollen(air)` — A day's pollen as `birch 3.2, grass 1`, `none` (all zero) or `-` (no data).
+- `forecast_table(dated)` — The forecast table's lines for `(date, daily_maxima() entry)` pairs, marking partial days; shared with `trip_weather.py`.
+- `format_forecast(row)` — Renders a `get_air_quality_forecast()` record: title, table (or "No forecast values returned.") and the `FORECAST_NOTE`.
 - `get_air_quality(location)` — Orchestrates geocoding (via `weather.geocode()`) and the current-air-quality fetch; returns the flattened `{location, admin1, country, latitude, longitude, us_aqi, us_aqi_category, european_aqi, pm2_5, pm10, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, alder_pollen, birch_pollen, grass_pollen, mugwort_pollen, olive_pollen, ragweed_pollen, time}` record, or `None` if the location can't be found.
 - `format_pollen(row)` — Renders a record's pollen counts as one `Pollen (grains/m³): alder …, birch …` line, or `Pollen: not available (Europe only)` when every pollen value is `None` or missing.
 - `format_air_quality(row)` — Renders a `get_air_quality()` record as a multi-line human-readable string (its place line comes from `weather.format_place()`).
-- `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--json`.
-- `main(argv=None)` — Entry point; geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
+- `parse_args(argv=None)` — Parses the positional `LOCATION` plus `--forecast` and `--json`.
+- `main(argv=None)` — Entry point; with `--forecast` uses `get_air_quality_forecast()` / `format_forecast()`, otherwise geocodes, fetches, handles top-level network/not-found errors, and prints the result (human-readable or JSON, depending on `--json`).
 
 See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, and `format_place()`.
 
@@ -748,7 +779,7 @@ See [`weather.py`](#weatherpy) for `geocode()`, `fetch_json()`, and `format_plac
 
 - **Attribution is required.** Open-Meteo's data is licensed [CC BY 4.0](https://open-meteo.com/en/terms), so the report always ends with `Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.` and the JSON carries the same text as `attribution` (the constant `weather.ATTRIBUTION`, shared by all four Open-Meteo scripts). Keep it when passing results on. Free use is for non-commercial purposes, under 10,000 calls a day.
 - Same geocoding caveat as [`weather.py`](#weatherpy): the query's single top match is used, so an ambiguous name may resolve to the wrong place — disambiguate by adding a country or region to the query.
-- Reports only the current reading at a single instant — no forecast or historical air quality (Open-Meteo's air quality API supports both `hourly=` forecasts and archived history; this script only calls the `current` shortcut).
+- Without `--forecast`, reports only the current reading at a single instant. `--forecast` gives each day's worst hour, not hourly detail or averages, and reaches only about 4–5 days ahead (pollen about 3). There is no historical air quality (Open-Meteo has archived history; this script doesn't call it).
 - The US AQI and European AQI are **not directly comparable** — they use different pollutant breakpoints and scales (US AQI runs roughly 0-500, European AQI roughly 0-100+). Don't average or otherwise combine them.
 - Open-Meteo's air quality model (CAMS) is coarser-resolution than a dedicated ground-station network like WAQI/AirNow, so readings can differ somewhat from a country's own official monitoring stations, especially for hyper-local pollution sources.
 - Pollen counts come from Open-Meteo's CAMS European model, so they exist **only for Europe** — everywhere else all six are `null`. In Europe a `0.0` is a real reading, usually meaning the plant is out of season. They are raw counts in grains/m³; the script doesn't map them to low/moderate/high bands.
@@ -766,7 +797,7 @@ Lets Claude Code answer questions like "what's the air quality in Beijing?", "is
 
 ### How it's invoked
 
-- **Automatically** — Claude Code selects this subagent on its own for current air pollution / AQI / smog questions about a named place, based on the `description` field in its frontmatter.
+- **Automatically** — Claude Code selects this subagent on its own for current or coming days' air pollution / AQI / smog / pollen questions about a named place (adding `--forecast` for coming days), based on the `description` field in its frontmatter.
 - **Explicitly** — via the `Agent` tool with `subagent_type: "air-quality"`.
 
 Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
@@ -791,7 +822,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Ends its report with a credit line for Open-Meteo.com, whose data is licensed CC BY 4.0 and requires attribution.
 - Requires `air_quality.py` (and its `weather.py` and `requests` dependencies) to be present and runnable from the repo root.
 - Pollen counts exist only for places in Europe, and are raw grains/m³ with no low/high bands.
-- Reports current conditions only — there is no forecast or historical air quality to fall back on, so it says so rather than fabricating one.
+- Current conditions, or with `--forecast` the next 4–5 days (each day's worst hour); there is no historical air quality, so it says so rather than fabricating one.
 - Inherits all the limitations of [`air_quality.py`](#air_qualitypy) itself (geocoding takes only the top match for an ambiguous name, the two AQI scales aren't comparable, Open-Meteo's model resolution versus dedicated ground stations, live-snapshot results).
 
 ---
@@ -901,7 +932,7 @@ Pollen shows the plants above zero, `none` when all are zero, and `-` when there
 
 - `get_trip_weather(location, start, end, years=5, unit="celsius", today=None)` — the whole record, or `None` for an unknown place.
 - `forecast_records(latitude, longitude, dates, unit)` / `typical_records(latitude, longitude, dates, years, unit)` / `typical_record(date, samples)` — the two kinds of day record.
-- `summarize(days)`, `format_trip(row)`, `format_pollen(air)` — summary and report.
+- `summarize(days)`, `format_trip(row)` — summary and report (the air-quality table comes from `air_quality.forecast_table()`).
 - `shift_year(date, years)`, `date_range(start, end)`, `today_utc()` — date helpers.
 
 ### Error handling

@@ -145,13 +145,6 @@ class TestGetTripWeather:
 
 
 class TestFormat:
-    def test_pollen(self):
-        assert tw.format_pollen({f: None for f in air_quality.POLLEN_FIELDS}) == "-"
-        assert tw.format_pollen({f: 0.0 for f in air_quality.POLLEN_FIELDS}) == "none"
-        air = {f: 0.0 for f in air_quality.POLLEN_FIELDS}
-        air["birch_pollen"], air["grass_pollen"] = 3.2, 1.0
-        assert tw.format_pollen(air) == "birch 3.2, grass 1"
-
     def test_report_sections(self, wired):
         start = TODAY + dt.timedelta(days=1)
         out = tw.format_trip(tw.get_trip_weather("Paris", start, TODAY + dt.timedelta(days=17),

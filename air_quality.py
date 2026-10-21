@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Look up the current air quality for a named location, using Open-Meteo's
-public geocoding and air quality APIs (https://open-meteo.com/).
+public geocoding and air quality APIs (https://open-meteo.com/). With
+--forecast, report each coming day's worst hour instead (US AQI, European
+AQI, pollen); forecast values run about 4-5 days ahead, pollen about 3.
 
 No API key required.
 
@@ -91,17 +93,26 @@ MAX_FORECAST_DAYS = 7
 HOURLY_FIELDS = ",".join(["us_aqi", "european_aqi", *POLLEN_FIELDS])
 
 
-def fetch_hourly_air_quality(latitude, longitude, start, end):
-    """The ``hourly`` block of the air-quality forecast from ``start`` to
-    ``end`` (dates, inclusive, local time). Used by trip_weather.py."""
+FORECAST_NOTE = (
+    "Forecast values run out after about 4-5 days (pollen after about 3, and only in Europe)."
+)
+
+
+def fetch_hourly_air_quality(latitude, longitude, start=None, end=None):
+    """The ``hourly`` block of the air-quality forecast: from ``start`` to
+    ``end`` (dates, inclusive, local time) when given, as trip_weather.py
+    asks, otherwise every forecast day from the place's today."""
     params = {
         "latitude": latitude,
         "longitude": longitude,
         "hourly": HOURLY_FIELDS,
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
         "timezone": "auto",
     }
+    if start is not None and end is not None:
+        params["start_date"] = start.isoformat()
+        params["end_date"] = end.isoformat()
+    else:
+        params["forecast_days"] = MAX_FORECAST_DAYS
     data = fetch_json(AIR_QUALITY_URL, params)
     return data.get("hourly") or {}
 
@@ -163,6 +174,59 @@ def get_air_quality(location):
     }
 
 
+def get_air_quality_forecast(location):
+    """Look up a location and return its daily air-quality forecast (each
+    day's worst hour, see daily_maxima()) as a dict, or None if the
+    location can't be found."""
+    place = geocode(location)
+    if place is None:
+        return None
+
+    hourly = fetch_hourly_air_quality(place["latitude"], place["longitude"])
+    days = [{"date": date, **air} for date, air in sorted(daily_maxima(hourly).items())]
+    return {**place_fields(place), "days": days, "note": FORECAST_NOTE}
+
+
+def format_day_pollen(air):
+    """A day's pollen maxima as "birch 3.2, grass 1", "none" (all zero) or
+    "-" (no pollen data: outside Europe, or past the pollen forecast)."""
+    counts = [(plant, air.get(f"{plant}_pollen")) for plant in POLLEN_TYPES]
+    known = [(plant, value) for plant, value in counts if value is not None]
+    if not known:
+        return "-"
+    present = [f"{plant} {value:g}" for plant, value in known if value > 0]
+    return ", ".join(present) if present else "none"
+
+
+def forecast_table(dated):
+    """Table lines for (date, daily_maxima() entry) pairs: worst US AQI and
+    its category, worst European AQI and pollen, marking a day the forecast
+    covers only partly. Shared with trip_weather.py."""
+    def cell(value, width):
+        return f"{'-' if value is None else value:>{width}}"
+
+    header = f"{'Date':<12}{'US AQI':>8}  {'Category':<32}{'EU AQI':>8}  Pollen (grains/m³)"
+    lines = [header, "-" * len(header)]
+    for date, air in dated:
+        partial = f"  [{air['hours']} h of forecast]" if air["hours"] < 24 else ""
+        lines.append(
+            f"{date:<12}{cell(air['us_aqi'], 8)}  {air['us_aqi_category'] or '-':<32}"
+            f"{cell(air['european_aqi'], 8)}  {format_day_pollen(air)}{partial}"
+        )
+    return lines
+
+
+def format_forecast(row):
+    """Render a get_air_quality_forecast() record as a human-readable table."""
+    lines = [f"Air quality forecast for {format_place(row)} (each day's worst hour)", ""]
+    if row["days"]:
+        lines += forecast_table((day["date"], day) for day in row["days"])
+    else:
+        lines.append("No forecast values returned.")
+    lines += ["", f"Note: {row['note']}"]
+    return "\n".join(lines)
+
+
 def format_pollen(row):
     """Render a record's pollen counts as one line, or say they aren't
     available when every value is None (outside Europe)."""
@@ -195,11 +259,18 @@ def format_air_quality(row):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Look up the current air quality for a named location."
+        description="Look up the current air quality (or, with --forecast, the "
+                    "daily forecast) for a named location."
     )
     parser.add_argument(
         "location",
         help='Location name, e.g. "London", "New York", "Tokyo"',
+    )
+    parser.add_argument(
+        "--forecast",
+        action="store_true",
+        help="Report each coming day's worst hour (US AQI, European AQI, pollen) "
+             "instead of current conditions; values run about 4-5 days ahead.",
     )
     parser.add_argument(
         "--json",
@@ -214,10 +285,12 @@ def main(argv=None):
     args = parse_args(argv)
 
     if not args.json:
-        print(f"Looking up air quality for '{args.location}'...\n")
+        what = "the air quality forecast" if args.forecast else "air quality"
+        print(f"Looking up {what} for '{args.location}'...\n")
 
+    lookup = get_air_quality_forecast if args.forecast else get_air_quality
     try:
-        row = get_air_quality(args.location)
+        row = lookup(args.location)
     except requests.RequestException as exc:
         die(str(exc), args.json)
 
@@ -229,7 +302,7 @@ def main(argv=None):
         print(json.dumps(row, indent=2))
         return
 
-    print(format_air_quality(row))
+    print(format_forecast(row) if args.forecast else format_air_quality(row))
     print(f"\n{ATTRIBUTION}")
 
 

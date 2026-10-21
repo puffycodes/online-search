@@ -224,16 +224,6 @@ def _sun_cells(day):
     return f"{sunrise:>13}{sunset:>8}{format_daylight(day['daylight_hours']):>10}"
 
 
-def format_pollen(air):
-    """The day's pollen as "birch 3.2, grass 1.0", "none" or "-" (no data)."""
-    counts = [(plant, air.get(f"{plant}_pollen")) for plant in air_quality.POLLEN_TYPES]
-    known = [(plant, value) for plant, value in counts if value is not None]
-    if not known:
-        return "-"
-    present = [f"{plant} {value:g}" for plant, value in known if value > 0]
-    return ", ".join(present) if present else "none"
-
-
 def format_trip(row):
     """Render a get_trip_weather() record as a human-readable report."""
     unit = row["unit"]
@@ -279,15 +269,8 @@ def format_trip(row):
 
     with_air = [d for d in row["days"] if d["air"]]
     if with_air:
-        header = f"{'Date':<12}{'US AQI':>8}  {'Category':<32}{'EU AQI':>8}  Pollen (grains/m³)"
-        lines += ["", "Air quality (the day's worst hour)", header, "-" * len(header)]
-        for day in with_air:
-            air = day["air"]
-            partial = f"  [{air['hours']} h of forecast]" if air["hours"] < 24 else ""
-            lines.append(
-                f"{day['date']:<12}{_cell(air['us_aqi'], 8)}  {air['us_aqi_category'] or '-':<32}"
-                f"{_cell(air['european_aqi'], 8)}  {format_pollen(air)}{partial}"
-            )
+        lines += ["", "Air quality (the day's worst hour)"]
+        lines += air_quality.forecast_table((day["date"], day["air"]) for day in with_air)
 
     if row["notes"]:
         lines.append("")
