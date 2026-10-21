@@ -20,6 +20,8 @@
     - The monthly job threads (Who is hiring?, Who wants to be hired?, Freelancer? Seeking freelancer?) are left out by the search itself; include them only when the user asks about jobs or hiring demand.
     - Skip comments that use the word in another sense or matched only on their author's name; ask for more results than needed so enough remain.
 - Choose the order: by relevance to find the big threads, by date for "lately" or "latest".
+    - For comment searches, pick the period with a date sort and a date window rather than relying on relevance: comments have no score, so relevance returns an arbitrary slice (e.g. only 2015 comments). Sample a long thread in more than one window.
+    - For hiring-demand questions, find the monthly "Who is hiring?" threads (posted by whoishiring) and search inside each one, with job threads included, rather than one site-wide comment search; compare with one or two other skills as a baseline.
 - Turn the user's wording into a date window relative to today, a minimum score, or an author, if given.
 - To summarize a particular thread (one the user links, or the biggest one a search found), read it: its top comments in HN's ranked order, with a few replies under each; read more for a very large thread.
     - For "what does HN think of {{Topic}}", find the biggest threads, read the top one or two, and search recent comments.

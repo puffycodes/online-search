@@ -296,8 +296,10 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 - [ ] **More targeted test runs**: `docs/features/agent/hottest-tech-discussion-summary/test-runs.md`
   has caught real edge cases in the research summary agent. The same approach (a
   fixed input per judgement rule, with pass criteria) could cover other agents with
-  judgement steps: `hn-search`'s opinion sampling. `web-search`'s fallback rules and
-  `url-summary`'s judgement rules got theirs on 2026-10-21
+  judgement steps. `web-search`, `url-summary` and `hn-search` got theirs on 2026-10-21
   (`docs/features/agent/<agent>/test-runs.md`). Still untested: `web-search` with a real
-  quota message or an empty result list, and `url-summary`'s `ai-input=no` note (no live
-  site found that sets it for every client).
+  quota message or an empty result list, `url-summary`'s `ai-input=no` note (no live
+  site found that sets it for every client), and `hn-search`'s invalid-argument and
+  `--author` paths. Other agents with judgement steps could follow: `trip-weather`
+  (turning "next week" into dates, keeping typical weather apart) and `url-feed`
+  (choosing a site's URL itself and the robots flag that goes with it).
