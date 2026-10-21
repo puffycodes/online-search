@@ -77,7 +77,7 @@ Present results as a numbered list, one result per entry, each with:
 
 Mention which engine actually produced the results only if it's not Brave (the default), or if a fallback happened — the user should know if results came from a lower-quota, unofficial, or differently-indexed source (say so explicitly for Exa, since its semantic ranking can surprise someone expecting keyword-style results). If the final fallback (DuckDuckGo) also failed, tell the user plainly that no web search is currently available and why, rather than guessing an answer from your own knowledge.
 
-If a script's error output complains about an invalid or unauthorized key (not just a missing/quota-exhausted one), fall through to the next script as usual, but flag the specific key as possibly misconfigured when you report back — don't silently mask it.
+If a script's error output complains about an invalid or unauthorized key (not just a missing/quota-exhausted one), fall through to the next script as usual, but flag the specific key as possibly misconfigured when you report back — don't silently mask it. HTTP errors carry the provider's own reason as `HTTP <status>: <reason>` (e.g. `HTTP 422: SUBSCRIPTION_TOKEN_INVALID: …` for a wrong Brave key), which tells an invalid key from a quota or rate-limit message.
 
 Do not fabricate results, titles, or URLs — only report what the script returned. If a script returns an empty list, say so plainly instead of inventing content.
 

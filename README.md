@@ -4100,6 +4100,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Error handling
 
 - If `BRAVE_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- A non-2xx error carries the provider's own reason when its body has one, through `cli_utils.raise_for_status()` (e.g. Brave's `HTTP 422: SUBSCRIPTION_TOKEN_INVALID: The provided subscription token is invalid.` for a wrong key), and the API key is replaced by `<redacted>` in every error message, through `cli_utils.redact()`. SerpApi sends its key in the URL, which a connection error's message repeats.
 - If a request fails (network error, timeout, non-2xx response — e.g. an invalid key or exceeded quota), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
 - If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
 
@@ -4326,6 +4327,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Error handling
 
 - If `SERPAPI_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- A non-2xx error carries the provider's own reason when its body has one, through `cli_utils.raise_for_status()` (e.g. Brave's `HTTP 422: SUBSCRIPTION_TOKEN_INVALID: The provided subscription token is invalid.` for a wrong key), and the API key is replaced by `<redacted>` in every error message, through `cli_utils.redact()`. SerpApi sends its key in the URL, which a connection error's message repeats.
 - If a request fails (network error, timeout, non-2xx response, or a 200 response carrying an `"error"` field — e.g. an invalid key or exceeded quota — other than SerpApi's "hasn't returned any results" message), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
 - If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
 
@@ -4440,6 +4442,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Error handling
 
 - If `SERPER_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- A non-2xx error carries the provider's own reason when its body has one, through `cli_utils.raise_for_status()` (e.g. Brave's `HTTP 422: SUBSCRIPTION_TOKEN_INVALID: The provided subscription token is invalid.` for a wrong key), and the API key is replaced by `<redacted>` in every error message, through `cli_utils.redact()`. SerpApi sends its key in the URL, which a connection error's message repeats.
 - If a request fails (network error, timeout, non-2xx response such as `403 Unauthorized` for a bad key, or a response body carrying a `"message"` field instead of results — e.g. exhausted credits), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
 - If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
 
@@ -4549,6 +4552,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Error handling
 
 - If `TAVILY_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- A non-2xx error carries the provider's own reason when its body has one, through `cli_utils.raise_for_status()` (e.g. Brave's `HTTP 422: SUBSCRIPTION_TOKEN_INVALID: The provided subscription token is invalid.` for a wrong key), and the API key is replaced by `<redacted>` in every error message, through `cli_utils.redact()`. SerpApi sends its key in the URL, which a connection error's message repeats.
 - If the request fails (network error, timeout, non-2xx response — e.g. `401` for an invalid key or `432`/`433`-style responses Tavily uses for plan/usage limits), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
 - If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
 
@@ -4660,6 +4664,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Error handling
 
 - If `EXA_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- A non-2xx error carries the provider's own reason when its body has one, through `cli_utils.raise_for_status()` (e.g. Brave's `HTTP 422: SUBSCRIPTION_TOKEN_INVALID: The provided subscription token is invalid.` for a wrong key), and the API key is replaced by `<redacted>` in every error message, through `cli_utils.redact()`. SerpApi sends its key in the URL, which a connection error's message repeats.
 - If the request fails (network error, timeout, non-2xx response — e.g. `401`/`403` for an invalid key or `429` for exhausted credit), the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed.
 - If no results are found, the script prints `"No results found."` (or `[]` with `--json`) and exits normally.
 
@@ -4774,6 +4779,7 @@ These are set as constants near the top of the file — edit them directly to ch
 ### Error handling
 
 - If `PERPLEXITY_API_KEY` isn't set (via a real environment variable or `.env`), the script prints an error and exits with status code 1 before making any network request.
+- A non-2xx error carries the provider's own reason when its body has one, through `cli_utils.raise_for_status()` (e.g. Brave's `HTTP 422: SUBSCRIPTION_TOKEN_INVALID: The provided subscription token is invalid.` for a wrong key), and the API key is replaced by `<redacted>` in every error message, through `cli_utils.redact()`. SerpApi sends its key in the URL, which a connection error's message repeats.
 - If the request fails (network error, timeout, or a non-2xx response) or the response carries no `choices` or an empty answer, the script prints an error and exits with status code 1 — plain text on stderr normally, or a JSON object (`{"error": "..."}`) on stderr when `--json` is passed. Perplexity returns `401` both for an invalid/missing key and for a billing/quota problem on an otherwise-valid key (`"type": "insufficient_quota"` in the body) — since there's no free tier, a `401` on a key you know is correct usually means billing needs to be set up or topped up at https://www.perplexity.ai/settings/api, not that the key itself is wrong.
 
 ### Notes / limitations
@@ -4828,6 +4834,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - [`web_search_perplexity.py`](#web_search_perplexitypy) is deliberately excluded from this agent's fallback chain — it returns a synthesized answer plus sources, not a ranked `[{rank, title, url, snippet}, ...]` array, so it doesn't fit this agent's uniform result-list parsing. Use it directly (or via a dedicated agent) for "give me a cited answer" requests rather than "give me a list of pages" requests.
 - Inherits all the limitations of whichever underlying script actually serves the request — see that script's own "Notes / limitations" section.
 - The fallback order favors quota and official-API-ness over result quality; it does not compare or merge results across engines, it just uses the first one that works.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/web-search/test-runs.md`](docs/features/agent/web-search/test-runs.md) lists targeted live runs of its fallback rules (normal path, missing key, invalid key, transient error, every engine failing), each forced with an environment variable on the command line. Their first run, on 2026-10-21, found two script bugs, both fixed: the scripts dropped the provider's error reason, and `web_search_serpapi.py` printed its key in connection errors.
 
 ---
 
@@ -5759,6 +5766,9 @@ Small helpers shared by the command-line scripts: UTF-8 output, uniform error ex
 
 - `use_utf8_output()` — Switches `sys.stdout` and `sys.stderr` to UTF-8. Every script's `main()` calls it first, before parsing arguments. Without it, Python on Windows writes piped or redirected output in the ANSI code page (cp1252): `°` and similar characters garble in a UTF-8 reader such as Git Bash, and any character cp1252 lacks (Japanese, Chinese, emoji, many symbols in web-search results or HN comments) raises `UnicodeEncodeError` and crashes the script. A stream that can't be reconfigured (e.g. one replaced by a test harness) is left alone. `--json` output was never affected, since `json.dumps` escapes non-ASCII characters.
 - `die(message, as_json=False)` — Prints an error to stderr and exits the process with status code 1. With `as_json=True` the error is emitted as `{"error": message}` (for the `--json` tool modes); otherwise as a plain `Error: <message>` line. Used everywhere the scripts previously hand-rolled the same "print and `sys.exit(1)`" block.
+- `redact(message, secret)` — `message` with every occurrence of `secret` replaced by `<redacted>`; the keyed `web_search_*.py` scripts pass their error messages through it.
+- `http_error_detail(response)` — The provider's own reason for a failed request: a JSON body's `error` / `message` / `detail` (a string, a `{code, detail, message}` object as Brave sends, or a list of validation errors), else a short non-HTML text body, else `None`.
+- `raise_for_status(response)` — `response.raise_for_status()`, but when `http_error_detail()` finds a reason, the same exception type is raised as `HTTP <status>: <reason>` instead of requests' bare `422 Client Error: … for url: …`. Used by the keyed `web_search_*.py` scripts.
 - `require_env(name, script, as_json=False)` — Returns environment variable `name`, or calls `die()` (status code 1) with `"<name> environment variable must be set. See the module docstring in <script> for how to obtain one."` if it is unset or empty. Used by the six `web_search_*.py` scripts that need an API key, each calling `load_dotenv()` first so a `.env` value counts.
 - `validate_url_scheme(url, as_json=False)` — Calls `die()` (status code 1) unless `url` starts with `http://` or `https://`. Shared by the four `url_*.py` scripts (`url_content.py`, `url_availability.py`, `url_links.py`, `url_metadata.py`), which all take a URL positional and reject a bare domain/path before making any request.
 - `response_text(response)` — A `requests` response's body as text, decoded correctly. When the `Content-Type` header names no charset, `requests` falls back to ISO-8859-1 for `text/*`, which garbles UTF-8 pages ("—" comes out as "â€”"). In that case this uses the encoding `requests` detects from the bytes; a charset the server names is left alone. Used by `url_content.py`, `url_links.py` and `url_metadata.py` (not `url_availability.py`, which never reads the body).

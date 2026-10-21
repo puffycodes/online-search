@@ -33,7 +33,15 @@ import json
 
 import requests
 
-from cli_utils import die, load_dotenv, positive_int, require_env, use_utf8_output
+from cli_utils import (
+    die,
+    load_dotenv,
+    positive_int,
+    raise_for_status,
+    redact,
+    require_env,
+    use_utf8_output,
+)
 
 SEARCH_URL = "https://api.perplexity.ai/chat/completions"
 # Sonar answers take noticeably longer than a plain search-results
@@ -56,7 +64,7 @@ def fetch_answer(query, api_key, model=DEFAULT_MODEL):
     response = requests.post(
         SEARCH_URL, headers=headers, json=payload, timeout=REQUEST_TIMEOUT
     )
-    response.raise_for_status()
+    raise_for_status(response)
     data = response.json()
 
     choices = data.get("choices") or []
@@ -133,7 +141,7 @@ def main(argv=None):
     try:
         answer, raw_sources = fetch_answer(args.query, api_key, args.model)
     except requests.RequestException as exc:
-        die(str(exc), args.json)
+        die(redact(str(exc), api_key), args.json)
 
     sources = [
         source_to_dict(rank, item)

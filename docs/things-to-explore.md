@@ -169,9 +169,8 @@ before the top picks because it's about the repo's existing sources, not new one
 Chosen on 2026-10-19, in suggested order. Each is described in full in its section
 below; remove it from both places when it's done.
 
-1. **Targeted test runs for `web-search`** (Repo and tooling): every research flow
-   depends on it, and its fallback rules (missing key, quota message, transient
-   error) have never been tested on purpose.
+Both picks were done on 2026-10-21 (the broken-link checker and the `web-search` test
+runs). Choose the next ones from the sections below.
 
 ## Combining existing scripts
 
@@ -300,5 +299,6 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 - [ ] **More targeted test runs**: `docs/features/agent/hottest-tech-discussion-summary/test-runs.md`
   has caught real edge cases in the research summary agent. The same approach (a
   fixed input per judgement rule, with pass criteria) could cover other agents with
-  judgement steps: `url-summary`, `hn-search`'s opinion sampling, and `web-search`'s
-  fallback choice.
+  judgement steps: `url-summary` and `hn-search`'s opinion sampling. `web-search`'s
+  fallback rules got theirs on 2026-10-21 (`docs/features/agent/web-search/test-runs.md`);
+  still untested there: a real quota message and an empty result list.
