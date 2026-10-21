@@ -4187,6 +4187,7 @@ The agent's frontmatter restricts it to `Bash` (run the script).
 - Requires `osv_vulnerabilities.py` and its `cli_utils.py` helper (plus the `requests` dependency) to be present and runnable from the repo root.
 - Only as good as the package name and ecosystem it picks; a wrong one gives an empty result that looks like a clean package.
 - The "lowest version that clears them all" is the agent's reading of the per-vulnerability fixed versions, not a figure the script computes; across several release lines it lists fixes per vulnerability instead.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/package-vulnerabilities/test-runs.md`](docs/features/agent/package-vulnerabilities/test-runs.md) lists targeted live runs of its judgement rules (the lowest version that clears everything, never calling a clean result "safe", a misspelled name, a name in several registries, malware, no version given, the fix for one named bug); all passed on 2026-10-21.
 - Inherits all the limitations of [`osv_vulnerabilities.py`](#osv_vulnerabilitiespy) itself.
 
 ---

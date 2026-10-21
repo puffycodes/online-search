@@ -303,3 +303,7 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   `--author` paths. `trip-weather` and `url-feed` got theirs on 2026-10-21 too; they found
   Open-Meteo's daylight-saving error in sun times (fixed in `weather.local_daily()`)
   and a `--since` run cut short by the default `--limit` (fixed in the agent).
+  `package-vulnerabilities` got its runs on 2026-10-21 as well; all passed, with no
+  changes needed. Still without runs: `air-quality` (its new `--forecast`) and
+  `url-broken-links`; and the fixes to `hn-search`, `trip-weather` and `url-feed` want a
+  confirming rerun in a session started after them.
