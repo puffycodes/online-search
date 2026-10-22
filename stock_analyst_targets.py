@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 Retrieve a stock's analyst price targets, recommendations and recent
-upgrades / downgrades from Yahoo Finance's public ``quoteSummary`` endpoint. No API key or authentication
-required (a cookie + crumb are fetched automatically, via
-yahoo_finance.fetch_quote_summary()).
+upgrades / downgrades through stock_data.analyst_view(), which serves them
+from Yahoo Finance's public ``quoteSummary`` endpoint today. No API key or
+authentication required (yahoo_finance.py fetches a cookie + crumb
+automatically).
 
 Give it a ticker in Yahoo's notation (AAPL, VOD.L, D05.SI, SAP.DE, ...). The
 script reports:
@@ -29,85 +30,29 @@ structured output. On failure the process exits non-zero and prints
 
 import argparse
 import json
-from datetime import datetime, timezone
 
 import requests
 
-import yahoo_finance as yf
+import stock_data
 from cli_utils import die, positive_int, use_utf8_output
 from stock_intrinsic_value import _fmt_money
 
-MODULES = ["price", "financialData", "recommendationTrend", "upgradeDowngradeHistory"]
 DEFAULT_DAYS = 90
 
 TARGETS = [("low", "Low"), ("median", "Median"), ("mean", "Mean"), ("high", "High")]
 RATINGS = [
-    ("strong_buy", "strongBuy", "Strong buy"),
-    ("buy", "buy", "Buy"),
-    ("hold", "hold", "Hold"),
-    ("sell", "sell", "Sell"),
-    ("strong_sell", "strongSell", "Strong sell"),
+    ("strong_buy", "Strong buy"),
+    ("buy", "Buy"),
+    ("hold", "Hold"),
+    ("sell", "Sell"),
+    ("strong_sell", "Strong sell"),
 ]
-ACTIONS = {"up": "upgrade", "down": "downgrade", "init": "initiate",
-           "reit": "reiterate", "main": "maintain"}
-TARGET_ACTIONS = {"Raises": "raised", "Lowers": "lowered", "Maintains": "maintained",
-                  "Announces": "announced", "Adjusts": "adjusted"}
 PERIOD_LABELS = {"0m": "This month", "-1m": "1 month ago", "-2m": "2 months ago", "-3m": "3 months ago"}
 
 
 # --------------------------------------------------------------------------- #
-# Parse                                                                        #
+# Shape                                                                        #
 # --------------------------------------------------------------------------- #
-def recommendation_trend(modules):
-    """Rating counts per month from ``recommendationTrend``, newest first."""
-    rows = []
-    for entry in (modules.get("recommendationTrend") or {}).get("trend") or []:
-        counts = {key: yf.summary_num(entry, raw) for key, raw, _ in RATINGS}
-        if all(v is None for v in counts.values()):
-            continue
-        counts = {key: int(v or 0) for key, v in counts.items()}
-        rows.append({"period": entry.get("period"), **counts, "total": sum(counts.values())})
-    order = {p: i for i, p in enumerate(PERIOD_LABELS)}
-    rows.sort(key=lambda r: order.get(r["period"], len(order)))
-    return rows
-
-
-def _positive(value):
-    """A price target, or None for Yahoo's 0 placeholder (no target given)."""
-    return value if isinstance(value, (int, float)) and value > 0 else None
-
-
-def analyst_actions(modules, days=DEFAULT_DAYS, now=None):
-    """Firm-level actions from ``upgradeDowngradeHistory`` in the last ``days``.
-
-    Newest first. ``action`` is upgrade / downgrade / initiate / reiterate /
-    maintain; ``target_action`` is raised / lowered / maintained / announced /
-    adjusted, or None when the firm gave no target. ``now`` (epoch seconds)
-    is for tests.
-    """
-    now = now if now is not None else datetime.now(timezone.utc).timestamp()
-    cutoff = now - days * 86400
-    dated = []
-    for entry in (modules.get("upgradeDowngradeHistory") or {}).get("history") or []:
-        epoch = entry.get("epochGradeDate")
-        if not isinstance(epoch, (int, float)) or epoch < cutoff:
-            continue
-        action = entry.get("action")
-        target_action = entry.get("priceTargetAction")
-        dated.append((epoch, {
-            "date": datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%d"),
-            "firm": entry.get("firm") or None,
-            "action": ACTIONS.get(action, action or None),
-            "from_grade": entry.get("fromGrade") or None,
-            "to_grade": entry.get("toGrade") or None,
-            "target_action": TARGET_ACTIONS.get(target_action, (target_action or "").lower() or None),
-            "target": _positive(entry.get("currentPriceTarget")),
-            "prior_target": _positive(entry.get("priorPriceTarget")),
-        }))
-    dated.sort(key=lambda pair: pair[0], reverse=True)
-    return [row for _, row in dated]
-
-
 def action_summary(actions):
     """Counts of rating changes and target moves among ``actions``."""
     def count(key, value):
@@ -122,41 +67,34 @@ def action_summary(actions):
     }
 
 
-def extract_targets(modules, days=DEFAULT_DAYS, now=None):
-    """Flatten the raw modules into the JSON-shaped targets dict.
+def extract_targets(view, days=DEFAULT_DAYS):
+    """Turn stock_data.analyst_view()'s ``view`` into the JSON-shaped targets dict.
 
     ``upside`` is each target's distance from the price as a fraction
-    (0.10 == the target is 10% above the price); None without a price.
+    (0.10 == the target is 10% above the price); None without a price. Each
+    trend row gains its ``total``.
     """
-    def fd(key):
-        return yf.summary_num(modules, "financialData", key)
-
-    price = fd("currentPrice") or yf.summary_num(modules, "price", "regularMarketPrice")
-    targets = {key: fd(f"target{label}Price") for key, label in TARGETS}
+    price = view["price"]
     upside = {
         key: round(value / price - 1, 4) if value is not None and price else None
-        for key, value in targets.items()
+        for key, value in view["targets"].items()
     }
-    analysts = fd("numberOfAnalystOpinions")
-    key = yf.summary_text(modules, "financialData", "recommendationKey")
-    actions = analyst_actions(modules, days, now)
+    trend = [
+        {**row, "total": sum(row[key] for key, _ in RATINGS)} for row in view["trend"]
+    ]
     return {
-        "name": yf.summary_text(modules, "price", "longName")
-        or yf.summary_text(modules, "price", "shortName"),
-        "exchange": yf.summary_text(modules, "price", "exchangeName"),
-        "currency": yf.summary_text(modules, "price", "currency") or "",
+        "name": view["name"],
+        "exchange": view["exchange"],
+        "currency": view["currency"],
         "price": price,
-        "analysts": None if analysts is None else int(analysts),
-        "targets": targets,
+        "analysts": view["analysts"],
+        "targets": view["targets"],
         "upside": upside,
-        "recommendation": {
-            "key": None if key in (None, "none") else key,
-            "mean": fd("recommendationMean"),
-        },
-        "trend": recommendation_trend(modules),
+        "recommendation": view["recommendation"],
+        "trend": trend,
         "actions_days": days,
-        "action_summary": action_summary(actions),
-        "actions": actions,
+        "action_summary": action_summary(view["actions"]),
+        "actions": view["actions"],
     }
 
 
@@ -212,12 +150,12 @@ def build_report(symbol, data):
     if not data["trend"]:
         lines.append("  No rating counts from Yahoo")
     else:
-        header = f"  {'':<14}" + "".join(f"{label:>12}" for _, _, label in RATINGS) + f"{'Total':>8}"
+        header = f"  {'':<14}" + "".join(f"{label:>12}" for _, label in RATINGS) + f"{'Total':>8}"
         lines.append(header)
         for row in data["trend"]:
             label = PERIOD_LABELS.get(row["period"], row["period"] or "?")
             lines.append(
-                f"  {label:<14}" + "".join(f"{row[key]:>12}" for key, _, _ in RATINGS)
+                f"  {label:<14}" + "".join(f"{row[key]:>12}" for key, _ in RATINGS)
                 + f"{row['total']:>8}"
             )
 
@@ -289,11 +227,11 @@ def main(argv=None):
     args = parse_args(argv)
 
     try:
-        modules = yf.fetch_quote_summary(args.symbol, MODULES)
+        view = stock_data.analyst_view(args.symbol, args.days)
     except (requests.RequestException, ValueError, KeyError) as exc:
         die(f"failed to fetch analyst targets for {args.symbol!r}: {exc}", args.json)
 
-    data = extract_targets(modules, args.days)
+    data = extract_targets(view, args.days)
     if not has_coverage(data):
         die(
             f"no analyst coverage for {args.symbol!r} (only covered company stocks have targets)",

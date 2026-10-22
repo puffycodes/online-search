@@ -1,6 +1,6 @@
 """Tests for yahoo_finance: parse_date, window args, session dates, crumb handshake,
 fetch_quote_summary, summary_num/summary_text, build_params, meta_summary, extract_series,
-fetch_history."""
+fetch_history, and the stock_data adapter (parse_analyst_view, analyst_view)."""
 
 import argparse
 import datetime as dt
@@ -318,3 +318,161 @@ class TestFetchHistory:
         self._patch_get(monkeypatch, FakeResponse(json_data=None))
         with pytest.raises(ValueError):
             yf.fetch_history("AAA", {})
+
+
+# --------------------------------------------------------------------------- #
+# stock_data adapter                                                           #
+# --------------------------------------------------------------------------- #
+DAY = 86400
+NOW = 1_790_000_000  # 2026-09-21 14:13 UTC
+
+
+def _trend(period, strong_buy, buy, hold, sell, strong_sell):
+    return {"period": period, "strongBuy": strong_buy, "buy": buy, "hold": hold,
+            "sell": sell, "strongSell": strong_sell}
+
+
+def _grade(days_ago, firm, action, from_grade, to_grade, target_action="", target=0.0,
+           prior=0.0):
+    return {"epochGradeDate": int(NOW - days_ago * DAY), "firm": firm, "action": action,
+            "fromGrade": from_grade, "toGrade": to_grade,
+            "priceTargetAction": target_action, "currentPriceTarget": target,
+            "priorPriceTarget": prior}
+
+
+def _history():
+    """``upgradeDowngradeHistory`` out of date order, one entry outside 90 days."""
+    return {"history": [
+        _grade(10, "Beta Bank", "down", "Buy", "Hold", "Lowers", 120.0, 140.0),
+        _grade(2, "Alpha Capital", "up", "Hold", "Buy", "Raises", 150.0, 130.0),
+        _grade(200, "Old Firm", "init", "", "Buy", "Announces", 90.0, 0.0),
+        _grade(30, "Gamma Research", "reit", "Neutral", "Neutral", "", 0.0, 0.0),
+        _grade(45, "Delta Partners", "main", "Outperform", "Outperform", "Maintains",
+               115.0, 115.0),
+    ]}
+
+
+def _analyst_modules(price=100.0):
+    """quoteSummary ``modules`` with every field parse_analyst_view() reads."""
+    return {
+        "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST",
+                  "regularMarketPrice": {"raw": price}},
+        "financialData": {
+            "currentPrice": {"raw": price},
+            "targetLowPrice": {"raw": 80.0}, "targetMedianPrice": {"raw": 110.0},
+            "targetMeanPrice": {"raw": 105.0}, "targetHighPrice": {"raw": 150.0},
+            "numberOfAnalystOpinions": {"raw": 20},
+            "recommendationKey": "buy", "recommendationMean": {"raw": 2.2},
+        },
+        "recommendationTrend": {"trend": [
+            # Out of order on purpose: the parser sorts newest first.
+            _trend("-1m", 5, 9, 5, 1, 0),
+            _trend("0m", 6, 10, 4, 1, 1),
+        ]},
+        "upgradeDowngradeHistory": _history(),
+    }
+
+
+class TestParseAnalystView:
+    def test_profile_price_targets_consensus(self):
+        view = yf.parse_analyst_view(_analyst_modules(), 90, now=NOW)
+        assert (view["source"], view["notes"]) == ("Yahoo Finance", [])
+        assert (view["name"], view["exchange"], view["currency"]) == ("Triple A Inc.", "TST", "USD")
+        assert view["price"] == 100.0
+        assert view["targets"] == {"low": 80.0, "median": 110.0, "mean": 105.0, "high": 150.0}
+        assert view["analysts"] == 20
+        assert view["recommendation"] == {"key": "buy", "mean": 2.2}
+
+    def test_short_name_and_missing_currency(self):
+        view = yf.parse_analyst_view({"price": {"shortName": "AAA"}}, 90, now=NOW)
+        assert (view["name"], view["exchange"], view["currency"]) == ("AAA", None, "")
+
+    def test_price_falls_back_to_regular_market_price(self):
+        modules = _analyst_modules(price=42.0)
+        del modules["financialData"]["currentPrice"]
+        assert yf.parse_analyst_view(modules, 90, now=NOW)["price"] == 42.0
+
+    def test_no_price(self):
+        modules = _analyst_modules()
+        del modules["financialData"]["currentPrice"]
+        del modules["price"]["regularMarketPrice"]
+        assert yf.parse_analyst_view(modules, 90, now=NOW)["price"] is None
+
+    def test_recommendation_key_none_is_dropped(self):
+        modules = _analyst_modules()
+        modules["financialData"]["recommendationKey"] = "none"
+        assert yf.parse_analyst_view(modules, 90, now=NOW)["recommendation"]["key"] is None
+
+    def test_trend_sorted_newest_first_without_totals(self):
+        rows = yf.parse_analyst_view(_analyst_modules(), 90, now=NOW)["trend"]
+        assert [r["period"] for r in rows] == ["0m", "-1m"]
+        assert rows[0] == {"period": "0m", "strong_buy": 6, "buy": 10, "hold": 4,
+                           "sell": 1, "strong_sell": 1}
+
+    def test_empty_trend_rows_dropped(self):
+        modules = {"recommendationTrend": {"trend": [{"period": "0m"}]}}
+        assert yf.parse_analyst_view(modules, 90, now=NOW)["trend"] == []
+
+    def test_no_coverage_is_all_empty(self):
+        view = yf.parse_analyst_view({"price": {"currency": "USD"}}, 90, now=NOW)
+        assert set(view["targets"].values()) == {None}
+        assert (view["analysts"], view["trend"], view["actions"]) == (None, [], [])
+
+
+class TestAnalystActions:
+    def _actions(self, days, history=None):
+        modules = {"upgradeDowngradeHistory": history or _history()}
+        return yf.parse_analyst_view(modules, days, now=NOW)["actions"]
+
+    def test_window_and_newest_first(self):
+        assert [r["firm"] for r in self._actions(90)] == [
+            "Alpha Capital", "Beta Bank", "Gamma Research", "Delta Partners"]
+
+    def test_fields_and_mapping(self):
+        rows = self._actions(90)
+        assert rows[0] == {
+            "date": "2026-09-19", "firm": "Alpha Capital", "action": "upgrade",
+            "from_grade": "Hold", "to_grade": "Buy", "target_action": "raised",
+            "target": 150.0, "prior_target": 130.0,
+        }
+        assert (rows[1]["action"], rows[1]["target_action"]) == ("downgrade", "lowered")
+        assert (rows[3]["action"], rows[3]["target_action"]) == ("maintain", "maintained")
+
+    def test_zero_targets_and_blank_text_become_none(self):
+        gamma = self._actions(90)[2]
+        assert gamma["action"] == "reiterate"
+        assert (gamma["target_action"], gamma["target"], gamma["prior_target"]) == (None, None, None)
+        old = self._actions(365)[-1]
+        assert (old["action"], old["from_grade"], old["prior_target"]) == ("initiate", None, None)
+
+    def test_days_narrows_window(self):
+        assert [r["firm"] for r in self._actions(7)] == ["Alpha Capital"]
+
+    def test_unknown_codes_pass_through_and_undated_skipped(self):
+        history = {"history": [
+            _grade(1, "X", "xyz", "A", "B", "Rethinks", 1.0),
+            {"firm": "No Date", "action": "up"},
+        ]}
+        rows = self._actions(90, history)
+        assert [(r["action"], r["target_action"]) for r in rows] == [("xyz", "rethinks")]
+
+    def test_missing_module(self):
+        assert yf.parse_analyst_view({"price": {}}, 90, now=NOW)["actions"] == []
+
+
+class TestAnalystView:
+    def test_fetches_analyst_modules(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "fetch_quote_summary",
+                            lambda s, m: seen.append((s, m)) or _analyst_modules())
+        view = yf.analyst_view("AAA", 90)
+        assert seen == [("AAA", yf.ANALYST_MODULES)]
+        assert view["targets"]["high"] == 150.0
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, modules):
+            raise requests.RequestException("Quote not found")
+
+        monkeypatch.setattr(yf, "fetch_quote_summary", boom)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.analyst_view("ZZZ", 90)

@@ -271,6 +271,15 @@ before the top picks because it's about the repo's existing sources, not new one
   `top_movers` once a provider is chosen. It fits the flat layout: `stock_data.py`
   is a shared helper at the root like `weather.py` or `hn.py`.
 
+  **Step 1 started on 2026-10-22:** `stock_data.py` exists with `analyst_view()`
+  (functions 10–12 with the profile and price they need), served by
+  `yahoo_finance.analyst_view()`, and `stock_analyst_targets.py` reads only its
+  neutral shape. Its output is unchanged: identical on 21 fixture cases against the
+  previous version, and a live `NVDA` run matched the morning's output exactly.
+  Still to move: `stock_earnings_calendar.py`, `stock_holders.py`,
+  `stock_intrinsic_value.py` (with `stock_fundamental.py` and the app's
+  fundamentals), `market_top_volume.py` and the app's quote.
+
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
   US fundamentals and insider data to save Alpha Vantage requests. **No free

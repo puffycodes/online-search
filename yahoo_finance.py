@@ -6,14 +6,19 @@ Used by stock_price_history.py, stock_candlestick_chart.py, stock_rebased_chart.
 and stock_risk.py for the --range/--last/--start/--end window flags and for
 parsing chart results (their data now comes from price_source.py, which
 returns the same shape), by market_top_volume.py for the
-cookie + crumb handshake, by stock_intrinsic_value.py, stock_earnings_calendar.py,
-stock_analyst_targets.py and stock_holders.py for the quoteSummary fetch built on that handshake
+cookie + crumb handshake, by stock_intrinsic_value.py, stock_earnings_calendar.py
+and stock_holders.py for the quoteSummary fetch built on that handshake
 (stock_fundamental.py gets it through stock_intrinsic_value.py's fetch),
 and by app/stock_information/stock_info_server.py for its quote (the last
 user of the chart endpoint itself, fetch_history()). Each caller
 keeps its own row shaping (rounding, date formatting, which rows to drop) and
 its own output stage; everything up to and including the HTTP call and the
 raw-payload navigation lives here.
+
+It is also the Yahoo adapter behind stock_data.py: analyst_view() turns
+quoteSummary data into stock_data's provider-neutral shape, for
+stock_analyst_targets.py. The other quoteSummary scripts still read the raw
+modules themselves until they move behind stock_data.py too.
 """
 
 import datetime as dt
@@ -270,3 +275,101 @@ def extract_series(result):
         "volume": quote.get("volume") or [],
         "adjclose": adj_closes,
     }
+
+
+# --------------------------------------------------------------------------- #
+# stock_data.py adapter: quoteSummary to provider-neutral shapes               #
+# --------------------------------------------------------------------------- #
+SOURCE = "Yahoo Finance"
+
+ANALYST_MODULES = ["price", "financialData", "recommendationTrend", "upgradeDowngradeHistory"]
+RATING_FIELDS = [("strong_buy", "strongBuy"), ("buy", "buy"), ("hold", "hold"),
+                 ("sell", "sell"), ("strong_sell", "strongSell")]
+TREND_PERIODS = ("0m", "-1m", "-2m", "-3m")
+GRADE_ACTIONS = {"up": "upgrade", "down": "downgrade", "init": "initiate",
+                 "reit": "reiterate", "main": "maintain"}
+TARGET_ACTIONS = {"Raises": "raised", "Lowers": "lowered", "Maintains": "maintained",
+                  "Announces": "announced", "Adjusts": "adjusted"}
+
+
+def _profile(modules):
+    """name, exchange, currency from the ``price`` module."""
+    return {
+        "name": summary_text(modules, "price", "longName")
+        or summary_text(modules, "price", "shortName"),
+        "exchange": summary_text(modules, "price", "exchangeName"),
+        "currency": summary_text(modules, "price", "currency") or "",
+    }
+
+
+def _recommendation_trend(modules):
+    """Rating counts per month from ``recommendationTrend``, newest first;
+    a month with no counts at all is dropped."""
+    rows = []
+    for entry in (modules.get("recommendationTrend") or {}).get("trend") or []:
+        counts = {key: summary_num(entry, raw) for key, raw in RATING_FIELDS}
+        if all(v is None for v in counts.values()):
+            continue
+        rows.append({"period": entry.get("period"),
+                     **{key: int(v or 0) for key, v in counts.items()}})
+    order = {p: i for i, p in enumerate(TREND_PERIODS)}
+    rows.sort(key=lambda r: order.get(r["period"], len(order)))
+    return rows
+
+
+def _positive(value):
+    """A price target, or None for Yahoo's 0 placeholder (no target given)."""
+    return value if isinstance(value, (int, float)) and value > 0 else None
+
+
+def _analyst_actions(modules, days, now=None):
+    """Firm-level actions from ``upgradeDowngradeHistory`` in the last ``days``,
+    newest first. ``now`` (epoch seconds) is for tests."""
+    now = now if now is not None else dt.datetime.now(dt.timezone.utc).timestamp()
+    cutoff = now - days * SECONDS_PER_DAY
+    dated = []
+    for entry in (modules.get("upgradeDowngradeHistory") or {}).get("history") or []:
+        epoch = entry.get("epochGradeDate")
+        if not isinstance(epoch, (int, float)) or epoch < cutoff:
+            continue
+        action = entry.get("action")
+        target_action = entry.get("priceTargetAction")
+        dated.append((epoch, {
+            "date": dt.datetime.fromtimestamp(epoch, dt.timezone.utc).strftime("%Y-%m-%d"),
+            "firm": entry.get("firm") or None,
+            "action": GRADE_ACTIONS.get(action, action or None),
+            "from_grade": entry.get("fromGrade") or None,
+            "to_grade": entry.get("toGrade") or None,
+            "target_action": TARGET_ACTIONS.get(target_action, (target_action or "").lower() or None),
+            "target": _positive(entry.get("currentPriceTarget")),
+            "prior_target": _positive(entry.get("priorPriceTarget")),
+        }))
+    dated.sort(key=lambda pair: pair[0], reverse=True)
+    return [row for _, row in dated]
+
+
+def parse_analyst_view(modules, days, now=None):
+    """stock_data.analyst_view()'s shape from quoteSummary ``modules``."""
+    def fd(key):
+        return summary_num(modules, "financialData", key)
+
+    analysts = fd("numberOfAnalystOpinions")
+    key = summary_text(modules, "financialData", "recommendationKey")
+    return {
+        "source": SOURCE,
+        "notes": [],
+        **_profile(modules),
+        "price": fd("currentPrice") or summary_num(modules, "price", "regularMarketPrice"),
+        "analysts": None if analysts is None else int(analysts),
+        "targets": {key: fd(f"target{label}Price") for key, label in
+                    (("low", "Low"), ("median", "Median"), ("mean", "Mean"), ("high", "High"))},
+        "recommendation": {"key": None if key in (None, "none") else key,
+                           "mean": fd("recommendationMean")},
+        "trend": _recommendation_trend(modules),
+        "actions": _analyst_actions(modules, days, now),
+    }
+
+
+def analyst_view(symbol, days):
+    """Fetch ``symbol``'s analyst data and return stock_data's neutral shape."""
+    return parse_analyst_view(fetch_quote_summary(symbol, ANALYST_MODULES), days)
