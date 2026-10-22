@@ -35,9 +35,9 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks, indices, currency pairs, crypto coins or commodity futures
 - [`stock_risk.py`](#stock_riskpy) — how risky one or more instruments' prices have been: annualized volatility, the worst peak-to-trough drawdown and its recovery, distance from the high, and the correlation of each pair, via `indicators.py`
 - [`.claude/agents/stock-risk.md`](#claude-code-agent-stock-risk) — Claude Code subagent that calls `stock_risk.py` and reports how volatile named stocks, indices, currency pairs, crypto coins or commodity futures have been, their worst falls, and how closely they moved together
-- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the price scripts' window flags and chart-result parsing (their data now comes from `price_source.py`), Yahoo's chart-endpoint fetch (still used by `app/stock_information/` for its quote) and the cookie + crumb `quoteSummary` fetch, used by the four price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py`, `stock_holders.py` and `app/stock_information/` (the `quoteSummary` users all through `stock_data.py`)
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the price scripts' window flags and chart-result parsing (their data now comes from `price_source.py`), and the Yahoo adapter behind `stock_data.py` (screeners, chart-endpoint quote and the cookie + crumb `quoteSummary` fetch), used by the four price scripts and, through `stock_data.py`, every other stock script and `app/stock_information/`
 - [`price_source.py`](#price_sourcepy) — shared price-history source for the four price scripts: routes a Yahoo-notation ticker to EODHD (Alpha Vantage for India) and returns the bars in the shape they already parse; Singapore, Tokyo and futures are refused for now
-- [`stock_data.py`](#stock_datapy) — provider-neutral stock data: each function returns plain dicts in one shape and is routed to the provider that serves it (`analyst_view()`, `earnings_view()`, `holders_view()` and `fundamentals_view()`, all from Yahoo, so far)
+- [`stock_data.py`](#stock_datapy) — provider-neutral stock data: each function returns plain dicts in one shape and is routed to the provider that serves it (`analyst_view()`, `earnings_view()`, `holders_view()`, `fundamentals_view()`, `top_movers()` and `quote()`, all from Yahoo so far)
 - [`eodhd_price_history.py`](#eodhd_price_historypy) — past daily open / high / low / close prices of a stock, index, currency pair or crypto coin from EODHD's end-of-day API (requires a free `EODHD_API_KEY`); the main provider behind `price_source.py`
 - [`alphavantage_price_history.py`](#alphavantage_price_historypy) — past daily open / high / low / close prices of a stock from Alpha Vantage's `TIME_SERIES_DAILY` API (requires a free `ALPHAVANTAGE_API_KEY`; free keys get the latest 100 sessions)
 - [`daily_prices.py`](#daily_pricespy) — shared helper module for the two keyed price scripts: the `--start`/`--end`/`--last` window, the price row and the text table
@@ -998,13 +998,13 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ## market_top_volume.py
 
-Prints the top movers on a stock market you name — the highest-volume stocks, the biggest gainers, or the biggest losers — using [Yahoo Finance](https://finance.yahoo.com/)'s public screeners. No API key or authentication required. It covers ~20 markets across the US, Europe, Asia-Pacific, and the Americas via a `--market` flag, and three ranking metrics via `--metric`.
+Prints the top movers on a stock market you name — the highest-volume stocks, the biggest gainers, or the biggest losers — through [`stock_data.top_movers()`](#stock_datapy), which serves them from [Yahoo Finance](https://finance.yahoo.com/)'s public screeners today. No API key or authentication required. It covers ~20 markets across the US, Europe, Asia-Pacific, and the Americas via a `--market` flag, and three ranking metrics via `--metric`.
 
 ### Requirements
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `yahoo_finance.py` (headers, timeout and the cookie + crumb handshake) and `cli_utils.py` modules (no install — run from the repo root so they import)
+- the repo's own `stock_data.py`, `yahoo_finance.py` (the screeners, the cookie + crumb handshake and the market tables) and `cli_utils.py` modules (no install — run from the repo root so they import)
 
 ```bash
 pip install requests
@@ -1031,7 +1031,7 @@ python3 market_top_volume.py [--market MARKET] [--metric {volume,gainers,losers}
 | `gainers` | Largest positive % change | `day_gainers` | generic screener sorted by `percentchange` DESC, with a `dayvolume` floor |
 | `losers` | Largest negative % change | `day_losers` | generic screener sorted by `percentchange` ASC, with a `dayvolume` floor |
 
-For `gainers` / `losers`, stocks trading under `MIN_MOVER_VOLUME` (50,000 shares) are dropped so the list isn't swamped by illiquid micro-caps.
+For `gainers` / `losers`, stocks trading under `yahoo_finance.MIN_MOVER_VOLUME` (50,000 shares) are dropped so the list isn't swamped by illiquid micro-caps.
 
 #### Supported `--market` values
 
@@ -1123,11 +1123,14 @@ The JSON array carries the same fields for every metric (`change_percent` is pre
 
 ### How it works
 
+`main()` calls `stock_data.top_movers(market, metric, limit)`, routed to `yahoo_finance.top_movers()`, which does steps 1–5 and returns neutral rows (`{symbol, name, exchange, volume, price, change_percent, currency}`, best first); the script then ranks and prints them (step 6).
+
 1. **Pick a data path from the market** — US markets (`us`, `nyse`, `nasdaq`, `amex`) use Yahoo's keyless predefined screeners (`query1.finance.yahoo.com/v1/finance/screener/predefined/saved`) — `most_actives`, `day_gainers`, or `day_losers` depending on `--metric` — each spanning the whole US market. Every other market uses the generic screener (`query1.finance.yahoo.com/v1/finance/screener`), which requires auth.
-2. **Authenticate when needed** — For the generic screener, the script calls [`yahoo_finance.fetch_crumb()`](#yahoo_financepy), which hits `fc.yahoo.com` (falling back to `finance.yahoo.com`) to pick up session cookies, then fetches a crumb token from `/v1/test/getcrumb`; the crumb is passed on the screener call, and a missing or unusable one is an error. The predefined path skips this.
+2. **Authenticate when needed** — For the generic screener, the adapter calls [`yahoo_finance.fetch_crumb()`](#yahoo_financepy), which hits `fc.yahoo.com` (falling back to `finance.yahoo.com`) to pick up session cookies, then fetches a crumb token from `/v1/test/getcrumb`; the crumb is passed on the screener call, and a missing or unusable one is an error. The predefined path skips this.
 3. **Query by the chosen metric** — The generic screener is POSTed with `quoteType: "EQUITY"`, a `region` equality filter (`gb`, `de`, `jp`, …), and a sort that depends on `--metric`: `dayvolume` DESC for `volume`, `percentchange` DESC for `gainers`, `percentchange` ASC for `losers`. For `gainers` / `losers` a `dayvolume > MIN_MOVER_VOLUME` operand is added server-side.
 4. **Filter to the primary exchange** — Where a market maps to specific Yahoo exchange codes (e.g. `LSE`, `TOR`, `HKG`, or `NYQ` / `NMS,NCM,NGM` for the US sub-exchanges), quotes on other venues are dropped. `us` applies no exchange filter.
-5. **Filter, sort, trim, display** — For `gainers` / `losers`, quotes below `MIN_MOVER_VOLUME` shares are dropped locally too (the server-side filter is unreliable for cross-listings). The survivors are re-sorted locally on the metric's field — `regularMarketVolume` descending, or `regularMarketChangePercent` descending (`gainers`) / ascending (`losers`) — trimmed to the top N, and printed as rank, ticker, company name, listing exchange, and the three stats (the metric's own stat first).
+5. **Filter, sort, trim, display** — For `gainers` / `losers`, quotes below `MIN_MOVER_VOLUME` shares are dropped locally too (the server-side filter is unreliable for cross-listings). The survivors are re-sorted locally on the metric's field — `regularMarketVolume` descending, or `regularMarketChangePercent` descending (`gainers`) / ascending (`losers`) — and trimmed to the top N.
+6. **Display** — `quote_to_dict()` numbers the rows and fills display defaults (`?`, `(unknown)`, `0`), and they print as rank, ticker, company name, listing exchange, and the three stats (the metric's own stat first).
 
 ### Configuration
 
@@ -1135,21 +1138,18 @@ These are set as constants near the top of the file — edit them directly to ch
 
 | Constant | Default | Description |
 |---|---|---|
-| `MARKETS` | dict of ~28 aliases | Maps each `--market` value to its Yahoo `region` code, the set of listing-exchange codes to keep (or `None` for all), and whether to use the keyless `predefined` screener |
-| `METRICS` | dict of 3 | Maps each `--metric` value to its predefined screener id, generic-screener sort field/direction, and local sort key |
 | `DEFAULT_MARKET` | `"us"` | Market used when `--market` isn't passed |
 | `DEFAULT_METRIC` | `"volume"` | Metric used when `--metric` isn't passed |
-| `MIN_MOVER_VOLUME` | 50_000 | Minimum shares traded for a stock to appear in `gainers` / `losers` results |
 | `DEFAULT_LIMIT` | 10 | Number of stocks to display |
+| `METRIC_LABELS` | dict of 3 | How each metric is named in the report heading |
 
-The request headers, timeout and cookie/crumb URLs are shared with the other Yahoo scripts and live in [`yahoo_finance.py`](#yahoo_financepy) (`HEADERS`, `REQUEST_TIMEOUT`, `COOKIE_URLS`, `CRUMB_URL`).
+The market and metric tables, the `MIN_MOVER_VOLUME` floor (50,000 shares), the screener URLs, headers, timeout and cookie/crumb URLs live in [`yahoo_finance.py`](#yahoo_financepy) (`SCREENER_MARKETS`, `SCREENER_METRICS`, `MIN_MOVER_VOLUME`, `PREDEFINED_SCREENER_URL`, `SCREENER_URL`, …). The `--market` choices are whatever `stock_data.mover_markets()` returns, and the `--metric` choices `stock_data.MOVER_METRICS`.
 
 ### API reference
 
-- `fetch_predefined_quotes(session, scr_id)` — GETs a keyless predefined screener (`most_actives` / `day_gainers` / `day_losers`) and returns the raw list of quote dicts (US path).
-- `fetch_region_quotes(session, region, sort_field, sort_type, min_volume=None)` — Gets a crumb via `yahoo_finance.fetch_crumb(session)` (raising `requests.RequestException` if there isn't one), POSTs the generic screener filtered to `region` (optionally with a `dayvolume` floor) and sorted as given, and returns the raw quote dicts.
-- `get_movers(market, metric, limit)` — Chooses the data path from `MARKETS[market]` and the query shape from `METRICS[metric]`, applies the exchange-code filter (and, for movers, the `MIN_MOVER_VOLUME` floor), sorts locally on the metric's field, and returns the top N.
-- `quote_to_dict(rank, quote)` — Flattens one quote into the `{rank, symbol, name, exchange, volume, price, change_percent, currency}` shape used for `--json`.
+- `quote_to_dict(rank, row)` — Turns one `stock_data.top_movers()` row into the `{rank, symbol, name, exchange, volume, price, change_percent, currency}` shape used for `--json`, with display defaults for missing values.
+
+The fetching, filtering and sorting are [`yahoo_finance.py`](#yahoo_financepy)'s `fetch_predefined_quotes()`, `fetch_region_quotes()` and `screener_quotes()` (formerly this script's `get_movers()`).
 - `format_quote(row, metric)` — Formats one flattened row into a multi-line human-readable string, leading with the stat the metric ranks on.
 - `parse_args(argv=None)` — Parses `--market`, `--metric`, `--limit`, and `--json` CLI flags.
 - `main(argv=None)` — Entry point; fetches, handles network/parse errors, and prints results (human-readable or JSON).
@@ -1922,7 +1922,7 @@ The agent's frontmatter restricts it to `Bash` (run the script). `model: sonnet`
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy) (for the window flags and chart-result parsing: since 2026-10-21 their data comes from [`price_source.py`](#price_sourcepy), which returns the same shape); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It is also the Yahoo adapter behind [`stock_data.py`](#stock_datapy): `analyst_view()`, `earnings_view()`, `holders_view()` and `fundamentals_view()` turn `quoteSummary` data into that module's neutral shape for `stock_analyst_targets.py`, `stock_earnings_calendar.py`, `stock_holders.py`, and `stock_intrinsic_value.py`, `stock_fundamental.py` and `app/stock_information/`'s fundamentals; no script reads `quoteSummary` modules itself any more. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy) (for the window flags and chart-result parsing: since 2026-10-21 their data comes from [`price_source.py`](#price_sourcepy), which returns the same shape). It is also the Yahoo adapter behind [`stock_data.py`](#stock_datapy), the only way the other stock scripts and `app/stock_information/` reach Yahoo now: `analyst_view()`, `earnings_view()`, `holders_view()` and `fundamentals_view()` turn `quoteSummary` data into that module's neutral shape for `stock_analyst_targets.py`, `stock_earnings_calendar.py`, `stock_holders.py`, and `stock_intrinsic_value.py`, `stock_fundamental.py` and the app's fundamentals; `top_movers()` the screeners' quotes for `market_top_volume.py` and `stock_tech_buzz_agent.py`; and `quote()` the chart endpoint's for the app's quote. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1942,6 +1942,11 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 | `COOKIE_URLS` | `("https://fc.yahoo.com", "https://finance.yahoo.com")` | Pages tried in order to pick up Yahoo's consent cookie |
 | `CRUMB_URL` | `…/v1/test/getcrumb` | Crumb endpoint for the screener / `quoteSummary` calls |
 | `QUOTE_SUMMARY_HOSTS` | `query2` then `query1` `…/v10/finance/quoteSummary/{symbol}` | `quoteSummary` URL templates, tried in order |
+| `PREDEFINED_SCREENER_URL`, `SCREENER_URL` | `…/v1/finance/screener/predefined/saved`, `…/v1/finance/screener` | The keyless US screeners and the generic (crumb) screener |
+| `SCREENER_MARKETS` | dict of ~28 aliases | Each market name `top_movers()` accepts → Yahoo `region` code, listing-exchange codes to keep (or `None`), and whether to use the predefined screener |
+| `SCREENER_METRICS` | dict of 3 | Each metric → predefined screener id, generic-screener sort field/direction, local sort key and direction |
+| `MIN_MOVER_VOLUME` | 50_000 | Shares a stock must trade to appear among gainers / losers |
+| `QUOTE_RANGE` | `"5d"` | Chart window `quote()` fetches: enough daily bars to find the latest session across weekends and holidays |
 | `SOURCE` | `"Yahoo Finance"` | The `source` the adapter functions report |
 | `ANALYST_MODULES` | `price`, `financialData`, `recommendationTrend`, `upgradeDowngradeHistory` | The `quoteSummary` modules `analyst_view()` fetches |
 | `GRADE_ACTIONS`, `TARGET_ACTIONS` | `up` → `upgrade`, `Raises` → `raised`, … | Yahoo's analyst-action codes and target verbs, mapped to `stock_data`'s words |
@@ -1955,13 +1960,13 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 
 - `parse_date(value)` — Parses a `YYYY-MM-DD` string to a UTC `datetime`, raising `ValueError` with a clear message on a bad format.
 - `add_window_args(parser, default_range, last_help)` — Adds the shared window flags to an argparse parser: a mutually exclusive `--range` (choices `VALID_RANGES`, default `default_range`) / `--last N` (`cli_utils.positive_int`, help text `last_help`), plus `--start` / `--end`. Used by all four price scripts.
-- `session_datetime(timestamp, gmtoffset)` — Converts a Yahoo UTC epoch timestamp into a naive exchange-local `datetime`, so its date is the exchange's own trading day. Used by the four price scripts and `app/stock_information/`.
-- `fetch_crumb(session)` — Picks up the consent cookie on `session` (trying each of `COOKIE_URLS` until one answers) and returns the crumb from `CRUMB_URL`, or `None` if that request errors or the body isn't a short, non-HTML token. Callers decide whether a missing crumb is fatal (`market_top_volume.py` raises; `stock_intrinsic_value.py` falls back to crumbless requests).
+- `session_datetime(timestamp, gmtoffset)` — Converts a Yahoo UTC epoch timestamp into a naive exchange-local `datetime`, so its date is the exchange's own trading day. Used by the four price scripts and `quote()`.
+- `fetch_crumb(session)` — Picks up the consent cookie on `session` (trying each of `COOKIE_URLS` until one answers) and returns the crumb from `CRUMB_URL`, or `None` if that request errors or the body isn't a short, non-HTML token. Callers decide whether a missing crumb is fatal (`fetch_region_quotes()` raises; `fetch_quote_summary()` falls back to crumbless requests).
 - `crumb_session()` — Returns `(session, crumb)`: a fresh `requests.Session` carrying `HEADERS`, plus `fetch_crumb(session)`.
 - `fetch_quote_summary(symbol, modules)` — GETs `quoteSummary` for the given `modules` (with `formatted=false`) through a `crumb_session()`, trying each of `QUOTE_SUMMARY_HOSTS` with the crumb, then each without it. Returns the first `result` — a dict keyed by module, omitting any Yahoo has no data for — or raises `requests.RequestException` with the last error (an error envelope, a non-JSON body's HTTP status, or `no fundamentals in response`).
 - `summary_num(node, *path)` / `summary_text(node, *path)` — Dig a value out of a nested `quoteSummary` dict. `summary_num` unwraps Yahoo's `{"raw": …}` and returns a float or `None` (bools and strings are not numbers); `summary_text` returns a non-empty string or `None`.
 - `build_params(interval="1d", range_=None, start=None, end=None, last=None)` — Returns the chart-endpoint query params. The window is chosen by, in priority order: an explicit `start`/`end` pair (→ `period1`/`period2`, end padded a day), then `last` (→ a calendar look-back widened for `1wk` / `1mo` bars), then `range_`. Raises `ValueError` for `end` without `start` or an `end` before `start` (the same date for both is one day). `includeAdjustedClose=true` is always set. Callers pass `interval="1d"` (the default) for daily data.
-- `fetch_history(symbol, params)` — Used only by `app/stock_information/` now; the price scripts call `price_source.fetch_history()` instead. GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
+- `fetch_history(symbol, params)` — Used only by `quote()` now; the price scripts call `price_source.fetch_history()` instead. GETs the v8 chart endpoint, raises `requests.RequestException` on a Yahoo error body or an empty result, and returns the first `chart.result` object.
 - `extract_series(result)` — Returns `(meta, series)` where `series` is a dict of parallel lists straight off the payload — `timestamp`, `open`, `high`, `low`, `close`, `volume` — plus `adjclose` (a list or `None`) and the resolved `gmtoffset`. Callers turn these into row dicts.
 - `meta_summary(meta, fallback_symbol=None)` — Pulls the display fields out of a chart result's `meta` block: returns `(symbol, exchange, currency)`, with `symbol` falling back to `fallback_symbol` then `"?"`, `exchange` to `"?"`, and `currency` to `""`. Used by `stock_price_history.py`, `stock_candlestick_chart.py` and `stock_risk.py` for their report headers.
 - `analyst_view(symbol, days)` — The adapter `stock_data.analyst_view()` routes to: fetches `ANALYST_MODULES` and returns `parse_analyst_view()` of them.
@@ -1969,10 +1974,12 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 - `earnings_view(symbol)` / `parse_earnings_view(modules)` — The same pair for `stock_data.earnings_view()`: fetch `EARNINGS_MODULES`, then turn them into its neutral shape.
 - `holders_view(symbol, days)` / `parse_holders_view(symbol, modules, days, now=None)` — The same pair for `stock_data.holders_view()`, with `classify_transaction(text, filer, relation, company_names)` (one transaction's kind from its description, or for a blank one from the filer: the company itself → `buyback`, no role → `holder_disclosure`, else `unspecified`) and `is_us_listing(symbol)` (no exchange suffix).
 - `fundamentals_view(symbol)` / `parse_fundamentals_view(modules)` — The same pair for `stock_data.fundamentals_view()`: price from `currentPrice`, else `regularMarketPrice`; beta from `defaultKeyStatistics`, else `summaryDetail`; the forward dividend per share as `dividendYield` × price (in the price's own unit, since `dividendRate` is mostly missing and `trailingAnnualDividendRate` is in pounds for `GBp` quotes; a 0 yield is a non-payer); debt/equity ÷ 100 (Yahoo gives a percentage); a gross margin of exactly 0 as `None`; the `+1y` / `+5y` analyst growth from `earningsTrend`.
+- `top_movers(market, metric, limit)` / `parse_top_movers(quotes)` — The pair for `stock_data.top_movers()`: `screener_quotes(market, metric, limit)` picks the predefined screener (`fetch_predefined_quotes()`) for US markets or the generic one with a crumb (`fetch_region_quotes()`, raising if there is no crumb), keeps the market's exchange codes, drops gainers / losers under `MIN_MOVER_VOLUME`, sorts and trims; each quote then becomes a neutral row (name from `shortName`, else `longName`; exchange from `fullExchangeName`, else the code). `mover_markets()` lists `SCREENER_MARKETS`.
+- `quote(symbol)` / `parse_quote(result, symbol)` — The pair for `stock_data.quote()`: fetch `QUOTE_RANGE` of daily bars and read the price, name, session high / low and 52-week range from the chart `meta`, falling back to the latest settled bar; the session date and price time are exchange-local, and the previous close is the last settled close dated before the session.
 
 ### Notes / limitations
 
-- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it (and `price_source.window()`, which reads `build_params()` output), and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py`, `stock_fundamental.py`, `app/stock_information/`'s fundamentals, `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py` (all through `stock_data.py`). Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it (and `price_source.window()`, which reads `build_params()` output), and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` and `stock_tech_buzz_agent.py` (handshake only), `stock_intrinsic_value.py`, `stock_fundamental.py`, `app/stock_information/`'s fundamentals, `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py` (all through `stock_data.py`). Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
 
 ---
 
@@ -2029,7 +2036,7 @@ The markets were decided on 2026-10-21 (see the Yahoo item in [`docs/things-to-e
 
 ## stock_data.py
 
-Provider-neutral stock data for the stock scripts. A script imports this module, not a provider's: each function returns plain dicts in a shape no provider dictates, and `PROVIDERS` routes the call to the adapter module that serves it, so swapping a provider means changing one entry, not a script. It is step 1 of the design in [`docs/things-to-explore.md`](docs/things-to-explore.md) ("Proposed design"), which lists the 15 functions planned. Only `analyst_view()`, for [`stock_analyst_targets.py`](#stock_analyst_targetspy), `earnings_view()`, for [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), `holders_view()`, for [`stock_holders.py`](#stock_holderspy), and `fundamentals_view()`, for [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_fundamental.py`](#stock_fundamentalpy) and [`app/stock_information/`](#appstock_information), are here so far, all served by [`yahoo_finance.py`](#yahoo_financepy). Not a CLI — it is imported, not run.
+Provider-neutral stock data for the stock scripts. A script imports this module, not a provider's: each function returns plain dicts in a shape no provider dictates, and `PROVIDERS` routes the call to the adapter module that serves it, so swapping a provider means changing one entry, not a script. It is step 1 of the design in [`docs/things-to-explore.md`](docs/things-to-explore.md) ("Proposed design"), which lists the 15 functions planned. Every stock script except the price scripts (which use [`price_source.py`](#price_sourcepy)), and [`app/stock_information/`](#appstock_information), get their data here now: `analyst_view()`, `earnings_view()`, `holders_view()`, `fundamentals_view()`, `top_movers()` and `quote()`, all served by [`yahoo_finance.py`](#yahoo_financepy). Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -2041,7 +2048,7 @@ Provider-neutral stock data for the stock scripts. A script imports this module,
 Every result follows the same rules, whichever provider served it:
 
 - dates are ISO `YYYY-MM-DD` strings (UTC unless a function says otherwise);
-- numbers are plain floats or ints, and ratios are fractions (`0.1` = 10%);
+- numbers are plain floats or ints, and ratios are fractions (`0.1` = 10%), except a field whose name ends in `_percent`, which is in percent (`4.5` = 4.5%) — `top_movers()`'s `change_percent`, kept so the scripts' printed figures don't change;
 - a field the provider doesn't have is `None`, and a list it doesn't have is `[]`;
 - `source` names the provider and `notes` lists anything it flagged.
 
@@ -2049,11 +2056,15 @@ A fetch failure raises `requests.RequestException` (or `ValueError` / `KeyError`
 
 ### API reference
 
-- `PROVIDERS` — Function name → the adapter callable that serves it: `{"analyst_view": yahoo_finance.analyst_view, "earnings_view": yahoo_finance.earnings_view, "holders_view": yahoo_finance.holders_view, "fundamentals_view": yahoo_finance.fundamentals_view}`.
+- `PROVIDERS` — Function name → the adapter callable that serves it: `{"analyst_view": yahoo_finance.analyst_view, "earnings_view": yahoo_finance.earnings_view, "holders_view": yahoo_finance.holders_view, "fundamentals_view": yahoo_finance.fundamentals_view, "top_movers": yahoo_finance.top_movers, "mover_markets": yahoo_finance.mover_markets, "quote": yahoo_finance.quote}`.
+- `MOVER_METRICS` — The rankings `top_movers()` offers: `("volume", "gainers", "losers")`.
 - `analyst_view(symbol, days)` — Analyst opinion on `symbol`: `{source, notes, name, exchange, currency, price, analysts, targets: {low, median, mean, high}, recommendation: {key, mean}, trend: [{period, strong_buy, buy, hold, sell, strong_sell}], actions: [{date, firm, action, from_grade, to_grade, target_action, target, prior_target}]}`. `trend` is newest first with `period` `0m`, `-1m`, …; `actions` covers the last `days` days, newest first, with `action` one of `upgrade` / `downgrade` / `initiate` / `reiterate` / `maintain` and `target_action` one of `raised` / `lowered` / `maintained` / `announced` / `adjusted` or `None`.
 - `earnings_view(symbol)` — The earnings calendar: `{source, notes, name, exchange, currency, reporting_currency, next_earnings: {date, date_end, datetime_utc, is_estimate, eps_estimate, revenue_estimate} | None, dividend: {ex_dividend_date, payment_date, last_amount, last_amount_date, amount_currency} | None, earnings_history: [{quarter_end, fiscal_quarter, reported_date, eps_estimate, eps_actual, surprise_pct, currency}]}`. Each estimate is `{low, average, high}` or `None`; `date_end` is later than `date` for an estimated window; `reporting_currency` and `amount_currency` are `None` when unknown; `earnings_history` is oldest first. Dates carry no upcoming / past status: that depends on today, so the script adds it.
 - `holders_view(symbol, days)` — Ownership and insider activity: `{source, notes, name, exchange, currency, us_listing, transaction_currency, ownership: {insiders_pct, institutions_pct, institutions_float_pct, institutions_count}, transactions: [{date, name, relation, kind, text, shares, value, price_low, price_high, ownership}], top_funds: [{name, pct_held, shares, value, pct_change, report_date}], top_institutions: [...] | None}`. `transactions` covers the last `days` days, newest first, every kind included (`sale`, `purchase`, `option_exercise`, `award`, `gift`, `buyback`, `holder_disclosure`, `other`, `unspecified`); `text` is the provider's own description; `transaction_currency` is `None` when unknown; `top_institutions` is `None` where the provider's list isn't meaningful (Yahoo's, for non-US listings). Totals and `--trades-only` filtering are the script's.
 - `fundamentals_view(symbol)` — The company's figures, as reported: `{source, notes, name, exchange, currency, sector, industry, price, market_cap, shares_outstanding, free_cash_flow, operating_cash_flow, ebitda, revenue, net_income, total_debt, total_cash, eps_ttm, eps_forward, book_value_per_share, beta, trailing_pe, forward_pe, price_to_sales, price_to_book, enterprise_value, ev_to_ebitda, gross_margin, operating_margin, net_margin, return_on_equity, return_on_assets, revenue_growth, earnings_growth, debt_to_equity, current_ratio, quick_ratio, dividend_per_share, payout_ratio, analyst_growth_1y, analyst_growth_5y}`. Margins, returns, growth and the payout ratio are fractions; debt/equity and the other ratios plain numbers (`1.5` = 1.5x); `gross_margin` is `None` where it isn't applicable; `dividend_per_share` is the forward dividend in the price's unit, `None` for a non-payer. What is derived from these (net debt, revenue per share, PEG, yields) is left to the scripts.
+- `top_movers(market, metric, limit)` — The top `limit` stocks on `market` (one of `mover_markets()`) by `metric` (one of `MOVER_METRICS`): `{source, notes, movers: [{symbol, name, exchange, volume, price, change_percent, currency}]}`, best first, missing values `None`.
+- `mover_markets()` — The market names the provider behind `top_movers()` accepts; `market_top_volume.py` offers exactly these.
+- `quote(symbol)` — The latest price and session: `{source, notes, name, symbol, exchange, currency, price, price_time, session_date, session_high, session_low, previous_close, week52_low, week52_high}`. `price` is `None` if the provider has none; dates are exchange-local; `previous_close` is the last close before `session_date`. The change since that close is the caller's.
 
 ### Notes / limitations
 
@@ -2320,7 +2331,7 @@ Open <http://127.0.0.1:8000/>, enter e.g. `AAPL`, and click **Submit**. The page
 
 1. `GET /` serves the inline HTML page.
 2. On submit, the page calls `GET /api/quote?symbol=...`.
-3. The handler validates the symbol, calls `yahoo_finance.fetch_history()` over a `5d` range, and reads `longName`, `regularMarketPrice`, `regularMarketDayHigh`/`Low`, `regularMarketTime` and `fiftyTwoWeekLow`/`High` from the result's `meta`, falling back to the latest settled daily bar if the price/day fields are missing (the 52-week fields are `null` if absent). The previous close is the close of the last daily bar dated before the latest session, and `change`/`change_pct` are measured against it.
+3. The handler validates the symbol and calls `stock_data.quote()`, routed to `yahoo_finance.quote()`, which calls `yahoo_finance.fetch_history()` over a `5d` range and reads `longName`, `regularMarketPrice`, `regularMarketDayHigh`/`Low`, `regularMarketTime` and `fiftyTwoWeekLow`/`High` from the result's `meta`, falling back to the latest settled daily bar if the price/day fields are missing (the 52-week fields are `null` if absent). The previous close is the close of the last daily bar dated before the latest session; the server measures `change`/`change_pct` against it and returns a 502 if there is no price.
 4. The page then calls `GET /api/valuation?symbol=...`, which gets `stock_data.fundamentals_view()` and runs `stock_intrinsic_value.py`'s `collect_inputs()` → `resolve_assumptions()` → `compute_estimates()` → `build_json()` with its default arguments. It returns the same payload as `stock_intrinsic_value.py SYMBOL --json` plus an `indicators` dict from `stock_fundamental.extract_indicators()` (read from the same fundamentals view, with a few derived ratios such as PEG, FCF yield, net debt/EBITDA and cash conversion) and a `summary` (`{undervalued, fair_value, overvalued, not_available, threshold}`) from the server's `summarize_estimates()`, which counts the seven per-share estimates against the price: an estimate above the price counts as undervalued, below as overvalued, and less than 1% away as fair value. The page fills in sector/industry from the payload's top-level fields and market cap, trailing P/E and dividend yield (`dividend_rate / price`) from its `inputs`, renders `indicators` as a grouped Fundamentals table, shows the counts as three tiles, and renders the estimates as a table (value per share and price-vs-estimate for each method, reverse-DCF implied growth, and the assumptions used).
 
 A server is used instead of a static page because Yahoo's endpoints don't send CORS headers, so a browser can't call them directly.
@@ -3873,7 +3884,7 @@ With `--json`, the leading progress line is suppressed and results print as a JS
 
 ### How it works
 
-1. **Fetch top-volume stocks** — Calls `market_top_volume.get_movers()` with metric `"volume"` once for `"nyse"` and once for `"nasdaq"` (each with `--stock-limit`), tagging each quote with its source exchange and de-duplicating by symbol.
+1. **Fetch top-volume stocks** — Calls `stock_data.top_movers()` (the same source as `market_top_volume.py`) with metric `"volume"` once for `"nyse"` and once for `"nasdaq"` (each with `--stock-limit`), tagging each neutral row with the market it came from and de-duplicating by symbol.
 2. **Fetch tech discussions** — Calls `hottest_tech_discussions.get_hottest_tech_discussions()` with `--discussion-limit`. That function inspects the first `4 × --discussion-limit` of HN's current top stories (200 for the default 50) before ranking by score.
 3. **Match stocks to discussions** — For every stock, checks every discussion's title for either: (a) the ticker symbol as a case-sensitive whole word (e.g. `NVDA`), or (b) the company name — with legal-entity suffixes like "Corporation"/"Inc."/"Ltd." stripped — as a case-insensitive whole-word/phrase match (e.g. "NVIDIA Corporation" → "NVIDIA").
 4. **Filter and report** — Keeps only stocks with at least one matching discussion, and prints each stock paired with the discussion(s) that mentioned it.
@@ -3886,7 +3897,7 @@ These are set as constants near the top of the file — edit them directly to ch
 |---|---|---|
 | `STOCK_LIMIT_PER_EXCHANGE` | 10 | Stocks pulled per exchange before matching |
 | `DISCUSSION_LIMIT` | 50 | Discussions searched for mentions |
-| `EXCHANGES` | `("nyse", "nasdaq")` | Exchanges queried via `market_top_volume.get_movers()` |
+| `EXCHANGES` | `("nyse", "nasdaq")` | Markets queried via `stock_data.top_movers()` |
 | `AMBIGUOUS_SYMBOLS` | e.g. `{"AI", "ON", "IT", "ALL", ...}` | Ticker symbols excluded from symbol-matching because they double as common English words/acronyms (company-name matching still applies to these) |
 | `NAME_SUFFIXES` | regex of legal-entity suffixes | Suffixes stripped from company names before matching (e.g. "Corporation", "Inc.", "Ltd.") |
 
@@ -6150,7 +6161,7 @@ pip install -r requirements-dev.txt
 python3 -m pytest
 ```
 
-Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing and window flags, `cli_utils.py`), each script's argument parser and output formatters, the Yahoo cookie/crumb handshake and `quoteSummary` fetch (`yahoo_finance.py`, `market_top_volume.py`, `stock_intrinsic_value.py`), and the aggregators (`get_movers`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
+Coverage spans the pure logic (`indicators.py`, `valuation.py`, `yahoo_finance.py` parsing and window flags, `cli_utils.py`), each script's argument parser and output formatters, the Yahoo cookie/crumb handshake, screeners and `quoteSummary` fetch (`yahoo_finance.py`), the routing and neutral shapes of `stock_data.py`, and the aggregators (`screener_quotes`, `get_hottest_tech_discussions`, `find_stock_buzz`, …) with their HTTP seams stubbed. The doctests in `indicators.py` and `valuation.py` are run too.
 
 [`tests/README.md`](tests/README.md) documents the layout, the `FakeResponse` / `FakeSession` doubles and `chart_result` fixture, the monkeypatching conventions, a per-module coverage table, and how to add a test.
 

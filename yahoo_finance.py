@@ -5,19 +5,15 @@ Shared helpers for Yahoo Finance's public endpoints. No API key required.
 Used by stock_price_history.py, stock_candlestick_chart.py, stock_rebased_chart.py
 and stock_risk.py for the --range/--last/--start/--end window flags and for
 parsing chart results (their data now comes from price_source.py, which
-returns the same shape), by market_top_volume.py for the cookie + crumb
-handshake, and by app/stock_information/stock_info_server.py for its quote
-(the last user of the chart endpoint itself, fetch_history()). Each caller
-keeps its own row shaping (rounding, date formatting, which rows to drop) and
-its own output stage; everything up to and including the HTTP call and the
-raw-payload navigation lives here.
+returns the same shape). Each caller keeps its own row shaping (rounding,
+date formatting, which rows to drop) and its own output stage; everything up
+to and including the HTTP call and the raw-payload navigation lives here.
 
-It is also the Yahoo adapter behind stock_data.py: analyst_view(),
-earnings_view(), holders_view() and fundamentals_view() fetch quoteSummary
-data and turn it into stock_data's provider-neutral shape, for
-stock_analyst_targets.py, stock_earnings_calendar.py, stock_holders.py, and
-stock_intrinsic_value.py, stock_fundamental.py and the stock web app's
-fundamentals.
+It is also the Yahoo adapter behind stock_data.py, the only way the stock
+scripts reach Yahoo now: analyst_view(), earnings_view(), holders_view() and
+fundamentals_view() fetch quoteSummary data, top_movers() the screeners and
+quote() the chart endpoint, and each turns the answer into stock_data's
+provider-neutral shape.
 """
 
 import datetime as dt
@@ -714,3 +710,282 @@ def parse_fundamentals_view(modules):
 def fundamentals_view(symbol):
     """Fetch ``symbol``'s fundamentals and return stock_data's neutral shape."""
     return parse_fundamentals_view(fetch_quote_summary(symbol, FUNDAMENTALS_MODULES))
+
+
+# Screeners, for top_movers(): the keyless predefined US screeners, and the
+# generic equity screener (crumb + cookie) for every other region.
+PREDEFINED_SCREENER_URL = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+SCREENER_URL = "https://query1.finance.yahoo.com/v1/finance/screener"
+# Gainer/loser lists are dominated by illiquid micro-caps unless a floor is
+# applied; ignore anything trading fewer shares than this for those metrics.
+MIN_MOVER_VOLUME = 50_000
+
+# metric -> how to ask each screener for it
+#   scr_id:     predefined screener id (US markets)
+#   sort_field: generic-screener sort field (other markets)
+#   sort_type:  generic-screener sort direction
+#   key:        quote field to sort on locally
+#   reverse:    local sort direction (True = descending)
+SCREENER_METRICS = {
+    "volume": {
+        "scr_id": "most_actives",
+        "sort_field": "dayvolume",
+        "sort_type": "DESC",
+        "key": "regularMarketVolume",
+        "reverse": True,
+    },
+    "gainers": {
+        "scr_id": "day_gainers",
+        "sort_field": "percentchange",
+        "sort_type": "DESC",
+        "key": "regularMarketChangePercent",
+        "reverse": True,
+    },
+    "losers": {
+        "scr_id": "day_losers",
+        "sort_field": "percentchange",
+        "sort_type": "ASC",
+        "key": "regularMarketChangePercent",
+        "reverse": False,
+    },
+}
+
+# market alias -> config
+#   region:    Yahoo region code (lowercase) used by the generic screener
+#   exchanges: set of Yahoo listing-exchange codes to keep, or None for all
+#   predefined: True to use the keyless US predefined screeners
+SCREENER_MARKETS = {
+    # United States
+    "us": {"region": "us", "exchanges": None, "predefined": True},
+    "nyse": {"region": "us", "exchanges": {"NYQ"}, "predefined": True},
+    "nasdaq": {"region": "us", "exchanges": {"NMS", "NCM", "NGM"}, "predefined": True},
+    "amex": {"region": "us", "exchanges": {"ASE", "PCX"}, "predefined": True},
+    # Rest of world (generic screener)
+    "uk": {"region": "gb", "exchanges": {"LSE"}, "predefined": False},
+    "lse": {"region": "gb", "exchanges": {"LSE"}, "predefined": False},
+    "germany": {"region": "de", "exchanges": {"GER", "FRA"}, "predefined": False},
+    "xetra": {"region": "de", "exchanges": {"GER"}, "predefined": False},
+    "france": {"region": "fr", "exchanges": {"PAR"}, "predefined": False},
+    "euronext-paris": {"region": "fr", "exchanges": {"PAR"}, "predefined": False},
+    "netherlands": {"region": "nl", "exchanges": {"AMS"}, "predefined": False},
+    "spain": {"region": "es", "exchanges": {"MCE"}, "predefined": False},
+    "italy": {"region": "it", "exchanges": {"MIL"}, "predefined": False},
+    "switzerland": {"region": "ch", "exchanges": {"EBS", "VTX"}, "predefined": False},
+    "sweden": {"region": "se", "exchanges": {"STO"}, "predefined": False},
+    "canada": {"region": "ca", "exchanges": {"TOR"}, "predefined": False},
+    "tsx": {"region": "ca", "exchanges": {"TOR"}, "predefined": False},
+    "australia": {"region": "au", "exchanges": {"ASX"}, "predefined": False},
+    "asx": {"region": "au", "exchanges": {"ASX"}, "predefined": False},
+    "india": {"region": "in", "exchanges": {"NSI", "BSE"}, "predefined": False},
+    "nse": {"region": "in", "exchanges": {"NSI"}, "predefined": False},
+    "bse": {"region": "in", "exchanges": {"BSE"}, "predefined": False},
+    "hongkong": {"region": "hk", "exchanges": {"HKG"}, "predefined": False},
+    "hkex": {"region": "hk", "exchanges": {"HKG"}, "predefined": False},
+    "japan": {"region": "jp", "exchanges": {"JPX", "TYO"}, "predefined": False},
+    "singapore": {"region": "sg", "exchanges": {"SES"}, "predefined": False},
+    "newzealand": {"region": "nz", "exchanges": {"NZE"}, "predefined": False},
+    "brazil": {"region": "br", "exchanges": {"SAO"}, "predefined": False},
+}
+
+
+def _screener_session():
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    return session
+
+
+def fetch_predefined_quotes(session, scr_id):
+    params = {
+        "formatted": "false",
+        "lang": "en-US",
+        "region": "US",
+        "scrIds": scr_id,
+        "count": 250,
+    }
+    response = session.get(PREDEFINED_SCREENER_URL, params=params, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    return response.json()["finance"]["result"][0]["quotes"]
+
+
+def fetch_region_quotes(session, region, sort_field, sort_type, min_volume=None):
+    # The generic screener needs a crumb tied to this session's cookies.
+    crumb = fetch_crumb(session)
+    if not crumb:
+        raise requests.RequestException("could not obtain a Yahoo Finance crumb")
+
+    operands = [{"operator": "EQ", "operands": ["region", region]}]
+    if min_volume:
+        operands.append({"operator": "GT", "operands": ["dayvolume", min_volume]})
+
+    body = {
+        "size": 100,
+        "offset": 0,
+        "sortField": sort_field,
+        "sortType": sort_type,
+        "quoteType": "EQUITY",
+        "query": {"operator": "AND", "operands": operands},
+        "userId": "",
+        "userIdType": "guid",
+    }
+    response = session.post(
+        SCREENER_URL,
+        params={"crumb": crumb},
+        json=body,
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    error = payload.get("finance", {}).get("error")
+    if error:
+        raise requests.RequestException(str(error))
+    return payload["finance"]["result"][0]["quotes"]
+
+
+def screener_quotes(market, metric, limit):
+    """The top ``limit`` raw screener quotes for ``market`` by ``metric``."""
+    config = SCREENER_MARKETS[market]
+    spec = SCREENER_METRICS[metric]
+    session = _screener_session()
+    is_mover = metric != "volume"
+
+    if config["predefined"]:
+        quotes = fetch_predefined_quotes(session, spec["scr_id"])
+    else:
+        quotes = fetch_region_quotes(
+            session,
+            config["region"],
+            spec["sort_field"],
+            spec["sort_type"],
+            min_volume=MIN_MOVER_VOLUME if is_mover else None,
+        )
+
+    if config["exchanges"]:
+        quotes = [q for q in quotes if q.get("exchange") in config["exchanges"]]
+
+    if is_mover:
+        # Drop stale/illiquid quotes that slip past the server-side filter.
+        quotes = [
+            q for q in quotes
+            if (q.get("regularMarketVolume") or 0) >= MIN_MOVER_VOLUME
+        ]
+
+    quotes.sort(
+        key=lambda q: q.get(spec["key"]) or 0,
+        reverse=spec["reverse"],
+    )
+    return quotes[:limit]
+
+
+def _mover_row(quote):
+    return {
+        "symbol": quote.get("symbol"),
+        "name": quote.get("shortName") or quote.get("longName"),
+        "exchange": quote.get("fullExchangeName") or quote.get("exchange"),
+        "volume": quote.get("regularMarketVolume"),
+        "price": quote.get("regularMarketPrice"),
+        "change_percent": quote.get("regularMarketChangePercent"),
+        "currency": quote.get("currency"),
+    }
+
+
+def parse_top_movers(quotes):
+    """stock_data.top_movers()'s shape from screener ``quotes``, order kept."""
+    return {"source": SOURCE, "notes": [], "movers": [_mover_row(q) for q in quotes]}
+
+
+def top_movers(market, metric, limit):
+    """Fetch the top movers and return stock_data's neutral shape."""
+    return parse_top_movers(screener_quotes(market, metric, limit))
+
+
+def mover_markets():
+    """The market names top_movers() accepts."""
+    return list(SCREENER_MARKETS)
+
+
+# Chart endpoint, for quote(): a few days of daily bars is enough to find the
+# latest session even across weekends/holidays.
+QUOTE_RANGE = "5d"
+
+
+def _settled_bars(result):
+    """{date, high, low, close} for each bar with a close, in exchange-local dates."""
+    meta, series = extract_series(result)
+
+    def at(values, i):
+        value = values[i] if i < len(values) else None
+        return round(value, 4) if value is not None else None
+
+    bars = []
+    for i, ts in enumerate(series["timestamp"]):
+        close = series["close"][i] if i < len(series["close"]) else None
+        if close is None:
+            # In-progress session or a data gap - not a settled close.
+            continue
+        bars.append({
+            "date": session_datetime(ts, series["gmtoffset"]).strftime("%Y-%m-%d"),
+            "high": at(series["high"], i),
+            "low": at(series["low"], i),
+            "close": round(close, 4),
+        })
+    return meta, bars
+
+
+def parse_quote(result, symbol):
+    """stock_data.quote()'s shape from a chart ``result``.
+
+    The price and session figures come from the ``meta`` block (which
+    reflects an in-progress session); if Yahoo omits them, they fall back to
+    the most recent settled daily bar.
+    """
+    meta, bars = _settled_bars(result)
+    ticker, exchange, currency = meta_summary(meta, symbol)
+    gmtoffset = meta.get("gmtoffset", 0) or 0
+    latest = bars[-1] if bars else {}
+
+    price = meta.get("regularMarketPrice")
+    if price is None:
+        price = latest.get("close")
+
+    market_time = meta.get("regularMarketTime")
+    high = meta.get("regularMarketDayHigh")
+    low = meta.get("regularMarketDayLow")
+    if market_time and high is not None and low is not None:
+        session_date = session_datetime(market_time, gmtoffset).strftime("%Y-%m-%d")
+    else:
+        session_date = latest.get("date")
+        high = latest.get("high")
+        low = latest.get("low")
+
+    # The previous close is the close of the last bar dated before the latest
+    # session. The in-progress session's bar can already carry a close, so
+    # "the second-to-last bar" isn't reliable.
+    earlier = [b for b in bars if session_date and b["date"] < session_date]
+
+    price_time = None
+    if market_time:
+        price_time = session_datetime(market_time, gmtoffset).strftime("%Y-%m-%d %H:%M")
+        if meta.get("timezone"):
+            price_time += " " + meta["timezone"]
+
+    return {
+        "source": SOURCE,
+        "notes": [],
+        "name": meta.get("longName") or meta.get("shortName") or ticker,
+        "symbol": ticker,
+        "exchange": exchange,
+        "currency": currency,
+        "price": price,
+        "price_time": price_time,
+        "session_date": session_date,
+        "session_high": high,
+        "session_low": low,
+        "previous_close": earlier[-1]["close"] if earlier else None,
+        "week52_low": meta.get("fiftyTwoWeekLow"),
+        "week52_high": meta.get("fiftyTwoWeekHigh"),
+    }
+
+
+def quote(symbol):
+    """Fetch ``symbol``'s latest quote and return stock_data's neutral shape."""
+    return parse_quote(fetch_history(symbol, build_params(range_=QUOTE_RANGE)), symbol)

@@ -4,10 +4,10 @@ Agent that cross-references the top highest-volume NYSE and Nasdaq stocks
 with the hottest technology discussions on Hacker News, and reports which
 stocks (if any) are being talked about.
 
-Combines market_top_volume.py (top 10 by volume on each of NYSE and
-Nasdaq) and hottest_tech_discussions.py (top 50 tech discussions), then
-matches each stock's ticker symbol and company name against each
-discussion's title.
+Combines stock_data.top_movers() (top 10 by volume on each of NYSE and
+Nasdaq, as market_top_volume.py reports them) and hottest_tech_discussions.py
+(top 50 tech discussions), then matches each stock's ticker symbol and
+company name against each discussion's title.
 
 No API key required. Supports a --json flag for structured output, so
 this script can be called as a tool by an agent: it parses stdout
@@ -21,7 +21,7 @@ import re
 import requests
 
 import hottest_tech_discussions as hn
-import market_top_volume as market
+import stock_data
 from cli_utils import die, positive_int, use_utf8_output
 
 STOCK_LIMIT_PER_EXCHANGE = 10
@@ -55,12 +55,15 @@ def normalize_company_name(name):
 
 
 def stock_mentions_in_title(quote, title):
-    symbol = quote.get("symbol", "")
+    """Whether ``title`` names the stock: its symbol (case-sensitive, unless it
+    is an ordinary word) or its company name. ``quote`` is a
+    stock_data.top_movers() row."""
+    symbol = quote.get("symbol") or ""
     if symbol and symbol not in AMBIGUOUS_SYMBOLS:
         if re.search(rf"\b{re.escape(symbol)}\b", title):
             return True
 
-    raw_name = quote.get("shortName") or quote.get("longName") or ""
+    raw_name = quote.get("name") or ""
     name = normalize_company_name(raw_name)
     if len(name) >= 3:
         if re.search(rf"\b{re.escape(name)}\b", title, re.IGNORECASE):
@@ -73,7 +76,7 @@ def get_top_volume_stocks(limit_per_exchange=STOCK_LIMIT_PER_EXCHANGE):
     stocks = []
     seen_symbols = set()
     for exchange in EXCHANGES:
-        for quote in market.get_movers(exchange, "volume", limit_per_exchange):
+        for quote in stock_data.top_movers(exchange, "volume", limit_per_exchange)["movers"]:
             if quote.get("symbol") in seen_symbols:
                 continue
             seen_symbols.add(quote.get("symbol"))
@@ -99,12 +102,12 @@ def result_to_dict(result):
     output modes."""
     stock = result["stock"]
     return {
-        "symbol": stock.get("symbol", "?"),
-        "name": stock.get("shortName") or stock.get("longName") or "(unknown)",
+        "symbol": "?" if stock.get("symbol") is None else stock["symbol"],
+        "name": stock.get("name") or "(unknown)",
         "exchange": stock["_exchange"].upper(),
-        "volume": stock.get("regularMarketVolume", 0),
-        "price": stock.get("regularMarketPrice", 0),
-        "change_percent": stock.get("regularMarketChangePercent", 0),
+        "volume": 0 if stock.get("volume") is None else stock["volume"],
+        "price": 0 if stock.get("price") is None else stock["price"],
+        "change_percent": 0 if stock.get("change_percent") is None else stock["change_percent"],
         "discussions": [
             {
                 "title": d.get("title", "(no title)"),

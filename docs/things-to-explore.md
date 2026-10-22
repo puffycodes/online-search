@@ -284,8 +284,14 @@ before the top picks because it's about the repo's existing sources, not new one
   together through `fundamentals_view()` (functions 4–6): identical on 170
   fixture comparisons, on a live `AAPL` valuation and on a live `VOD.L` run of
   the old and new code back to back. No script reads `quoteSummary` modules
-  itself any more. Still to move: `market_top_volume.py` (function 3) and the
-  app's quote (function 2).
+  itself any more. Last, `market_top_volume.py` and `stock_tech_buzz_agent.py`
+  through `top_movers()` (function 3) and the app's quote through `quote()`
+  (function 2): identical on 142 fixture comparisons and on live `--market uk`
+  and `AAPL` quote runs of the old and new code. **Step 1 is done:** every
+  non-price stock script and the app reach Yahoo only through `stock_data.py`,
+  so replacing a provider is a change to its `PROVIDERS` table. `change_percent`
+  stays in percent, an exception to the fractions rule, so printed figures don't
+  change.
 
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for

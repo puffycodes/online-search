@@ -6,14 +6,16 @@ Scripts import this module, not a provider's: each function here returns
 plain dicts in a shape no provider dictates, and PROVIDERS routes the call
 to the adapter that serves it. Swapping a provider then means changing one
 entry in PROVIDERS, not a script. See docs/things-to-explore.md ("Proposed
-design") for the full list of functions planned; only analyst_view(),
-earnings_view(), holders_view() and fundamentals_view() are here so far, all
-served by yahoo_finance.py.
+design") for the full list of functions planned. Every stock script except the
+price scripts (which use price_source.py), and the stock web app, get their
+data here now: analyst_view(), earnings_view(), holders_view(),
+fundamentals_view(), top_movers() and quote(), all served by yahoo_finance.py.
 
 Shared conventions for every result:
 
 - dates are ISO "YYYY-MM-DD" strings (UTC unless a function says otherwise);
-- numbers are plain floats or ints, ratios are fractions (0.1 == 10%);
+- numbers are plain floats or ints, ratios are fractions (0.1 == 10%), except
+  a field whose name ends in "_percent", which is in percent (4.5 == 4.5%);
 - a field the provider doesn't have is None (a list it doesn't have is []);
 - "source" names the provider and "notes" lists anything it flagged.
 
@@ -29,7 +31,13 @@ PROVIDERS = {
     "earnings_view": yf.earnings_view,
     "holders_view": yf.holders_view,
     "fundamentals_view": yf.fundamentals_view,
+    "top_movers": yf.top_movers,
+    "mover_markets": yf.mover_markets,
+    "quote": yf.quote,
 }
+
+# The rankings top_movers() offers.
+MOVER_METRICS = ("volume", "gainers", "losers")
 
 
 def analyst_view(symbol, days):
@@ -134,3 +142,38 @@ def fundamentals_view(symbol):
          analyst_growth_1y, analyst_growth_5y}           # fractions
     """
     return PROVIDERS["fundamentals_view"](symbol)
+
+
+def top_movers(market, metric, limit):
+    """The top ``limit`` stocks on ``market`` (one of mover_markets()) by
+    ``metric`` (one of MOVER_METRICS): most shares traded, biggest rise or
+    biggest fall in the latest session (function 3).
+
+    Returns::
+
+        {source, notes,
+         movers: [{symbol, name, exchange, volume, price, change_percent,
+                   currency}]}          # best first; change_percent in percent
+    """
+    return PROVIDERS["top_movers"](market, metric, limit)
+
+
+def mover_markets():
+    """The market names top_movers() accepts from its provider."""
+    return PROVIDERS["mover_markets"]()
+
+
+def quote(symbol):
+    """``symbol``'s latest price and session (function 2).
+
+    Returns::
+
+        {source, notes, name, symbol, exchange, currency,
+         price,                             # None if the provider has none
+         price_time,                        # "YYYY-MM-DD HH:MM[ TZ]" local, or None
+         session_date,                      # the latest session, exchange-local
+         session_high, session_low,
+         previous_close,                    # the last close before that session
+         week52_low, week52_high}
+    """
+    return PROVIDERS["quote"](symbol)

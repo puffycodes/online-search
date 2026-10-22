@@ -2,7 +2,8 @@
 fetch_quote_summary, summary_num/summary_text, build_params, meta_summary, extract_series,
 fetch_history, and the stock_data adapter (parse_analyst_view, analyst_view,
 parse_earnings_view, earnings_view, parse_holders_view, holders_view and its
-transaction helpers, parse_fundamentals_view, fundamentals_view)."""
+transaction helpers, parse_fundamentals_view, fundamentals_view, the screeners behind
+top_movers, and parse_quote / quote)."""
 
 import argparse
 import datetime as dt
@@ -989,3 +990,249 @@ class TestFundamentalsView:
         monkeypatch.setattr(yf, "fetch_quote_summary", boom)
         with pytest.raises(requests.RequestException, match="Quote not found"):
             yf.fundamentals_view("ZZZ")
+
+
+class TestScreenerTables:
+    def test_metrics_have_required_keys(self):
+        for name, spec in yf.SCREENER_METRICS.items():
+            assert {"scr_id", "sort_field", "sort_type", "key", "reverse"} <= set(spec), name
+
+    def test_metrics_match_stock_data(self):
+        import stock_data
+        assert set(yf.SCREENER_METRICS) == set(stock_data.MOVER_METRICS)
+
+    def test_markets_have_required_keys(self):
+        for name, cfg in yf.SCREENER_MARKETS.items():
+            assert {"region", "exchanges", "predefined"} <= set(cfg), name
+            assert isinstance(cfg["predefined"], bool)
+
+    def test_mover_markets_lists_every_market(self):
+        assert yf.mover_markets() == list(yf.SCREENER_MARKETS)
+
+
+class TestScreenerQuotes:
+    @pytest.fixture(autouse=True)
+    def _no_session(self, monkeypatch):
+        monkeypatch.setattr(yf, "_screener_session", lambda: object())
+
+    def test_predefined_sorted_and_limited(self, monkeypatch):
+        quotes = [
+            {"symbol": "A", "regularMarketVolume": 100, "regularMarketChangePercent": 1},
+            {"symbol": "B", "regularMarketVolume": 300, "regularMarketChangePercent": 2},
+            {"symbol": "C", "regularMarketVolume": 200, "regularMarketChangePercent": 3},
+        ]
+        monkeypatch.setattr(yf, "fetch_predefined_quotes", lambda s, scr: list(quotes))
+        out = yf.screener_quotes("us", "volume", 2)
+        assert [q["symbol"] for q in out] == ["B", "C"]
+
+    def test_exchange_filter_applied(self, monkeypatch):
+        quotes = [
+            {"symbol": "A", "exchange": "NYQ", "regularMarketVolume": 100},
+            {"symbol": "B", "exchange": "NMS", "regularMarketVolume": 300},
+        ]
+        monkeypatch.setattr(yf, "fetch_predefined_quotes", lambda s, scr: list(quotes))
+        assert [q["symbol"] for q in yf.screener_quotes("nyse", "volume", 10)] == ["A"]
+
+    def test_mover_volume_floor_filters(self, monkeypatch):
+        quotes = [
+            {"symbol": "A", "exchange": "NYQ", "regularMarketVolume": 10,
+             "regularMarketChangePercent": 9},
+            {"symbol": "B", "exchange": "NYQ", "regularMarketVolume": 1_000_000,
+             "regularMarketChangePercent": 4},
+        ]
+        monkeypatch.setattr(yf, "fetch_predefined_quotes", lambda s, scr: list(quotes))
+        assert [q["symbol"] for q in yf.screener_quotes("nyse", "gainers", 10)] == ["B"]
+
+    def test_losers_sorted_ascending(self, monkeypatch):
+        quotes = [
+            {"symbol": "A", "regularMarketVolume": 1e6, "regularMarketChangePercent": -1},
+            {"symbol": "B", "regularMarketVolume": 1e6, "regularMarketChangePercent": -9},
+        ]
+        monkeypatch.setattr(yf, "fetch_predefined_quotes", lambda s, scr: list(quotes))
+        assert [q["symbol"] for q in yf.screener_quotes("us", "losers", 10)] == ["B", "A"]
+
+    def test_region_screener_used_for_non_us(self, monkeypatch):
+        seen = {}
+
+        def fake_region(session, region, sort_field, sort_type, min_volume=None):
+            seen.update(region=region, sort_type=sort_type, min_volume=min_volume)
+            return [{"symbol": "X", "exchange": "LSE", "regularMarketVolume": 5_000_000,
+                     "regularMarketChangePercent": -3}]
+
+        monkeypatch.setattr(yf, "fetch_region_quotes", fake_region)
+        yf.screener_quotes("uk", "losers", 5)
+        assert seen["region"] == "gb"
+        assert seen["sort_type"] == "ASC"
+        assert seen["min_volume"] == yf.MIN_MOVER_VOLUME
+
+    def test_region_screener_volume_metric_no_min(self, monkeypatch):
+        seen = {}
+
+        def fake_region(session, region, sort_field, sort_type, min_volume=None):
+            seen["min_volume"] = min_volume
+            return []
+
+        monkeypatch.setattr(yf, "fetch_region_quotes", fake_region)
+        yf.screener_quotes("uk", "volume", 5)
+        assert seen["min_volume"] is None
+
+
+class TestFetchRegionQuotes:
+    def test_html_crumb_raises(self):
+        session = FakeSession(get_responses=[
+            FakeResponse(json_data={}),                # cookie
+            FakeResponse(text="<html>nope</html>"),    # crumb
+        ])
+        with pytest.raises(requests.RequestException, match="crumb"):
+            yf.fetch_region_quotes(session, "gb", "dayvolume", "DESC")
+
+    def test_empty_crumb_raises(self):
+        session = FakeSession(get_responses=[
+            FakeResponse(json_data={}),
+            FakeResponse(text="   "),
+        ])
+        with pytest.raises(requests.RequestException, match="crumb"):
+            yf.fetch_region_quotes(session, "gb", "dayvolume", "DESC")
+
+    def test_finance_error_raises(self):
+        session = FakeSession(
+            get_responses=[FakeResponse(json_data={}), FakeResponse(text="crumb123")],
+            post_responses=[FakeResponse(json_data={"finance": {"error": "bad request"}})],
+        )
+        with pytest.raises(requests.RequestException, match="bad request"):
+            yf.fetch_region_quotes(session, "gb", "dayvolume", "DESC")
+
+    def test_returns_quotes_and_sends_min_volume_operand(self):
+        payload = {"finance": {"result": [{"quotes": [{"symbol": "X"}]}]}}
+        session = FakeSession(
+            get_responses=[FakeResponse(json_data={}), FakeResponse(text="crumb123")],
+            post_responses=[FakeResponse(json_data=payload)],
+        )
+        out = yf.fetch_region_quotes(session, "gb", "dayvolume", "DESC", min_volume=50_000)
+        assert out == [{"symbol": "X"}]
+        posted_body = session.post_calls[0][1]["json"]
+        operand_fields = [o["operands"][0] for o in posted_body["query"]["operands"]]
+        assert "dayvolume" in operand_fields
+        assert session.post_calls[0][1]["params"] == {"crumb": "crumb123"}
+
+
+class TestFetchPredefinedQuotes:
+    def test_requests_the_screener_and_returns_quotes(self):
+        payload = {"finance": {"result": [{"quotes": [{"symbol": "X"}]}]}}
+        session = FakeSession(get_responses=[FakeResponse(json_data=payload)])
+        assert yf.fetch_predefined_quotes(session, "most_actives") == [{"symbol": "X"}]
+        url, kwargs = session.get_calls[0]
+        assert url == yf.PREDEFINED_SCREENER_URL
+        assert kwargs["params"]["scrIds"] == "most_actives"
+
+
+class TestTopMovers:
+    def test_row_fields_and_order_kept(self):
+        quotes = [
+            {"symbol": "A", "shortName": "Alpha", "longName": "Alpha Inc.", "exchange": "NYQ",
+             "fullExchangeName": "NYSE", "regularMarketVolume": 300, "regularMarketPrice": 10.5,
+             "regularMarketChangePercent": 7.7948, "currency": "USD"},
+            {"symbol": "B", "longName": "Beta Corp", "exchange": "NMS"},
+        ]
+        out = yf.parse_top_movers(quotes)
+        assert (out["source"], out["notes"]) == ("Yahoo Finance", [])
+        assert out["movers"] == [
+            {"symbol": "A", "name": "Alpha", "exchange": "NYSE", "volume": 300, "price": 10.5,
+             "change_percent": 7.7948, "currency": "USD"},
+            {"symbol": "B", "name": "Beta Corp", "exchange": "NMS", "volume": None,
+             "price": None, "change_percent": None, "currency": None},
+        ]
+
+    def test_top_movers_parses_screener_quotes(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "screener_quotes",
+                            lambda m, k, n: seen.append((m, k, n)) or [{"symbol": "A"}])
+        assert yf.top_movers("uk", "losers", 3)["movers"][0]["symbol"] == "A"
+        assert seen == [("uk", "losers", 3)]
+
+
+class TestParseQuote:
+    def test_uses_meta_fields_when_present(self, chart_result):
+        chart_result["meta"].update({
+            "longName": "Triple A Inc.",
+            "regularMarketPrice": 12.34,
+            "regularMarketTime": 1704283200,  # 2024-01-03 12:00 UTC
+            "regularMarketDayHigh": 13.0,
+            "regularMarketDayLow": 12.0,
+            "fiftyTwoWeekLow": 9.5,
+            "fiftyTwoWeekHigh": 15.25,
+            "timezone": "UTC",
+        })
+        assert yf.parse_quote(chart_result, "AAA") == {
+            "source": "Yahoo Finance", "notes": [],
+            "name": "Triple A Inc.", "symbol": "AAA", "exchange": "TestExchange",
+            "currency": "USD", "price": 12.34, "price_time": "2024-01-03 12:00 UTC",
+            "session_date": "2024-01-03", "session_high": 13.0, "session_low": 12.0,
+            "previous_close": 11.2, "week52_low": 9.5, "week52_high": 15.25,
+        }
+
+    def test_session_date_honours_gmtoffset(self, chart_result):
+        chart_result["meta"].update({
+            "gmtoffset": 8 * 3600,
+            "regularMarketPrice": 1.0,
+            "regularMarketTime": 1704283200 + 12 * 3600,  # 2024-01-04 00:00 UTC
+            "regularMarketDayHigh": 2.0,
+            "regularMarketDayLow": 0.5,
+        })
+        quote = yf.parse_quote(chart_result, "AAA")
+        assert quote["session_date"] == "2024-01-04"
+        assert quote["price_time"] == "2024-01-04 08:00"
+
+    def test_falls_back_to_latest_bar(self, chart_result):
+        chart_result["meta"]["shortName"] = "Triple A"
+        quote = yf.parse_quote(chart_result, "AAA")
+        assert quote["name"] == "Triple A"
+        assert (quote["price"], quote["price_time"]) == (12.2, None)
+        assert quote["session_date"] == "2024-01-03"
+        assert (quote["session_high"], quote["session_low"]) == (12.5, 11.5)
+        assert quote["previous_close"] == 11.2
+        assert (quote["week52_low"], quote["week52_high"]) == (None, None)
+
+    def test_previous_close_ignores_in_progress_bar_that_has_a_close(self, chart_result):
+        # The latest session's own bar (2024-01-03) already carries a close;
+        # the previous close must be 2024-01-02's, not that bar's.
+        chart_result["meta"].update({
+            "regularMarketPrice": 12.2,
+            "regularMarketTime": 1704283200,
+            "regularMarketDayHigh": 12.5,
+            "regularMarketDayLow": 11.5,
+        })
+        assert yf.parse_quote(chart_result, "AAA")["previous_close"] == 11.2
+
+    def test_no_earlier_bar_has_no_previous_close(self, chart_result):
+        chart_result["timestamp"] = chart_result["timestamp"][-1:]
+        quote = chart_result["indicators"]["quote"][0]
+        for key in quote:
+            quote[key] = quote[key][-1:]
+        assert yf.parse_quote(chart_result, "AAA")["previous_close"] is None
+
+    def test_bars_rounded_and_unsettled_skipped(self, chart_result):
+        bars = chart_result["indicators"]["quote"][0]
+        bars["close"] = [10.123456, None, 12.2]
+        bars["high"] = [10.777777, 11.5, 12.5]
+        quote = yf.parse_quote(chart_result, "AAA")
+        assert quote["previous_close"] == 10.1235  # 2024-01-02 has no close
+
+    def test_name_falls_back_to_symbol(self, chart_result):
+        assert yf.parse_quote(chart_result, "AAA")["name"] == "AAA"
+
+    def test_no_price_is_none(self, chart_result):
+        chart_result["indicators"]["quote"][0]["close"] = [None, None, None]
+        quote = yf.parse_quote(chart_result, "AAA")
+        assert (quote["price"], quote["session_date"], quote["previous_close"]) == (None, None, None)
+
+
+class TestQuote:
+    def test_fetches_a_short_daily_window(self, monkeypatch, chart_result):
+        calls = []
+        monkeypatch.setattr(yf, "fetch_history",
+                            lambda s, p: calls.append((s, p)) or chart_result)
+        assert yf.quote("AAA")["symbol"] == "AAA"
+        assert calls[0][0] == "AAA"
+        assert calls[0][1]["range"] == yf.QUOTE_RANGE
+        assert calls[0][1]["interval"] == "1d"

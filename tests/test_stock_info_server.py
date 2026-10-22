@@ -28,34 +28,25 @@ class TestNormalizeSymbol:
             sis.normalize_symbol(raw)
 
 
+def _quote(**changes):
+    """A neutral stock_data.quote() result."""
+    quote = {
+        "source": "Test", "notes": [],
+        "name": "Triple A Inc.", "symbol": "AAA", "exchange": "TestExchange", "currency": "USD",
+        "price": 12.34, "price_time": "2024-01-03 12:00 UTC", "session_date": "2024-01-03",
+        "session_high": 13.0, "session_low": 12.0, "previous_close": 11.2,
+        "week52_low": 9.5, "week52_high": 15.25,
+    }
+    quote.update(changes)
+    return quote
+
+
 class TestGetStockInfo:
-    def _patch(self, monkeypatch, result):
-        calls = []
-
-        def fake_fetch(symbol, params):
-            calls.append((symbol, params))
-            return result
-
-        monkeypatch.setattr(sis.yf, "fetch_history", fake_fetch)
-        return calls
-
-    def test_uses_meta_fields_when_present(self, monkeypatch, chart_result):
-        chart_result["meta"].update(
-            {
-                "longName": "Triple A Inc.",
-                "regularMarketPrice": 12.34,
-                "regularMarketTime": 1704283200,  # 2024-01-03 12:00 UTC
-                "regularMarketDayHigh": 13.0,
-                "regularMarketDayLow": 12.0,
-                "fiftyTwoWeekLow": 9.5,
-                "fiftyTwoWeekHigh": 15.25,
-                "timezone": "UTC",
-            }
-        )
-        calls = self._patch(monkeypatch, chart_result)
+    def test_passes_the_quote_through_with_its_change(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(sis.stock_data, "quote", lambda s: seen.append(s) or _quote())
         info = sis.get_stock_info("AAA")
-        assert calls[0][0] == "AAA"
-        assert calls[0][1]["range"] == sis.QUOTE_RANGE
+        assert seen == ["AAA"]
         assert info == {
             "name": "Triple A Inc.",
             "symbol": "AAA",
@@ -73,70 +64,26 @@ class TestGetStockInfo:
             "week52_high": 15.25,
         }
 
-    def test_session_date_honours_gmtoffset(self, monkeypatch, chart_result):
-        chart_result["meta"].update(
-            {
-                "gmtoffset": 8 * 3600,
-                "regularMarketPrice": 1.0,
-                "regularMarketTime": 1704283200 + 12 * 3600,  # 2024-01-04 00:00 UTC
-                "regularMarketDayHigh": 2.0,
-                "regularMarketDayLow": 0.5,
-            }
-        )
-        self._patch(monkeypatch, chart_result)
+    def test_change_rounded_to_four_places(self, monkeypatch):
+        monkeypatch.setattr(sis.stock_data, "quote",
+                            lambda s: _quote(price=10.123456, previous_close=10.0))
+        assert sis.get_stock_info("AAA")["change"] == 0.1235
+
+    @pytest.mark.parametrize("previous_close", [None, 0.0])
+    def test_no_previous_close_leaves_change_empty(self, monkeypatch, previous_close):
+        monkeypatch.setattr(sis.stock_data, "quote",
+                            lambda s: _quote(previous_close=previous_close))
         info = sis.get_stock_info("AAA")
-        assert info["session_date"] == "2024-01-04"
-        assert info["price_time"] == "2024-01-04 08:00"
+        assert (info["change"], info["change_pct"]) == (None, None)
 
-    def test_falls_back_to_latest_bar(self, monkeypatch, chart_result):
-        chart_result["meta"]["shortName"] = "Triple A"
-        self._patch(monkeypatch, chart_result)
-        info = sis.get_stock_info("AAA")
-        assert info["name"] == "Triple A"
-        assert info["price"] == 12.2
-        assert info["price_time"] is None
-        assert info["session_date"] == "2024-01-03"
-        assert (info["session_high"], info["session_low"]) == (12.5, 11.5)
-        assert info["previous_close"] == 11.2
-        assert info["change"] == 1.0
-        assert info["change_pct"] == pytest.approx(1.0 / 11.2)
-        assert (info["week52_low"], info["week52_high"]) == (None, None)
-
-    def test_change_ignores_in_progress_bar_that_has_a_close(self, monkeypatch, chart_result):
-        # The latest session's own bar (2024-01-03) already carries a close;
-        # movement must be measured against 2024-01-02, not that bar.
-        chart_result["meta"].update(
-            {
-                "regularMarketPrice": 12.2,
-                "regularMarketTime": 1704283200,
-                "regularMarketDayHigh": 12.5,
-                "regularMarketDayLow": 11.5,
-            }
-        )
-        self._patch(monkeypatch, chart_result)
-        info = sis.get_stock_info("AAA")
-        assert info["previous_close"] == 11.2
-        assert info["change"] == 1.0
-
-    def test_no_earlier_bar_leaves_change_empty(self, monkeypatch, chart_result):
-        chart_result["timestamp"] = chart_result["timestamp"][-1:]
-        quote = chart_result["indicators"]["quote"][0]
-        for key in quote:
-            quote[key] = quote[key][-1:]
-        chart_result["indicators"]["adjclose"][0]["adjclose"] = [12.1]
-        self._patch(monkeypatch, chart_result)
-        info = sis.get_stock_info("AAA")
-        assert (info["previous_close"], info["change"], info["change_pct"]) == (None, None, None)
-
-    def test_name_falls_back_to_symbol(self, monkeypatch, chart_result):
-        self._patch(monkeypatch, chart_result)
-        assert sis.get_stock_info("AAA")["name"] == "AAA"
-
-    def test_no_price_raises(self, monkeypatch, chart_result):
-        chart_result["indicators"]["quote"][0]["close"] = [None, None, None]
-        self._patch(monkeypatch, chart_result)
+    def test_no_price_raises(self, monkeypatch):
+        monkeypatch.setattr(sis.stock_data, "quote", lambda s: _quote(price=None))
         with pytest.raises(requests.RequestException, match="no price data"):
             sis.get_stock_info("AAA")
+
+    def test_source_and_notes_left_out(self, monkeypatch):
+        monkeypatch.setattr(sis.stock_data, "quote", lambda s: _quote())
+        assert not {"source", "notes"} & set(sis.get_stock_info("AAA"))
 
 
 def _fundamentals(price=100.0):

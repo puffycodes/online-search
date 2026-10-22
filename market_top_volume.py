@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
 Report the top movers on a given stock market right now - the highest-volume
-stocks, the biggest gainers, or the biggest losers - using Yahoo Finance's
-public screeners. No API key required.
+stocks, the biggest gainers, or the biggest losers - through
+stock_data.top_movers(), which serves them from Yahoo Finance's public
+screeners today. No API key required.
 
-For US markets (us / nyse / nasdaq / amex) this uses the keyless predefined
-screeners ("most_actives", "day_gainers", "day_losers") and filters by
-listing exchange.
-
-For every other market it fetches a Yahoo crumb + cookie and calls the
-generic equity screener, sorted by the chosen metric and filtered to the
-market's region (and, where useful, its primary exchange).
+The markets offered (us, nyse, nasdaq, uk, japan, ...) are the ones the
+provider covers, from stock_data.mover_markets(). Behind it, Yahoo's keyless
+predefined screeners serve the US markets and its generic equity screener
+(with a crumb + cookie) the rest, and gainers and losers ignore stocks
+trading fewer than 50,000 shares.
 
 Supports --json for structured output so an agent can parse stdout
 instead of the human-readable report. On failure the process exits
@@ -22,190 +21,31 @@ import json
 
 import requests
 
-import yahoo_finance as yf
+import stock_data
 from cli_utils import die, positive_int, use_utf8_output
 
 DEFAULT_LIMIT = 10
 DEFAULT_MARKET = "us"
 DEFAULT_METRIC = "volume"
-# Gainer/loser lists are dominated by illiquid micro-caps unless a floor is
-# applied; ignore anything trading fewer shares than this for those metrics.
-MIN_MOVER_VOLUME = 50_000
 
-PREDEFINED_URL = (
-    "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
-)
-SCREENER_URL = "https://query1.finance.yahoo.com/v1/finance/screener"
-
-# metric -> how to ask each screener for it
-#   scr_id:     predefined screener id (US markets)
-#   sort_field: generic-screener sort field (other markets)
-#   sort_type:  generic-screener sort direction
-#   reverse:    local sort direction (True = descending)
-METRICS = {
-    "volume": {
-        "scr_id": "most_actives",
-        "sort_field": "dayvolume",
-        "sort_type": "DESC",
-        "key": "regularMarketVolume",
-        "reverse": True,
-    },
-    "gainers": {
-        "scr_id": "day_gainers",
-        "sort_field": "percentchange",
-        "sort_type": "DESC",
-        "key": "regularMarketChangePercent",
-        "reverse": True,
-    },
-    "losers": {
-        "scr_id": "day_losers",
-        "sort_field": "percentchange",
-        "sort_type": "ASC",
-        "key": "regularMarketChangePercent",
-        "reverse": False,
-    },
-}
 METRIC_LABELS = {
     "volume": "stock(s) by volume",
     "gainers": "gainers",
     "losers": "losers",
 }
 
-# market alias -> config
-#   region:    Yahoo region code (lowercase) used by the generic screener
-#   exchanges: set of Yahoo listing-exchange codes to keep, or None for all
-#   predefined: True to use the keyless US predefined screeners
-MARKETS = {
-    # United States
-    "us": {"region": "us", "exchanges": None, "predefined": True},
-    "nyse": {"region": "us", "exchanges": {"NYQ"}, "predefined": True},
-    "nasdaq": {"region": "us", "exchanges": {"NMS", "NCM", "NGM"}, "predefined": True},
-    "amex": {"region": "us", "exchanges": {"ASE", "PCX"}, "predefined": True},
-    # Rest of world (generic screener)
-    "uk": {"region": "gb", "exchanges": {"LSE"}, "predefined": False},
-    "lse": {"region": "gb", "exchanges": {"LSE"}, "predefined": False},
-    "germany": {"region": "de", "exchanges": {"GER", "FRA"}, "predefined": False},
-    "xetra": {"region": "de", "exchanges": {"GER"}, "predefined": False},
-    "france": {"region": "fr", "exchanges": {"PAR"}, "predefined": False},
-    "euronext-paris": {"region": "fr", "exchanges": {"PAR"}, "predefined": False},
-    "netherlands": {"region": "nl", "exchanges": {"AMS"}, "predefined": False},
-    "spain": {"region": "es", "exchanges": {"MCE"}, "predefined": False},
-    "italy": {"region": "it", "exchanges": {"MIL"}, "predefined": False},
-    "switzerland": {"region": "ch", "exchanges": {"EBS", "VTX"}, "predefined": False},
-    "sweden": {"region": "se", "exchanges": {"STO"}, "predefined": False},
-    "canada": {"region": "ca", "exchanges": {"TOR"}, "predefined": False},
-    "tsx": {"region": "ca", "exchanges": {"TOR"}, "predefined": False},
-    "australia": {"region": "au", "exchanges": {"ASX"}, "predefined": False},
-    "asx": {"region": "au", "exchanges": {"ASX"}, "predefined": False},
-    "india": {"region": "in", "exchanges": {"NSI", "BSE"}, "predefined": False},
-    "nse": {"region": "in", "exchanges": {"NSI"}, "predefined": False},
-    "bse": {"region": "in", "exchanges": {"BSE"}, "predefined": False},
-    "hongkong": {"region": "hk", "exchanges": {"HKG"}, "predefined": False},
-    "hkex": {"region": "hk", "exchanges": {"HKG"}, "predefined": False},
-    "japan": {"region": "jp", "exchanges": {"JPX", "TYO"}, "predefined": False},
-    "singapore": {"region": "sg", "exchanges": {"SES"}, "predefined": False},
-    "newzealand": {"region": "nz", "exchanges": {"NZE"}, "predefined": False},
-    "brazil": {"region": "br", "exchanges": {"SAO"}, "predefined": False},
-}
 
-
-def _session():
-    session = requests.Session()
-    session.headers.update(yf.HEADERS)
-    return session
-
-
-def fetch_predefined_quotes(session, scr_id):
-    params = {
-        "formatted": "false",
-        "lang": "en-US",
-        "region": "US",
-        "scrIds": scr_id,
-        "count": 250,
-    }
-    response = session.get(PREDEFINED_URL, params=params, timeout=yf.REQUEST_TIMEOUT)
-    response.raise_for_status()
-    return response.json()["finance"]["result"][0]["quotes"]
-
-
-def fetch_region_quotes(session, region, sort_field, sort_type, min_volume=None):
-    # The generic screener needs a crumb tied to this session's cookies.
-    crumb = yf.fetch_crumb(session)
-    if not crumb:
-        raise requests.RequestException("could not obtain a Yahoo Finance crumb")
-
-    operands = [{"operator": "EQ", "operands": ["region", region]}]
-    if min_volume:
-        operands.append({"operator": "GT", "operands": ["dayvolume", min_volume]})
-
-    body = {
-        "size": 100,
-        "offset": 0,
-        "sortField": sort_field,
-        "sortType": sort_type,
-        "quoteType": "EQUITY",
-        "query": {"operator": "AND", "operands": operands},
-        "userId": "",
-        "userIdType": "guid",
-    }
-    response = session.post(
-        SCREENER_URL,
-        params={"crumb": crumb},
-        json=body,
-        timeout=yf.REQUEST_TIMEOUT,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    error = payload.get("finance", {}).get("error")
-    if error:
-        raise requests.RequestException(str(error))
-    return payload["finance"]["result"][0]["quotes"]
-
-
-def get_movers(market, metric, limit):
-    config = MARKETS[market]
-    spec = METRICS[metric]
-    session = _session()
-    is_mover = metric != "volume"
-
-    if config["predefined"]:
-        quotes = fetch_predefined_quotes(session, spec["scr_id"])
-    else:
-        quotes = fetch_region_quotes(
-            session,
-            config["region"],
-            spec["sort_field"],
-            spec["sort_type"],
-            min_volume=MIN_MOVER_VOLUME if is_mover else None,
-        )
-
-    if config["exchanges"]:
-        quotes = [q for q in quotes if q.get("exchange") in config["exchanges"]]
-
-    if is_mover:
-        # Drop stale/illiquid quotes that slip past the server-side filter.
-        quotes = [
-            q for q in quotes
-            if (q.get("regularMarketVolume") or 0) >= MIN_MOVER_VOLUME
-        ]
-
-    quotes.sort(
-        key=lambda q: q.get(spec["key"]) or 0,
-        reverse=spec["reverse"],
-    )
-    return quotes[:limit]
-
-
-def quote_to_dict(rank, quote):
+def quote_to_dict(rank, row):
+    """One output record from a stock_data.top_movers() row, with display defaults."""
     return {
         "rank": rank,
-        "symbol": quote.get("symbol", "?"),
-        "name": quote.get("shortName") or quote.get("longName") or "(unknown)",
-        "exchange": quote.get("fullExchangeName") or quote.get("exchange") or "?",
-        "volume": quote.get("regularMarketVolume") or 0,
-        "price": quote.get("regularMarketPrice") or 0,
-        "change_percent": quote.get("regularMarketChangePercent") or 0,
-        "currency": quote.get("currency") or "",
+        "symbol": "?" if row["symbol"] is None else row["symbol"],
+        "name": row["name"] or "(unknown)",
+        "exchange": row["exchange"] or "?",
+        "volume": row["volume"] or 0,
+        "price": row["price"] or 0,
+        "change_percent": row["change_percent"] or 0,
+        "currency": row["currency"] or "",
     }
 
 
@@ -224,22 +64,23 @@ def format_quote(row, metric):
 
 
 def parse_args(argv=None):
+    markets = sorted(stock_data.mover_markets())
     parser = argparse.ArgumentParser(
         description="Report the top movers (volume, gainers, or losers) on a given market."
     )
     parser.add_argument(
         "--market",
-        choices=sorted(MARKETS),
+        choices=markets,
         default=DEFAULT_MARKET,
         metavar="MARKET",
         help=(
             "Market to query (default: %(default)s). One of: "
-            + ", ".join(sorted(MARKETS))
+            + ", ".join(markets)
         ),
     )
     parser.add_argument(
         "--metric",
-        choices=sorted(METRICS),
+        choices=sorted(stock_data.MOVER_METRICS),
         default=DEFAULT_METRIC,
         help=(
             "Which movers to return (default: %(default)s): "
@@ -266,11 +107,11 @@ def main(argv=None):
     args = parse_args(argv)
 
     try:
-        quotes = get_movers(args.market, args.metric, args.limit)
+        movers = stock_data.top_movers(args.market, args.metric, args.limit)["movers"]
     except (requests.RequestException, KeyError, ValueError) as exc:
         die(f"failed to fetch {args.metric} for market '{args.market}': {exc}", args.json)
 
-    rows = [quote_to_dict(rank, q) for rank, q in enumerate(quotes, start=1)]
+    rows = [quote_to_dict(rank, m) for rank, m in enumerate(movers, start=1)]
 
     if args.json:
         print(json.dumps(rows, indent=2))

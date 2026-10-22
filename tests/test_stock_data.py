@@ -135,6 +135,30 @@ class TestRouting:
         assert stock_data.fundamentals_view("AAA") == {"ok": True}
         assert seen == ["AAA"]
 
+    @pytest.mark.parametrize("name", ["top_movers", "mover_markets", "quote"])
+    def test_screener_and_quote_served_by_yahoo(self, name):
+        assert stock_data.PROVIDERS[name] is getattr(yf, name)
+
+    def test_top_movers_delegates_to_its_provider(self, monkeypatch):
+        seen = []
+        monkeypatch.setitem(stock_data.PROVIDERS, "top_movers",
+                            lambda m, k, n: seen.append((m, k, n)) or {"ok": True})
+        assert stock_data.top_movers("uk", "losers", 3) == {"ok": True}
+        assert seen == [("uk", "losers", 3)]
+
+    def test_mover_markets_delegates_to_its_provider(self, monkeypatch):
+        monkeypatch.setitem(stock_data.PROVIDERS, "mover_markets", lambda: ["mars"])
+        assert stock_data.mover_markets() == ["mars"]
+
+    def test_quote_delegates_to_its_provider(self, monkeypatch):
+        seen = []
+        monkeypatch.setitem(stock_data.PROVIDERS, "quote", lambda s: seen.append(s) or {"ok": True})
+        assert stock_data.quote("AAA") == {"ok": True}
+        assert seen == ["AAA"]
+
+    def test_mover_metrics(self):
+        assert stock_data.MOVER_METRICS == ("volume", "gainers", "losers")
+
     def test_analyst_view_delegates_to_its_provider(self, monkeypatch):
         seen = []
         monkeypatch.setitem(stock_data.PROVIDERS, "analyst_view",
@@ -255,3 +279,51 @@ class TestFundamentalsViewContract:
         assert view["gross_margin"] == 0.45      # not 45
         assert view["analyst_growth_5y"] == 0.10
         assert view["dividend_per_share"] == pytest.approx(2.0)  # per share, not a yield
+
+
+MOVER_KEYS = {"symbol", "name", "exchange", "volume", "price", "change_percent", "currency"}
+QUOTE_KEYS = {"source", "notes", "name", "symbol", "exchange", "currency", "price",
+              "price_time", "session_date", "session_high", "session_low", "previous_close",
+              "week52_low", "week52_high"}
+YAHOO_SCREENER_QUOTES = [
+    {"symbol": "A", "shortName": "Alpha", "fullExchangeName": "NYSE",
+     "regularMarketVolume": 300, "regularMarketPrice": 10.5,
+     "regularMarketChangePercent": 7.7948, "currency": "USD"},
+]
+YAHOO_CHART_RESULT = {
+    "meta": {"symbol": "AAA", "fullExchangeName": "TestExchange", "currency": "USD",
+             "gmtoffset": 0, "regularMarketPrice": 12.34, "regularMarketTime": 1704283200,
+             "regularMarketDayHigh": 13.0, "regularMarketDayLow": 12.0},
+    "timestamp": [1704153600, 1704240000],
+    "indicators": {"quote": [{"high": [11.5, 12.5], "low": [10.5, 11.5],
+                              "close": [11.2, 12.2]}]},
+}
+
+
+@pytest.mark.parametrize("result", [
+    pytest.param(yf.parse_top_movers(YAHOO_SCREENER_QUOTES), id="yahoo"),
+])
+class TestTopMoversContract:
+    def test_keys(self, result):
+        assert set(result) == {"source", "notes", "movers"}
+        assert result["movers"] and all(set(m) == MOVER_KEYS for m in result["movers"])
+
+    def test_change_is_in_percent(self, result):
+        # The one documented exception to fractions: the name says percent.
+        assert result["movers"][0]["change_percent"] == 7.7948
+
+
+@pytest.mark.parametrize("quote", [
+    pytest.param(yf.parse_quote(YAHOO_CHART_RESULT, "AAA"), id="yahoo"),
+])
+class TestQuoteContract:
+    def test_keys(self, quote):
+        assert set(quote) == QUOTE_KEYS
+        assert isinstance(quote["source"], str) and quote["source"]
+
+    def test_values_are_plain(self, quote):
+        assert _iso(quote["session_date"])
+        assert all(quote[k] is None or isinstance(quote[k], (int, float)) for k in (
+            "price", "session_high", "session_low", "previous_close", "week52_low",
+            "week52_high"))
+        assert quote["previous_close"] == 11.2  # the close before the session

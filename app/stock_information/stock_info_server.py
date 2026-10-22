@@ -4,10 +4,10 @@ Serve a small local web page for looking up a single stock.
 
 The page has a text box for a ticker (Yahoo notation: AAPL, VOD.L,
 D05.SI, ...) and a submit button. On submit, the browser calls this
-server's /api/quote endpoint, which fetches the quote through the same
-Yahoo Finance chart helpers as stock_price_history.py (yahoo_finance.py
-at the repository root) and returns the company name, symbol, current
-price, its movement since the previous close, the day low/high
+server's /api/quote endpoint, which fetches the quote through
+stock_data.quote() (served by Yahoo Finance's chart endpoint today, via
+yahoo_finance.py at the repository root) and returns the company name,
+symbol, current price, its movement since the previous close, the day low/high
 of the latest session with its date, and the 52-week low/high (both
 drawn as range bars with a marker at the current price).
 
@@ -37,8 +37,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# yahoo_finance.py, stock_data.py, stock_price_history.py, stock_intrinsic_value.py
-# and stock_fundamental.py live at the repository root, two levels up from this file (app/stock_information/stock_info_server.py).
+# stock_data.py, stock_intrinsic_value.py and stock_fundamental.py live at
+# the repository root, two levels up from this file (app/stock_information/stock_info_server.py).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -47,14 +47,9 @@ import requests  # noqa: E402
 import stock_data  # noqa: E402
 import stock_fundamental as sf  # noqa: E402
 import stock_intrinsic_value as siv  # noqa: E402
-import yahoo_finance as yf  # noqa: E402
-from stock_price_history import extract_rows  # noqa: E402
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
-# A few days of daily bars is enough to find the latest session even
-# across weekends/holidays.
-QUOTE_RANGE = "5d"
 # Yahoo tickers: letters, digits and . - ^ = (e.g. VOD.L, BRK-B, ^GSPC, EURUSD=X).
 SYMBOL_PATTERN = re.compile(r"^[A-Za-z0-9.^=\-]{1,20}$")
 # A valuation within this fraction of the price counts as "fair value".
@@ -644,71 +639,42 @@ def normalize_symbol(value):
 
 
 def get_stock_info(symbol):
-    """Fetch the quote summary for ``symbol`` from Yahoo's chart endpoint.
+    """Fetch the quote summary for ``symbol`` through stock_data.quote().
 
     Returns a dict with name, symbol, exchange, currency, price,
     price_time, session_date, session_high, session_low, previous_close,
-    change, change_pct (a fraction), week52_low, week52_high. The 52-week
-    range is Yahoo's ``fiftyTwoWeekLow``/``fiftyTwoWeekHigh`` from the chart
-    ``meta`` block, None when Yahoo omits it. The price and session figures come from the chart ``meta`` block (which reflects
-    an in-progress session); if Yahoo omits them, they fall back to the
-    most recent settled daily bar. Raises requests.RequestException if
-    Yahoo returns no usable price. previous_close / change / change_pct
-    are None when the window has no bar before the latest session.
+    change, change_pct (a fraction), week52_low, week52_high. The session
+    figures and the 52-week range are the provider's, None where it has
+    none. Raises requests.RequestException if it returns no price.
+    previous_close / change / change_pct are None when there is no close
+    before the latest session.
     """
-    result = yf.fetch_history(symbol, yf.build_params(range_=QUOTE_RANGE))
-    meta, rows = extract_rows(result)
-    ticker, exchange, currency = yf.meta_summary(meta, symbol)
-    gmtoffset = meta.get("gmtoffset", 0) or 0
-    latest = rows[-1] if rows else {}
-
-    price = meta.get("regularMarketPrice")
-    if price is None:
-        price = latest.get("close")
+    quote = stock_data.quote(symbol)
+    price = quote["price"]
     if price is None:
         raise requests.RequestException("no price data returned for symbol")
 
-    market_time = meta.get("regularMarketTime")
-    high = meta.get("regularMarketDayHigh")
-    low = meta.get("regularMarketDayLow")
-    if market_time and high is not None and low is not None:
-        session_date = yf.session_datetime(market_time, gmtoffset).strftime("%Y-%m-%d")
-    else:
-        session_date = latest.get("date")
-        high = latest.get("high")
-        low = latest.get("low")
-
-    # Movement for the latest session is measured against the close of the
-    # last bar dated before it. The in-progress session's bar can already
-    # carry a close, so "the second-to-last row" isn't reliable.
-    earlier = [r for r in rows if session_date and r["date"] < session_date]
-    previous_close = earlier[-1]["close"] if earlier else None
+    previous_close = quote["previous_close"]
     change = change_pct = None
     if previous_close:
         change = round(price - previous_close, 4)
         change_pct = change / previous_close
 
-    price_time = None
-    if market_time:
-        price_time = yf.session_datetime(market_time, gmtoffset).strftime("%Y-%m-%d %H:%M")
-        if meta.get("timezone"):
-            price_time += " " + meta["timezone"]
-
     return {
-        "name": meta.get("longName") or meta.get("shortName") or ticker,
-        "symbol": ticker,
-        "exchange": exchange,
-        "currency": currency,
+        "name": quote["name"],
+        "symbol": quote["symbol"],
+        "exchange": quote["exchange"],
+        "currency": quote["currency"],
         "price": price,
-        "price_time": price_time,
-        "session_date": session_date,
-        "session_high": high,
-        "session_low": low,
+        "price_time": quote["price_time"],
+        "session_date": quote["session_date"],
+        "session_high": quote["session_high"],
+        "session_low": quote["session_low"],
         "previous_close": previous_close,
         "change": change,
         "change_pct": change_pct,
-        "week52_low": meta.get("fiftyTwoWeekLow"),
-        "week52_high": meta.get("fiftyTwoWeekHigh"),
+        "week52_low": quote["week52_low"],
+        "week52_high": quote["week52_high"],
     }
 
 
