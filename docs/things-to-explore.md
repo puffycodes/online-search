@@ -223,6 +223,54 @@ before the top picks because it's about the repo's existing sources, not new one
   - No free replacement found yet (2026-10-20 shortlist): 3 outside the US, 12, and
     most of 15.
 
+  **Proposed design** (2026-10-22, not built): put the 15 functions behind one
+  facade module, `stock_data.py`, with an adapter module per provider. Scripts
+  import only `stock_data`; agents keep reading the scripts' `--json` output.
+  This extends what `price_source.py` started for prices.
+
+  ```
+  agents ──(--json output, unchanged)──▶ stock_*.py scripts
+                                              │ import only
+                                              ▼
+                                         stock_data.py      15 functions, neutral shapes, routing
+                                              │
+                          ┌───────────────────┼───────────────────┐
+                          ▼                   ▼                   ▼
+                 yahoo_finance.py    eodhd_*.py / price_source.py   alphavantage_*.py, sec_edgar.py …
+  ```
+
+  - **Neutral shapes, defined once.** Plain dicts: ISO dates, fractions not
+    percents, plain numbers (not Yahoo's `{"raw": …}`), `None` for a missing field,
+    and `source` and `notes` on every result, as `price_source.fetch_history()` has.
+  - **Provider parsing moves into the adapters.** This is the main work: scripts
+    read Yahoo's structure today (`extract_targets()` reads
+    `modules["upgradeDowngradeHistory"]`, `collect_inputs()` calls
+    `summary_num(modules, "financialData", …)`). Scripts keep only their own row
+    shaping, arithmetic (`valuation.py`, `indicators.py`) and output.
+  - **Routing in one place.** A table in `stock_data.py` maps function and market to
+    provider(s), as `price_source.py` routes by ticker suffix. Changing provider
+    changes one entry, not a script.
+  - **Two kinds of failure.** "Not supported for this market or ticker", checked
+    before any request (as Singapore is now), and "fetch failed". Both reach
+    `cli_utils.die()` with exit 1, so the exit-code split agents rely on holds.
+  - **Grouped calls.** Yahoo serves several functions per call; other providers may
+    not, and free quotas are small. Offer grouped calls (e.g.
+    `company_overview(symbol)` for 4–6) or a per-run cache.
+  - **Tests split the same way.** Script tests monkeypatch `stock_data.<function>`
+    with neutral dicts; each adapter is tested against saved provider responses; a
+    shared contract test checks every adapter returns the neutral shape.
+  - **Agents mostly unchanged.** Where an agent says "from Yahoo Finance", it should
+    name the result's `source` instead.
+
+  Steps: (1) create `stock_data.py` with Yahoo as the only adapter and move each
+  script's parsing behind it, one script at a time, with unchanged output so the
+  existing tests prove nothing changed; (2) move `price_source.fetch_history()`
+  behind `daily_history` with neutral rows, so the price scripts stop depending on
+  Yahoo's chart-result shape and `yahoo_finance.extract_series()`; (3) swap
+  providers one function at a time in the routing table, starting with
+  `top_movers` once a provider is chosen. It fits the flat layout: `stock_data.py`
+  is a shared helper at the root like `weather.py` or `hn.py`.
+
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
   US fundamentals and insider data to save Alpha Vantage requests. **No free
