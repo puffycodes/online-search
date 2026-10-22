@@ -1,6 +1,7 @@
 """Tests for yahoo_finance: parse_date, window args, session dates, crumb handshake,
 fetch_quote_summary, summary_num/summary_text, build_params, meta_summary, extract_series,
-fetch_history, and the stock_data adapter (parse_analyst_view, analyst_view)."""
+fetch_history, and the stock_data adapter (parse_analyst_view, analyst_view,
+parse_earnings_view, earnings_view)."""
 
 import argparse
 import datetime as dt
@@ -476,3 +477,153 @@ class TestAnalystView:
         monkeypatch.setattr(yf, "fetch_quote_summary", boom)
         with pytest.raises(requests.RequestException, match="Quote not found"):
             yf.analyst_view("ZZZ", 90)
+
+
+def _ts(text):
+    """'YYYY-MM-DD[ HH:MM]' (UTC) -> epoch seconds."""
+    fmt = "%Y-%m-%d %H:%M" if " " in text else "%Y-%m-%d"
+    return int(dt.datetime.strptime(text, fmt).replace(tzinfo=dt.timezone.utc).timestamp())
+
+
+def _history_entry(quarter, estimate, actual, surprise):
+    return {"quarter": {"raw": _ts(quarter), "fmt": quarter},
+            "epsEstimate": {"raw": estimate}, "epsActual": {"raw": actual},
+            "surprisePercent": {"raw": surprise}, "currency": "USD"}
+
+
+def _earnings_modules():
+    """quoteSummary ``modules`` with every field parse_earnings_view() reads."""
+    return {
+        "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST"},
+        "financialData": {"financialCurrency": "USD"},
+        "defaultKeyStatistics": {"lastDividendValue": {"raw": 0.27},
+                                 "lastDividendDate": {"raw": _ts("2026-08-10")}},
+        "calendarEvents": {
+            "earnings": {
+                "earningsDate": [_ts("2026-11-02 20:00")],
+                "isEarningsDateEstimate": False,
+                "earningsLow": 1.93, "earningsAverage": 1.98, "earningsHigh": 2.07,
+                "revenueLow": 112e9, "revenueAverage": 113.6e9, "revenueHigh": 117e9,
+            },
+            "exDividendDate": _ts("2026-08-10"),
+            "dividendDate": _ts("2026-10-20"),
+        },
+        "earningsHistory": {"history": [
+            # Out of order on purpose: the parser sorts oldest first.
+            _history_entry("2026-06-30", 1.89, 2.02, 0.0674),
+            _history_entry("2026-03-31", 1.94, 2.01, 0.0346),
+        ]},
+        "earnings": {"earningsChart": {"quarterly": [
+            {"fiscalQuarter": "2Q2026", "periodEndDate": _ts("2026-03-31"),
+             "reportedDate": _ts("2026-04-30 20:30")},
+            {"fiscalQuarter": "3Q2026", "periodEndDate": _ts("2026-06-30"),
+             "reportedDate": _ts("2026-07-30 20:30")},
+        ]}},
+    }
+
+
+class TestParseEarningsView:
+    def test_profile_and_reporting_currency(self):
+        view = yf.parse_earnings_view(_earnings_modules())
+        assert (view["source"], view["notes"]) == ("Yahoo Finance", [])
+        assert (view["name"], view["exchange"], view["currency"]) == ("Triple A Inc.", "TST", "USD")
+        assert view["reporting_currency"] == "USD"
+
+    def test_reporting_currency_falls_back_to_history_then_none(self):
+        modules = _earnings_modules()
+        del modules["financialData"]
+        modules["earningsHistory"]["history"][0]["currency"] = "EUR"
+        assert yf.parse_earnings_view(modules)["reporting_currency"] == "EUR"
+        modules["earningsHistory"] = {}
+        assert yf.parse_earnings_view(modules)["reporting_currency"] is None
+
+    def test_no_earnings_data(self):
+        view = yf.parse_earnings_view({"price": {"currency": "USD"}})
+        assert (view["next_earnings"], view["dividend"], view["earnings_history"]) == (None, None, [])
+
+
+class TestNextEarnings:
+    def test_confirmed_date(self):
+        nxt = yf.parse_earnings_view(_earnings_modules())["next_earnings"]
+        assert nxt["date"] == nxt["date_end"] == "2026-11-02"
+        assert nxt["datetime_utc"] == "2026-11-02T20:00Z"
+        assert nxt["is_estimate"] is False
+        assert "status" not in nxt  # the script adds it against today
+        assert nxt["eps_estimate"] == {"low": 1.93, "average": 1.98, "high": 2.07}
+        assert nxt["revenue_estimate"]["average"] == 113.6e9
+
+    def test_two_timestamps_are_an_estimated_window(self):
+        modules = _earnings_modules()
+        modules["calendarEvents"]["earnings"]["earningsDate"] = [
+            _ts("2026-11-09"), _ts("2026-11-02")]
+        nxt = yf.parse_earnings_view(modules)["next_earnings"]
+        assert (nxt["date"], nxt["date_end"]) == ("2026-11-02", "2026-11-09")
+        assert nxt["is_estimate"] is True
+
+    def test_no_estimates_gives_none(self):
+        modules = _earnings_modules()
+        modules["calendarEvents"]["earnings"] = {"earningsDate": [_ts("2026-11-02")]}
+        nxt = yf.parse_earnings_view(modules)["next_earnings"]
+        assert nxt["eps_estimate"] is None and nxt["revenue_estimate"] is None
+
+    @pytest.mark.parametrize("calendar", [{}, {"earnings": {}}, {"earnings": {"earningsDate": []}}])
+    def test_no_date_returns_none(self, calendar):
+        assert yf.parse_earnings_view({"calendarEvents": calendar})["next_earnings"] is None
+
+
+class TestDividend:
+    def test_dates_and_amount(self):
+        div = yf.parse_earnings_view(_earnings_modules())["dividend"]
+        assert div == {
+            "ex_dividend_date": "2026-08-10", "payment_date": "2026-10-20",
+            "last_amount": 0.27, "last_amount_date": "2026-08-10", "amount_currency": "USD",
+        }
+
+    @pytest.mark.parametrize("currency", ["GBp", "GBX", "ILA", "ZAc"])
+    def test_minor_unit_listing_has_no_amount_currency(self, currency):
+        modules = _earnings_modules()
+        modules["price"]["currency"] = currency
+        assert yf.parse_earnings_view(modules)["dividend"]["amount_currency"] is None
+
+    def test_no_dividend_returns_none(self):
+        assert yf.parse_earnings_view({"calendarEvents": {"earnings": {}}})["dividend"] is None
+
+
+class TestEarningsHistory:
+    def test_sorted_and_matched_to_chart(self):
+        rows = yf.parse_earnings_view(_earnings_modules())["earnings_history"]
+        assert [r["quarter_end"] for r in rows] == ["2026-03-31", "2026-06-30"]
+        assert rows[1] == {
+            "quarter_end": "2026-06-30", "fiscal_quarter": "3Q2026",
+            "reported_date": "2026-07-30", "eps_estimate": 1.89, "eps_actual": 2.02,
+            "surprise_pct": 0.0674, "currency": "USD",
+        }
+
+    def test_unmatched_quarter_has_no_report_date(self):
+        modules = _earnings_modules()
+        modules["earnings"] = {}
+        row = yf.parse_earnings_view(modules)["earnings_history"][0]
+        assert row["fiscal_quarter"] is None and row["reported_date"] is None
+
+    def test_rows_without_eps_dropped(self):
+        modules = _earnings_modules()
+        modules["earningsHistory"]["history"].append({"quarter": {"raw": _ts("2026-09-30")}})
+        assert len(yf.parse_earnings_view(modules)["earnings_history"]) == 2
+
+
+class TestEarningsView:
+    def test_fetches_earnings_modules(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "fetch_quote_summary",
+                            lambda s, m: seen.append((s, m)) or _earnings_modules())
+        view = yf.earnings_view("AAA")
+        assert seen == [("AAA", yf.EARNINGS_MODULES)]
+        assert view["next_earnings"]["date"] == "2026-11-02"
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, modules):
+            raise requests.RequestException("Quote not found")
+
+        monkeypatch.setattr(yf, "fetch_quote_summary", boom)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.earnings_view("ZZZ")

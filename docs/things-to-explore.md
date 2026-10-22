@@ -276,9 +276,10 @@ before the top picks because it's about the repo's existing sources, not new one
   `yahoo_finance.analyst_view()`, and `stock_analyst_targets.py` reads only its
   neutral shape. Its output is unchanged: identical on 21 fixture cases against the
   previous version, and a live `NVDA` run matched the morning's output exactly.
-  Still to move: `stock_earnings_calendar.py`, `stock_holders.py`,
-  `stock_intrinsic_value.py` (with `stock_fundamental.py` and the app's
-  fundamentals), `market_top_volume.py` and the app's quote.
+  `stock_earnings_calendar.py` followed the same day through `earnings_view()`
+  (functions 7–9): identical on 39 fixture cases and on a live `MSFT` run. Still to
+  move: `stock_holders.py`, `stock_intrinsic_value.py` (with `stock_fundamental.py`
+  and the app's fundamentals), `market_top_volume.py` and the app's quote.
 
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for

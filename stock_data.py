@@ -6,8 +6,8 @@ Scripts import this module, not a provider's: each function here returns
 plain dicts in a shape no provider dictates, and PROVIDERS routes the call
 to the adapter that serves it. Swapping a provider then means changing one
 entry in PROVIDERS, not a script. See docs/things-to-explore.md ("Proposed
-design") for the full list of functions planned; only analyst_view() is here
-so far, served by yahoo_finance.py.
+design") for the full list of functions planned; only analyst_view() and
+earnings_view() are here so far, both served by yahoo_finance.py.
 
 Shared conventions for every result:
 
@@ -25,6 +25,7 @@ import yahoo_finance as yf
 # function name -> adapter callable with the same signature
 PROVIDERS = {
     "analyst_view": yf.analyst_view,
+    "earnings_view": yf.earnings_view,
 }
 
 
@@ -50,3 +51,28 @@ def analyst_view(symbol, days):
                                             # adjusted or None
     """
     return PROVIDERS["analyst_view"](symbol, days)
+
+
+def earnings_view(symbol):
+    """``symbol``'s earnings calendar: the next report with its estimates, the
+    dividend dates and the recent quarters' EPS (functions 7-9, with the
+    profile they need).
+
+    Returns::
+
+        {source, notes, name, exchange, currency,
+         reporting_currency,                # of EPS and revenue; None if unknown
+         next_earnings: {date, date_end, datetime_utc, is_estimate,
+                         eps_estimate: {low, average, high} | None,
+                         revenue_estimate: {low, average, high} | None} | None,
+                                            # date_end > date for an estimated
+                                            # window; datetime_utc "YYYY-MM-DDTHH:MMZ"
+         dividend: {ex_dividend_date, payment_date, last_amount,
+                    last_amount_date, amount_currency} | None,
+                                            # the latest known dates, which can be
+                                            # past; amount_currency None if unknown
+         earnings_history: [{quarter_end, fiscal_quarter, reported_date,
+                             eps_estimate, eps_actual, surprise_pct, currency}]}
+                                            # oldest first; surprise_pct a fraction
+    """
+    return PROVIDERS["earnings_view"](symbol)

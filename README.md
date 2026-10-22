@@ -35,9 +35,9 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks, indices, currency pairs, crypto coins or commodity futures
 - [`stock_risk.py`](#stock_riskpy) — how risky one or more instruments' prices have been: annualized volatility, the worst peak-to-trough drawdown and its recovery, distance from the high, and the correlation of each pair, via `indicators.py`
 - [`.claude/agents/stock-risk.md`](#claude-code-agent-stock-risk) — Claude Code subagent that calls `stock_risk.py` and reports how volatile named stocks, indices, currency pairs, crypto coins or commodity futures have been, their worst falls, and how closely they moved together
-- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the price scripts' window flags and chart-result parsing (their data now comes from `price_source.py`), Yahoo's chart-endpoint fetch (still used by `app/stock_information/` for its quote) and the cookie + crumb `quoteSummary` fetch, used by the four price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py` (through `stock_data.py`), `stock_holders.py` and `app/stock_information/`
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the price scripts' window flags and chart-result parsing (their data now comes from `price_source.py`), Yahoo's chart-endpoint fetch (still used by `app/stock_information/` for its quote) and the cookie + crumb `quoteSummary` fetch, used by the four price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py` and `stock_analyst_targets.py` (both through `stock_data.py`), `stock_holders.py` and `app/stock_information/`
 - [`price_source.py`](#price_sourcepy) — shared price-history source for the four price scripts: routes a Yahoo-notation ticker to EODHD (Alpha Vantage for India) and returns the bars in the shape they already parse; Singapore, Tokyo and futures are refused for now
-- [`stock_data.py`](#stock_datapy) — provider-neutral stock data: each function returns plain dicts in one shape and is routed to the provider that serves it (only `analyst_view()`, from Yahoo, so far)
+- [`stock_data.py`](#stock_datapy) — provider-neutral stock data: each function returns plain dicts in one shape and is routed to the provider that serves it (only `analyst_view()` and `earnings_view()`, both from Yahoo, so far)
 - [`eodhd_price_history.py`](#eodhd_price_historypy) — past daily open / high / low / close prices of a stock, index, currency pair or crypto coin from EODHD's end-of-day API (requires a free `EODHD_API_KEY`); the main provider behind `price_source.py`
 - [`alphavantage_price_history.py`](#alphavantage_price_historypy) — past daily open / high / low / close prices of a stock from Alpha Vantage's `TIME_SERIES_DAILY` API (requires a free `ALPHAVANTAGE_API_KEY`; free keys get the latest 100 sessions)
 - [`daily_prices.py`](#daily_pricespy) — shared helper module for the two keyed price scripts: the `--start`/`--end`/`--last` window, the price row and the text table
@@ -1922,7 +1922,7 @@ The agent's frontmatter restricts it to `Bash` (run the script). `model: sonnet`
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy) (for the window flags and chart-result parsing: since 2026-10-21 their data comes from [`price_source.py`](#price_sourcepy), which returns the same shape); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It is also the Yahoo adapter behind [`stock_data.py`](#stock_datapy): `analyst_view()` turns `quoteSummary` data into that module's neutral shape for `stock_analyst_targets.py`. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy) (for the window flags and chart-result parsing: since 2026-10-21 their data comes from [`price_source.py`](#price_sourcepy), which returns the same shape); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It is also the Yahoo adapter behind [`stock_data.py`](#stock_datapy): `analyst_view()` and `earnings_view()` turn `quoteSummary` data into that module's neutral shape for `stock_analyst_targets.py` and `stock_earnings_calendar.py`. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1945,6 +1945,8 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 | `SOURCE` | `"Yahoo Finance"` | The `source` the adapter functions report |
 | `ANALYST_MODULES` | `price`, `financialData`, `recommendationTrend`, `upgradeDowngradeHistory` | The `quoteSummary` modules `analyst_view()` fetches |
 | `GRADE_ACTIONS`, `TARGET_ACTIONS` | `up` → `upgrade`, `Raises` → `raised`, … | Yahoo's analyst-action codes and target verbs, mapped to `stock_data`'s words |
+| `EARNINGS_MODULES` | `price`, `financialData`, `defaultKeyStatistics`, `calendarEvents`, `earningsHistory`, `earnings` | The `quoteSummary` modules `earnings_view()` fetches |
+| `MINOR_UNIT_CURRENCIES` | `GBp`, `GBX`, `ILA`, `ZAc` | Quote currencies in a minor unit, whose dividend Yahoo gives in an unstated currency |
 
 ### API reference
 
@@ -1961,10 +1963,11 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 - `meta_summary(meta, fallback_symbol=None)` — Pulls the display fields out of a chart result's `meta` block: returns `(symbol, exchange, currency)`, with `symbol` falling back to `fallback_symbol` then `"?"`, `exchange` to `"?"`, and `currency` to `""`. Used by `stock_price_history.py`, `stock_candlestick_chart.py` and `stock_risk.py` for their report headers.
 - `analyst_view(symbol, days)` — The adapter `stock_data.analyst_view()` routes to: fetches `ANALYST_MODULES` and returns `parse_analyst_view()` of them.
 - `parse_analyst_view(modules, days, now=None)` — Turns `quoteSummary` modules into `stock_data.analyst_view()`'s neutral shape (see [`stock_data.py`](#stock_datapy)); `now` (epoch seconds) fixes the clock for tests.
+- `earnings_view(symbol)` / `parse_earnings_view(modules)` — The same pair for `stock_data.earnings_view()`: fetch `EARNINGS_MODULES`, then turn them into its neutral shape.
 
 ### Notes / limitations
 
-- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it (and `price_source.window()`, which reads `build_params()` output), and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py`, `stock_analyst_targets.py` (through `stock_data.py`) and `stock_holders.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it (and `price_source.window()`, which reads `build_params()` output), and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py` and `stock_analyst_targets.py` (both through `stock_data.py`) and `stock_holders.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
 
 ---
 
@@ -2021,7 +2024,7 @@ The markets were decided on 2026-10-21 (see the Yahoo item in [`docs/things-to-e
 
 ## stock_data.py
 
-Provider-neutral stock data for the stock scripts. A script imports this module, not a provider's: each function returns plain dicts in a shape no provider dictates, and `PROVIDERS` routes the call to the adapter module that serves it, so swapping a provider means changing one entry, not a script. It is step 1 of the design in [`docs/things-to-explore.md`](docs/things-to-explore.md) ("Proposed design"), which lists the 15 functions planned. Only `analyst_view()`, for [`stock_analyst_targets.py`](#stock_analyst_targetspy), is here so far, served by [`yahoo_finance.py`](#yahoo_financepy). Not a CLI — it is imported, not run.
+Provider-neutral stock data for the stock scripts. A script imports this module, not a provider's: each function returns plain dicts in a shape no provider dictates, and `PROVIDERS` routes the call to the adapter module that serves it, so swapping a provider means changing one entry, not a script. It is step 1 of the design in [`docs/things-to-explore.md`](docs/things-to-explore.md) ("Proposed design"), which lists the 15 functions planned. Only `analyst_view()`, for [`stock_analyst_targets.py`](#stock_analyst_targetspy), and `earnings_view()`, for [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), are here so far, both served by [`yahoo_finance.py`](#yahoo_financepy). Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -2041,8 +2044,9 @@ A fetch failure raises `requests.RequestException` (or `ValueError` / `KeyError`
 
 ### API reference
 
-- `PROVIDERS` — Function name → the adapter callable that serves it: `{"analyst_view": yahoo_finance.analyst_view}`.
+- `PROVIDERS` — Function name → the adapter callable that serves it: `{"analyst_view": yahoo_finance.analyst_view, "earnings_view": yahoo_finance.earnings_view}`.
 - `analyst_view(symbol, days)` — Analyst opinion on `symbol`: `{source, notes, name, exchange, currency, price, analysts, targets: {low, median, mean, high}, recommendation: {key, mean}, trend: [{period, strong_buy, buy, hold, sell, strong_sell}], actions: [{date, firm, action, from_grade, to_grade, target_action, target, prior_target}]}`. `trend` is newest first with `period` `0m`, `-1m`, …; `actions` covers the last `days` days, newest first, with `action` one of `upgrade` / `downgrade` / `initiate` / `reiterate` / `maintain` and `target_action` one of `raised` / `lowered` / `maintained` / `announced` / `adjusted` or `None`.
+- `earnings_view(symbol)` — The earnings calendar: `{source, notes, name, exchange, currency, reporting_currency, next_earnings: {date, date_end, datetime_utc, is_estimate, eps_estimate, revenue_estimate} | None, dividend: {ex_dividend_date, payment_date, last_amount, last_amount_date, amount_currency} | None, earnings_history: [{quarter_end, fiscal_quarter, reported_date, eps_estimate, eps_actual, surprise_pct, currency}]}`. Each estimate is `{low, average, high}` or `None`; `date_end` is later than `date` for an estimated window; `reporting_currency` and `amount_currency` are `None` when unknown; `earnings_history` is oldest first. Dates carry no upcoming / past status: that depends on today, so the script adds it.
 
 ### Notes / limitations
 
@@ -2773,11 +2777,11 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ## stock_earnings_calendar.py
 
-Pulls a stock's earnings calendar from Yahoo Finance's public `quoteSummary` endpoint: when it next reports (with the analyst EPS and revenue estimates for that quarter), its ex-dividend and payment dates, and its last four quarters of EPS against estimates. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
+Pulls a stock's earnings calendar: when it next reports (with the analyst EPS and revenue estimates for that quarter), its ex-dividend and payment dates, and its last four quarters of EPS against estimates. It gets them through [`stock_data.earnings_view()`](#stock_datapy), which serves them from Yahoo Finance's public `quoteSummary` endpoint today, so the script never reads Yahoo's own structures. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
 
 | Section | What it shows | Source |
 |---|---|---|
-| Next earnings | date and UTC time (or Yahoo's estimated window), confirmed vs estimated, upcoming vs past; EPS and revenue estimate low / average / high | `calendarEvents.earnings` |
+| Next earnings | date and UTC time (or Yahoo's estimated window), confirmed vs estimated, upcoming vs past; EPS and revenue estimate low / average / high | Yahoo's `calendarEvents.earnings` |
 | Dividend | ex-dividend and payment dates, each upcoming vs past; the last dividend per share and its ex-date | `calendarEvents.exDividendDate`, `dividendDate`; `defaultKeyStatistics.lastDividendValue`, `lastDividendDate` |
 | Earnings history | up to four quarters: quarter end, fiscal quarter, report date, EPS estimate, actual, surprise | `earningsHistory`; report date and fiscal-quarter label from `earnings.earningsChart` |
 
@@ -2785,7 +2789,7 @@ Pulls a stock's earnings calendar from Yahoo Finance's public `quoteSummary` end
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `yahoo_finance.py` (the fetch), `stock_intrinsic_value.py` (number formatting) and `cli_utils.py` — run from the repo root so they import
+- the repo's own `stock_data.py` and `yahoo_finance.py` (the fetch and parsing), `stock_intrinsic_value.py` (number formatting) and `cli_utils.py` — run from the repo root so they import
 
 ### Usage
 
@@ -2833,18 +2837,17 @@ Earnings history (EPS, USD)
 
 ### How it works
 
-1. **Fetch** — `yahoo_finance.fetch_quote_summary()`: the cookie + crumb handshake, then `quoteSummary` for `price,financialData,defaultKeyStatistics,calendarEvents,earningsHistory,earnings`.
-2. **Next earnings** — `next_earnings()` sorts `calendarEvents.earnings.earningsDate`. One timestamp is a confirmed date; two are Yahoo's estimated window (`date` → `date_end`). `earningsCallDate` is ignored — it is often stale.
-3. **Dividend** — `dividend_dates()` reads the ex-dividend and payment dates and the last dividend paid.
-4. **History** — `earnings_history()` reads `earningsHistory` and matches each quarter, by quarter-end date, to the `earnings` chart entry carrying its report date and fiscal-quarter label.
-5. **Status** — every date is compared with today's UTC date: on or after → `upcoming`, before → `past`.
-6. **Report** — the three sections, or the JSON object.
+1. **Fetch** — `stock_data.earnings_view(symbol)`, routed to `yahoo_finance.earnings_view()`: the cookie + crumb handshake, then `quoteSummary` for `price,financialData,defaultKeyStatistics,calendarEvents,earningsHistory,earnings`, turned into the neutral shape by `yahoo_finance.parse_earnings_view()`:
+   - **Next earnings** — sorts `calendarEvents.earnings.earningsDate`. One timestamp is a confirmed date; two are Yahoo's estimated window (`date` → `date_end`). `earningsCallDate` is ignored — it is often stale.
+   - **Dividend** — the ex-dividend and payment dates and the last dividend paid, with no amount currency for a minor-unit listing.
+   - **History** — reads `earningsHistory` and matches each quarter, by quarter-end date, to the `earnings` chart entry carrying its report date and fiscal-quarter label.
+   - **Reporting currency** — `financialData.financialCurrency`, else the latest quarter's currency.
+2. **Shape** — `extract_calendar()` compares every date with today's UTC date (on or after → `upcoming`, before → `past`) and falls back to the trading currency when there is no reporting currency.
+3. **Report** — the three sections, or the JSON object.
 
 ### API reference
 
-- `MODULES` — The `quoteSummary` modules fetched.
-- `next_earnings(modules, today)`, `dividend_dates(modules, today, currency)`, `earnings_history(modules)` — The three sections from the raw modules.
-- `extract_calendar(modules, today=None)` — Returns the JSON-shaped dict (without `symbol`); `today` defaults to the current UTC date.
+- `extract_calendar(view, today=None)` — Turns `stock_data.earnings_view()`'s result into the JSON-shaped dict (without `symbol`); `today` defaults to the current UTC date.
 - `build_report(symbol, calendar)` / `build_json(symbol, calendar)` — The text report and the JSON payload.
 - `parse_args(argv=None)`, `main(argv=None)` — The CLI.
 

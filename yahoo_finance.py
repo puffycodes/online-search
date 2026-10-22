@@ -6,8 +6,8 @@ Used by stock_price_history.py, stock_candlestick_chart.py, stock_rebased_chart.
 and stock_risk.py for the --range/--last/--start/--end window flags and for
 parsing chart results (their data now comes from price_source.py, which
 returns the same shape), by market_top_volume.py for the
-cookie + crumb handshake, by stock_intrinsic_value.py, stock_earnings_calendar.py
-and stock_holders.py for the quoteSummary fetch built on that handshake
+cookie + crumb handshake, by stock_intrinsic_value.py and stock_holders.py
+for the quoteSummary fetch built on that handshake
 (stock_fundamental.py gets it through stock_intrinsic_value.py's fetch),
 and by app/stock_information/stock_info_server.py for its quote (the last
 user of the chart endpoint itself, fetch_history()). Each caller
@@ -15,10 +15,11 @@ keeps its own row shaping (rounding, date formatting, which rows to drop) and
 its own output stage; everything up to and including the HTTP call and the
 raw-payload navigation lives here.
 
-It is also the Yahoo adapter behind stock_data.py: analyst_view() turns
-quoteSummary data into stock_data's provider-neutral shape, for
-stock_analyst_targets.py. The other quoteSummary scripts still read the raw
-modules themselves until they move behind stock_data.py too.
+It is also the Yahoo adapter behind stock_data.py: analyst_view() and
+earnings_view() turn quoteSummary data into stock_data's provider-neutral
+shape, for stock_analyst_targets.py and stock_earnings_calendar.py. The other
+quoteSummary scripts still read the raw modules themselves until they move
+behind stock_data.py too.
 """
 
 import datetime as dt
@@ -373,3 +374,126 @@ def parse_analyst_view(modules, days, now=None):
 def analyst_view(symbol, days):
     """Fetch ``symbol``'s analyst data and return stock_data's neutral shape."""
     return parse_analyst_view(fetch_quote_summary(symbol, ANALYST_MODULES), days)
+
+
+EARNINGS_MODULES = ["price", "financialData", "defaultKeyStatistics", "calendarEvents",
+                    "earningsHistory", "earnings"]
+# Quote currencies in a minor unit (pence, agorot, cents). Yahoo gives their
+# dividend in the major or declared currency without saying which.
+MINOR_UNIT_CURRENCIES = {"GBp", "GBX", "ILA", "ZAc"}
+
+
+def _utc(timestamp):
+    return dt.datetime.fromtimestamp(timestamp, dt.timezone.utc)
+
+
+def _iso_date(timestamp):
+    return None if timestamp is None else _utc(timestamp).strftime("%Y-%m-%d")
+
+
+def _estimate(earnings, prefix):
+    values = {
+        "low": summary_num(earnings, f"{prefix}Low"),
+        "average": summary_num(earnings, f"{prefix}Average"),
+        "high": summary_num(earnings, f"{prefix}High"),
+    }
+    return values if any(v is not None for v in values.values()) else None
+
+
+def _next_earnings(modules):
+    """The next (or latest-known) earnings event from ``calendarEvents``, or None.
+
+    When Yahoo has no confirmed date it gives a window of two timestamps;
+    ``date`` is the start and ``date_end`` the end of that window.
+    """
+    earnings = (modules.get("calendarEvents") or {}).get("earnings") or {}
+    stamps = sorted(
+        summary_num({"t": t}, "t") for t in earnings.get("earningsDate") or []
+    )
+    stamps = [int(t) for t in stamps if t is not None]
+    if not stamps:
+        return None
+    return {
+        "date": _iso_date(stamps[0]),
+        "date_end": _iso_date(stamps[-1]),
+        "datetime_utc": _utc(stamps[0]).strftime("%Y-%m-%dT%H:%MZ"),
+        "is_estimate": bool(earnings.get("isEarningsDateEstimate")) or len(stamps) > 1,
+        "eps_estimate": _estimate(earnings, "earnings"),
+        "revenue_estimate": _estimate(earnings, "revenue"),
+    }
+
+
+def _dividend(modules, currency):
+    """Ex-dividend / payment dates and the last dividend paid, or None if Yahoo has none."""
+    calendar = modules.get("calendarEvents") or {}
+    ex_date = _iso_date(summary_num(calendar, "exDividendDate"))
+    pay_date = _iso_date(summary_num(calendar, "dividendDate"))
+    last_amount = summary_num(modules, "defaultKeyStatistics", "lastDividendValue")
+    if ex_date is None and pay_date is None and last_amount is None:
+        return None
+    return {
+        "ex_dividend_date": ex_date,
+        "payment_date": pay_date,
+        "last_amount": last_amount,
+        "last_amount_date": _iso_date(
+            summary_num(modules, "defaultKeyStatistics", "lastDividendDate")
+        ),
+        "amount_currency": None if currency in MINOR_UNIT_CURRENCIES else currency or None,
+    }
+
+
+def _earnings_history(modules):
+    """The last quarters' EPS from ``earningsHistory``, oldest first.
+
+    The report date and fiscal-quarter label come from the ``earnings``
+    module's chart, matched on the quarter-end date.
+    """
+    chart = ((modules.get("earnings") or {}).get("earningsChart") or {}).get("quarterly") or []
+    by_end = {}
+    for entry in chart:
+        end = summary_num(entry, "periodEndDate")
+        if end is not None:
+            by_end[_iso_date(end)] = entry
+
+    rows = []
+    for entry in (modules.get("earningsHistory") or {}).get("history") or []:
+        quarter_end = _iso_date(summary_num(entry, "quarter"))
+        actual = summary_num(entry, "epsActual")
+        estimate = summary_num(entry, "epsEstimate")
+        if quarter_end is None or (actual is None and estimate is None):
+            continue
+        match = by_end.get(quarter_end, {})
+        rows.append({
+            "quarter_end": quarter_end,
+            "fiscal_quarter": summary_text(match, "fiscalQuarter"),
+            "reported_date": _iso_date(summary_num(match, "reportedDate")),
+            "eps_estimate": estimate,
+            "eps_actual": actual,
+            "surprise_pct": summary_num(entry, "surprisePercent"),
+            "currency": summary_text(entry, "currency"),
+        })
+    rows.sort(key=lambda r: r["quarter_end"])
+    return rows
+
+
+def parse_earnings_view(modules):
+    """stock_data.earnings_view()'s shape from quoteSummary ``modules``."""
+    profile = _profile(modules)
+    history = _earnings_history(modules)
+    return {
+        "source": SOURCE,
+        "notes": [],
+        **profile,
+        # EPS and revenue estimates are in the reporting currency, which can
+        # differ from the trading currency (VOD.L trades in GBp, reports in EUR).
+        "reporting_currency": summary_text(modules, "financialData", "financialCurrency")
+        or next((r["currency"] for r in reversed(history) if r["currency"]), None),
+        "next_earnings": _next_earnings(modules),
+        "dividend": _dividend(modules, profile["currency"]),
+        "earnings_history": history,
+    }
+
+
+def earnings_view(symbol):
+    """Fetch ``symbol``'s earnings calendar and return stock_data's neutral shape."""
+    return parse_earnings_view(fetch_quote_summary(symbol, EARNINGS_MODULES))
