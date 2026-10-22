@@ -162,8 +162,11 @@ class TestParseArgs:
         assert exc.value.code == 2
 
     def test_range_and_last_exclusive(self):
+        # Not the default "1y": older argparse (e.g. Python 3.12.4) skipped the
+        # conflict check when a value `is` the default object, which an
+        # interned "1y" literal here would be.
         with pytest.raises(SystemExit) as exc:
-            sr.parse_args(["AAA", "--range", "1y", "--last", "5"])
+            sr.parse_args(["AAA", "--range", "6mo", "--last", "5"])
         assert exc.value.code == 2
 
 
