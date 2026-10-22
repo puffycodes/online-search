@@ -150,6 +150,26 @@ before the top picks because it's about the repo's existing sources, not new one
   screener, the `quoteSummary` scripts and the stock web app's quote, which
   still call Yahoo.
 
+  **Alpha Vantage `TOP_GAINERS_LOSERS` tested** for `market_top_volume.py` on
+  2026-10-22 with the free key (1 call). It returned three US-wide lists of 20
+  rows, `top_gainers`, `top_losers` and `most_actively_traded`, each with
+  `ticker`, `price`, `change_amount`, `change_percentage` and `volume`, all as
+  strings (`"71.5239%"`). It is a weak fit:
+  - It is the last session's close, not live: `last_updated` was
+    `2026-10-21 16:15:56 US/Eastern` on the 22nd.
+  - The gainers and losers are mostly warrants, preferreds, rights and units
+    (`NXGLW`, `AHT-H`, `DSX+`, `HUBCZ`) and sub-$1 stocks: 11 of 20 gainers and
+    18 of 20 losers were under $1, and one loser traded 686 shares. Filtering
+    those out of 20 rows may leave few. `most_actively_traded` is mostly ordinary
+    stocks (6 of 20 under $1).
+  - No exchange or company name, so `nyse` / `nasdaq` / `amex` can't be split
+    without a lookup per ticker, and `--limit` would cap at 20.
+
+  So it could serve the US `volume` metric, labelled as the last session's
+  figures, but not `gainers` or `losers`; those need a paid source or would be
+  dropped. Check EODHD's bulk end-of-day and screener APIs for the same problems
+  before choosing it for markets outside the US.
+
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
   US fundamentals and insider data to save Alpha Vantage requests. **No free
