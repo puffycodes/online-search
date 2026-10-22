@@ -24,7 +24,7 @@ End your report with a "Run notes" section listing every command you ran, in ord
 
 The cases are independent and can run in parallel. Don't judge a run from its run notes alone: check the numbered files in the scratch directory (which scripts ran, in what order, their exit codes and stderr) against the pass criteria. Scan the `.err` files for API keys before keeping or sharing them (see case 5).
 
-The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 and 5 in the 2026-10-22 rerun, so its `model:` line was removed the same day and it runs on the session's model again. Rerun these cases in a session started after that change.
+The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 and 5 in the 2026-10-22 rerun, so its `model:` line was removed the same day and it runs on the session's model again. The 2026-10-22 rerun on the session's model (Opus 5.5) passed cases 2–5 but failed case 1 again on naming Brave, so that failure isn't down to Sonnet.
 
 ## Cases
 
@@ -36,7 +36,8 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 
   - One command: `web_search_brave.py ... --limit 5 --json`, exit 0, empty stderr, five results.
   - No other script runs; the report doesn't mention which engine answered.
 - **Found on 2026-10-22 (Sonnet):** the agent ran the one correct command, but its report opened "from Brave, the default engine", which the rule says not to mention.
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed on naming Brave.
+- **Found on 2026-10-22 (Opus 5.5):** the same: one correct command (five results), but the report ended "These results came from Brave, the first engine in the chain, so no fallback was needed." The test prompt's "targeted test run of your fallback rules" may invite this, so the rule itself may need firmer wording.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed on naming Brave. Rerun on 2026-10-22 on Opus 5.5: failed on naming Brave.
 
 ### 2. Missing key
 
@@ -46,7 +47,7 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 
   - `01-brave` exits 1 with `BRAVE_API_KEY environment variable must be set`; it is not run again.
   - `02-serper` exits 0, and the agent stops there.
   - The report says the results came from Serper because Brave's key was missing.
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed. Rerun on 2026-10-22 on Opus 5.5: passed.
 
 ### 3. Invalid key
 
@@ -57,7 +58,7 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 
   - `02-serper` answers and the agent stops.
   - The report names `BRAVE_API_KEY` as possibly misconfigured.
 - **Found on 2026-10-21:** Brave's stderr was only `422 Client Error:  for url: …`, because the scripts called `response.raise_for_status()`, which drops the API's own message. The agent still flagged the key, but by guesswork. Fixed the same day: the keyed `web_search_*.py` scripts now go through `cli_utils.raise_for_status()`, which keeps the provider's reason.
-- **Last checked:** 2026-10-21, passed (the agent run predates the fix; the fixed stderr was checked by running the script directly). Rerun on 2026-10-22 on Sonnet: passed, with the provider's `SUBSCRIPTION_TOKEN_INVALID` reason now reaching the agent.
+- **Last checked:** 2026-10-21, passed (the agent run predates the fix; the fixed stderr was checked by running the script directly). Rerun on 2026-10-22 on Sonnet: passed, with the provider's `SUBSCRIPTION_TOKEN_INVALID` reason now reaching the agent. Rerun on 2026-10-22 on Opus 5.5: passed.
 
 ### 4. Transient error
 
@@ -68,7 +69,7 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 
   - `03-serper` answers and the agent stops.
   - The report says Brave couldn't be reached and the results came from Serper.
 - **Found on 2026-10-22 (Sonnet):** the agent ran `01-brave` once, called the refused connection "a deterministic failure and not a transient-looking one", and fell back to Serper without the retry.
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed (no retry).
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed (no retry). Rerun on 2026-10-22 on Opus 5.5: passed (one retry, then Serper).
 
 ### 5. Every engine fails
 
@@ -80,7 +81,7 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 
   - The report says plainly that no web search is available and why.
 - **Found on 2026-10-21:** `web_search_serpapi.py` sends its key as a URL query parameter, and a connection error's message contains the URL, so the key was printed in the error and saved in `07-serpapi.err` and `08-serpapi.err`. Fixed the same day: the keyed scripts pass their error messages through `cli_utils.redact()`, and the two files were redacted. The run was otherwise correct.
 - **Found on 2026-10-22 (Sonnet):** seven commands instead of twelve: Brave was retried once, then Serper, Tavily, SerpApi, Exa and DuckDuckGo ran once each ("Brave's retry had already shown the failure was persistent"). The rest was correct: no Perplexity, a plain no-search-available report, and SerpApi's key `<redacted>`.
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed (missing retries).
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed (missing retries). Rerun on 2026-10-22 on Opus 5.5: passed (all twelve commands, SerpApi's key `<redacted>`).
 
 ## Not covered
 

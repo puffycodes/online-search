@@ -20,7 +20,7 @@ End your report with a "Run notes" section listing every command you ran, in ord
 
 For case 4, add: "If your workflow says to ask the user something, don't ask: say in your report what you would have asked, and carry on with what the workflow allows without an answer." Check each run against the saved `.out` files (`count`, `complete`, each vulnerability's `severity`, `fixed`, `malicious`), above all any version the report tells the user to upgrade to.
 
-The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 3 and 4 (and half of 7) in the 2026-10-22 rerun, so its `model:` line was removed the same day and it runs on the session's model again. Rerun these cases in a session started after that change.
+The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 3 and 4 (and half of 7) in the 2026-10-22 rerun, so its `model:` line was removed the same day and it runs on the session's model again. The 2026-10-22 rerun on the session's model (Opus 5.5) passed all seven cases.
 
 ## Cases
 
@@ -29,14 +29,14 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 3 and
 - **Rule:** "Tell the user the lowest version that clears **all** listed vulnerabilities when the `fixed` lists make that clear (the highest of the per-vulnerability fixed versions within the same release line)."
 - **Question:** `Does jinja2 2.4.1 have any vulnerabilities? What should I upgrade to?`
 - **A correct run:** PyPI inferred; 9 vulnerabilities (3 high) merged from 18 advisories; 3.1.6 as the lowest version that clears all, with why no 2.x release does (the four newest are fixed only on 3.1.x) and a note that 2.x → 3.x is a major upgrade.
-- **Last checked:** 2026-10-21, passed (fixed versions checked against the saved JSON). Rerun on 2026-10-22 on Sonnet: passed (same 9 vulnerabilities and 3.1.6).
+- **Last checked:** 2026-10-21, passed (fixed versions checked against the saved JSON). Rerun on 2026-10-22 on Sonnet: passed (same 9 vulnerabilities and 3.1.6). Rerun on 2026-10-22 on Opus 5.5: passed (same).
 
 ### 2. No vulnerabilities: never "safe"
 
 - **Rule:** "Don't call the package 'safe': no known advisory isn't a guarantee", and OSV answers a typo or wrong ecosystem the same way.
 - **Question:** `Is requests 2.33.0 safe to use?` (OSV.dev had no advisory for it).
 - **A correct run:** "no known vulnerabilities" for that version, explicitly not "safe", with the empty-answer-for-a-typo caveat and the usual published-advisories caveat.
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed. Rerun on 2026-10-22 on Opus 5.5: passed.
 
 ### 3. A misspelled name
 
@@ -44,7 +44,7 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 3 and
 - **Question:** `Is the Python package reqeusts safe to install? Any known vulnerabilities?`
 - **A correct run:** looks the name up as typed (0 results), says that doesn't make it safe, flags the likely misspelling of `requests` and the typosquatting risk, advises against installing the misspelled name, and looks up `requests` as well.
 - **Found on 2026-10-22 (Sonnet):** the agent looked up `reqeusts` (0 results), said that doesn't make it safe and flagged the likely misspelling and typosquatting risk, but didn't look up `requests` or advise against installing the misspelled name: it read the test prompt's "change nothing" as forbidding the second lookup.
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed. Rerun on 2026-10-22 on Opus 5.5: passed (looked up both names; `requests` has 8, all cleared by 2.33.0).
 
 ### 4. A name in several registries
 
@@ -53,21 +53,19 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 3 and
 - **A correct run:** says what it would have asked, assumes npm and says so at the top, reports both advisories with no fixed version, and labels any pinning advice as its own reading of the advisory text rather than a listed fix.
 - **Idea from 2026-10-21:** the agent didn't also look up the PyPI package, which would have shown its empty result. Not required by the rules; worth adding if ambiguous names turn out to confuse users.
 - **Found on 2026-10-22 (Sonnet):** both advisories were reported correctly with no fixed version, but the npm assumption and the question it would have asked appeared only in the run notes; the report itself just said "the npm package `colors`".
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed.
-
-### 5. Malware
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed. Rerun on 2026-10-22 on Opus 5.5: passed (the npm assumption and the question it would have asked are in the report itself; PyPI not looked up). Malware
 
 - **Rule:** "Malicious entries (`malicious: true`): lead with this — the package (or version) was published as malware; advise removing it rather than upgrading."
 - **Question:** `We use flatmap-stream in our Node app. Are there any security problems with it?` (npm; `MAL-2025-20690` plus two critical GitHub advisories, none with a fix).
 - **A correct run:** opens with "remove it, it is malware", says there is nothing to upgrade to, and passes on the advisory's own remedy (check for `event-stream` 3.3.6; use 3.3.4 or 4.x).
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed (`MAL-2025-20690` plus the two critical GitHub advisories, led with "remove it").
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed (`MAL-2025-20690` plus the two critical GitHub advisories, led with "remove it"). Rerun on 2026-10-22 on Opus 5.5: passed (same).
 
 ### 6. No version given
 
 - **Rules:** the Maven `group:artifact` name; "No version given: say this is every advisory for any version of the package, and point out which ones are recent."
 - **Question:** `What vulnerabilities has log4j-core had over the years?`
 - **A correct run:** `org.apache.logging.log4j:log4j-core` on Maven; all 11 advisories with the Log4Shell group named, the four from the past year pointed out, and 2.25.4 as the version that clears all on the 2.x line (the 2.12.x / 2.3.x backports don't cover the newest ones).
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed (11 advisories, 2.25.4 on the 2.x line).
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed (11 advisories, 2.25.4 on the 2.x line). Rerun on 2026-10-22 on Opus 5.5: passed (same).
 
 ### 7. The fix for one named bug
 
@@ -75,7 +73,7 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 3 and
 - **Question:** `Which version of golang.org/x/net fixes the HTTP/2 rapid reset bug?`
 - **A correct run:** `golang.org/x/net` on Go with no version; 0.17.0 for both CVE-2023-44487 and CVE-2023-39325, kept apart from the 2019 "reset flood" advisory, plus a note that 0.60.0 is the version that clears all 36 listed.
 - **Found on 2026-10-22 (Sonnet):** 0.17.0 for both CVEs was right, but the agent didn't work out the version that clears all 36 ("I did not work out a single version that clears all 36").
-- **Last checked:** 2026-10-21, passed (0.17.0 and 0.60.0 checked against the saved JSON). Rerun on 2026-10-22 on Sonnet: passed on the question asked, missing the clears-all note.
+- **Last checked:** 2026-10-21, passed (0.17.0 and 0.60.0 checked against the saved JSON). Rerun on 2026-10-22 on Sonnet: passed on the question asked, missing the clears-all note. Rerun on 2026-10-22 on Opus 5.5: passed (0.17.0 and 0.60.0, checked against the saved JSON).
 
 ## Not covered
 
