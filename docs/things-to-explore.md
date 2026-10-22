@@ -190,6 +190,39 @@ before the top picks because it's about the repo's existing sources, not new one
   exchanges it covers and whether its 1-day % change has Alpha Vantage's
   junk-ticker problem.
 
+  **Data functions a replacement must provide**, listed on 2026-10-22 from the
+  fields the stock scripts, their agents and `app/stock_information/` read. Only
+  1 has moved off Yahoo; 4–15 come from `quoteSummary` today.
+
+  | # | Function | Returns | Used by | Source now |
+  |---|---|---|---|---|
+  | 1 | `daily_history(symbol, start, end)` | daily open, high, low, close, adjusted close, volume; exchange, currency | `stock_price_history.py`, `stock_candlestick_chart.py`, `stock_rebased_chart.py`, `stock_risk.py`, `stock-trend` agent | done: `price_source.fetch_history()` |
+  | 2 | `quote(symbol)` | latest price, session date, day high and low, previous close, change, 52-week high and low; name, exchange, currency | `app/stock_information/` | Yahoo chart |
+  | 3 | `top_movers(market, metric, limit)` | rank, symbol, name, exchange, volume, price, % change, currency; by volume, gainers or losers | `market_top_volume.py`, `stock_tech_buzz_agent.py` | Yahoo screener |
+  | 4 | `profile(symbol)` | name, exchange, quote and reporting currency, sector, industry | all five `quoteSummary` scripts | Yahoo |
+  | 5 | `fundamentals(symbol)` | price, market cap, shares outstanding, enterprise value; revenue, EBITDA, net income, free and operating cash flow, trailing and forward EPS, book value per share; gross, operating and profit margins, ROE, ROA, revenue and earnings growth, current and quick ratios, debt to equity, total debt and cash; trailing and forward P/E, P/S, P/B, EV/EBITDA, beta, dividend yield, payout ratio | `stock_intrinsic_value.py`, `stock_fundamental.py`, the app | Yahoo |
+  | 6 | `growth_estimates(symbol)` | analysts' 1-year and 5-year growth | `stock_intrinsic_value.py` (and `stock_fundamental.py`) | Yahoo |
+  | 7 | `next_earnings(symbol)` | next report date or range, confirmed or estimated, time, EPS and revenue estimates (low, average, high) | `stock_earnings_calendar.py` | Yahoo |
+  | 8 | `earnings_history(symbol)` | per recent quarter: quarter end, fiscal quarter, report date, EPS estimate and actual, surprise % | `stock_earnings_calendar.py` | Yahoo |
+  | 9 | `dividends(symbol)` | next ex-dividend and payment dates, last amount and date | `stock_earnings_calendar.py` | Yahoo |
+  | 10 | `analyst_targets(symbol)` | target low, median, mean, high; number of analysts; consensus rating and mean score | `stock_analyst_targets.py` | Yahoo |
+  | 11 | `recommendation_trend(symbol)` | strong buy / buy / hold / sell / strong sell counts for this month and the 3 before | `stock_analyst_targets.py` | Yahoo |
+  | 12 | `analyst_actions(symbol, days)` | per action: date, firm, action, from and to grade, target change, new and prior target | `stock_analyst_targets.py` | Yahoo |
+  | 13 | `ownership_summary(symbol)` | % held by insiders and institutions (of shares and of float), number of institutions | `stock_holders.py` | Yahoo |
+  | 14 | `insider_transactions(symbol, days)` | per trade: insider and role, date, shares, value, description (sale, purchase, gift, award…), direct or indirect | `stock_holders.py` | Yahoo |
+  | 15 | `top_holders(symbol, kind)` | biggest fund or institutional holders: name, % held, shares, value, change, report date | `stock_holders.py` | Yahoo |
+
+  - 4–6, 7–9, 10–12 and 13–15 each come from one `quoteSummary` call now; a
+    provider that needs several requests per group costs more of a free quota.
+  - `stock_holders.py` asks for institutional holders only on US listings, and
+    insider trades are in USD only there. A replacement may cover 13–15 for the US
+    only (e.g. SEC EDGAR).
+  - Optional: `symbol_search(name)` (e.g. Alpha Vantage `SYMBOL_SEARCH`). The
+    scripts don't need it, since the agents resolve tickers, but it could replace
+    guessed exchange suffixes.
+  - No free replacement found yet (2026-10-20 shortlist): 3 outside the US, 12, and
+    most of 15.
+
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
   US fundamentals and insider data to save Alpha Vantage requests. **No free
