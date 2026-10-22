@@ -17,7 +17,7 @@
     - The time window, one of:
         - A range: 5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y or max (default: 6mo).
         - The last N sessions (cannot be combined with a range).
-        - A start date, and optionally an end date (default: today). This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
+        - A start date, and optionally an end date (default: today), both inclusive, so the same date twice is one day. This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
     - The candle size: 1d (default), 1wk or 1mo.
     - The image path to write (default: {{Symbol}}_candlestick.png, with any "." in the symbol replaced by "_", e.g. VOD_L_candlestick.png), or open an interactive window instead.
     - Whether to add a volume panel below the prices (default: no).

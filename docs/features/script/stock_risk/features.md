@@ -16,7 +16,7 @@
     - The time window, one of:
         - A range: 5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y or max (default: 1y).
         - The last N sessions (cannot be combined with a range).
-        - A start date, and optionally an end date (default: today). This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
+        - A start date, and optionally an end date (default: today), both inclusive, so the same date twice is one day. This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
     - Optionally a {{Benchmark}} symbol (e.g. ^GSPC) to read the others against.
         - If it is also one of the {{Symbols}}, it is measured once, as the benchmark; if it is the only symbol, exit with code 2 before any network call.
     - Optionally JSON output.

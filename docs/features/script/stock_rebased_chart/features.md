@@ -17,7 +17,7 @@
     - The time window, one of:
         - A range: 5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y or max (default: 6mo).
         - The last N sessions (cannot be combined with a range).
-        - A start date, and optionally an end date (default: today). This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
+        - A start date, and optionally an end date (default: today), both inclusive, so the same date twice is one day. This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
     - The base date, where every series reads 100 (default: the first date of the first symbol's series, or of the first symbol that fetched if that one failed).
     - Optionally a {{Benchmark}} symbol (e.g. ^GSPC) to compare the others against.
         - It never sets the default base date.
