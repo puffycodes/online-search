@@ -186,13 +186,15 @@ class TestBuildParams:
         with pytest.raises(ValueError, match="--end requires --start"):
             yf.build_params(end="2024-01-01")
 
-    def test_end_not_after_start_raises(self):
-        with pytest.raises(ValueError, match="must be after"):
+    def test_end_before_start_raises(self):
+        with pytest.raises(ValueError, match="must not be before"):
             yf.build_params(start="2024-02-01", end="2024-01-01")
 
-    def test_equal_start_end_raises(self):
-        with pytest.raises(ValueError, match="must be after"):
-            yf.build_params(start="2024-01-01", end="2024-01-01")
+    def test_equal_start_end_is_one_day(self):
+        params = yf.build_params(start="2024-01-01", end="2024-01-01")
+        start_ts = int(dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc).timestamp())
+        assert params["period1"] == start_ts
+        assert params["period2"] == start_ts + yf.SECONDS_PER_DAY
 
     def test_last_daily_lookback_window(self):
         params = yf.build_params(last=5)

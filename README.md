@@ -1235,7 +1235,7 @@ python3 stock_price_history.py SYMBOL [--range RANGE | --last N] [--start YYYY-M
 | `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `SAP.DE`, `RY.TO`, `RELIANCE.NS`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`) and crypto (`BTC-USD`). Not Singapore (`.SI`), Tokyo (`.T`) or futures (`=F`) for now |
 | `--range RANGE` | `1mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Return only the most recent `N` trading sessions (mutually exclusive with `--range`) |
-| `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
+| `--start` / `--end` | — | Explicit date window, inclusive; the same date twice is one day (`--end` defaults to today). Overrides `--range` / `--last` |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 `--range`, `--last`, and `--start/--end` are three ways to pick the window; `--range` and `--last` are mutually exclusive at the argparse level, and `--start/--end` takes precedence over both.
@@ -1312,7 +1312,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `meta_summar
 
 - If the request fails (network error, timeout, a provider refusal), the ticker is unknown (EODHD's `"Ticker Not Found."`), its market isn't supported (`.SI`, `.T`, `=F`) or its API key is missing, the script prints an error and exits with status code 1 — plain text on stderr normally, or `{"error": "..."}` on stderr when `--json` is passed.
 - An invalid `--range` value is rejected by argument parsing (exit code 2); passing both `--range` and `--last` is likewise rejected.
-- A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
+- A malformed `--start` / `--end` date, `--end` without `--start`, or an end before the start exits with status code 1 and an explanatory message.
 - A `--last` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
 - If no settled sessions fall in the window, the script prints `"No settled price data found for <SYMBOL>."` (or `{"prices": []}` with `--json`) and exits normally.
 
@@ -1433,7 +1433,7 @@ python3 stock_candlestick_chart.py SYMBOL [--range RANGE | --last N] [--start YY
 | `SYMBOL` (positional) | — | Ticker in Yahoo notation: `AAPL`, `VOD.L`, `SAP.DE`, `RY.TO`, `RELIANCE.NS`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`) and crypto (`BTC-USD`). Not Singapore (`.SI`), Tokyo (`.T`) or futures (`=F`) for now |
 | `--range RANGE` | `6mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Plot only the most recent `N` bars (mutually exclusive with `--range`) |
-| `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
+| `--start` / `--end` | — | Explicit date window, inclusive; the same date twice is one day (`--end` defaults to today). Overrides `--range` / `--last` |
 | `--interval` | `1d` | Bar size: `1d` (daily), `1wk` (weekly), `1mo` (monthly) |
 | `--volume` | off | Add a volume panel beneath the price panel |
 | `--ma N,N,...` | `5,10,20,50` | Comma-separated simple-moving-average windows to overlay as lines. Pass `none` (or `""`) to disable; values are de-duplicated and sorted. Each average is in the bar unit selected by `--interval` |
@@ -1498,7 +1498,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()` and `meta_summar
 
 - If the request fails (network error, timeout, a provider refusal), the ticker is unknown (EODHD's `"Ticker Not Found."`), its market isn't supported (`.SI`, `.T`, `=F`) or its API key is missing, the script prints `Error: …` to stderr and exits with status code 1.
 - An invalid `--range` or `--interval` value, or a `--ma` list that isn't comma-separated positive integers (or `none`), is rejected by argument parsing (exit code 2); passing both `--range` and `--last` is likewise rejected.
-- A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
+- A malformed `--start` / `--end` date, `--end` without `--start`, or an end before the start exits with status code 1 and an explanatory message.
 - A `--last` value below 1 is rejected by argument parsing (exit code 2), before any request is made.
 - If no complete bars fall in the window, the script prints `Error: no price data found for '<SYMBOL>'` and exits with status code 1.
 - If matplotlib isn't installed, it prints `Error: matplotlib is required (pip install matplotlib)` and exits with status code 1.
@@ -1583,7 +1583,7 @@ python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] [--range RANGE | --last N] [-
 | `SYMBOL` (positional, 1+) | — | One or more tickers in Yahoo notation: `AAPL`, `VOD.L`, `SAP.DE`, `RY.TO`, `RELIANCE.NS`, …; also indices (`^GSPC`), currency pairs (`EURUSD=X`) and crypto (`BTC-USD`). Not Singapore (`.SI`), Tokyo (`.T`) or futures (`=F`) for now |
 | `--range RANGE` | `6mo` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Fetch only the most recent `N` sessions (mutually exclusive with `--range`) |
-| `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
+| `--start` / `--end` | — | Explicit date window, inclusive; the same date twice is one day (`--end` defaults to today). Overrides `--range` / `--last` |
 | `--base-date YYYY-MM-DD` | the first date in the **first** symbol's series | Reference date every series is rescaled to read 100 on |
 | `--benchmark SYMBOL` | — | One more symbol (typically an index such as `^GSPC`) rebased the same way but drawn as a heavier black dashed line labelled `SYMBOL (benchmark)`. It never sets the default base date; if it is also given as a positional symbol it is drawn once, as the benchmark |
 | `-o` / `--output` | `rebased_chart.png` | PNG path to write |
@@ -1739,7 +1739,7 @@ python3 stock_risk.py SYMBOL [SYMBOL ...] [--benchmark SYMBOL] [--range RANGE | 
 | `--benchmark SYMBOL` | — | One more series (e.g. `^GSPC`) to read the others against: it gets the same figures and joins every correlation pair. A benchmark also listed as a symbol is measured once, as the benchmark |
 | `--range RANGE` | `1y` | Look-back window. One of `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max` |
 | `--last N` | — | Use only the most recent `N` sessions (mutually exclusive with `--range`) |
-| `--start` / `--end` | — | Explicit date window (`--end` defaults to today). Overrides `--range` / `--last` |
+| `--start` / `--end` | — | Explicit date window, inclusive; the same date twice is one day (`--end` defaults to today). Overrides `--range` / `--last` |
 | `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
 
 #### Example output
@@ -1865,7 +1865,7 @@ With `--json`, the progress line is suppressed and the result prints as a JSON o
 - If every symbol fails to fetch or has no prices (the benchmark alone doesn't count), the script exits with status 1 — plain `Error: no price data for any symbol (<SYMBOL>: <reason>; …)` on stderr, or `{"error": "..."}` with `--json`. An unknown ticker's reason ends with EODHD's `"Ticker Not Found."`.
 - If only some symbols fail, the run succeeds: they are listed under `skipped` (or warned about on stderr) and every pair involving them is left out.
 - An invalid `--range`, `--range` together with `--last`, a `--last` below 1, no symbol, or only the benchmark is rejected by argument parsing (exit code 2), before any request is made.
-- A malformed `--start` / `--end` date, `--end` without `--start`, or an end that isn't after the start exits with status code 1 and an explanatory message.
+- A malformed `--start` / `--end` date, `--end` without `--start`, or an end before the start exits with status code 1 and an explanatory message.
 
 ### Notes / limitations
 

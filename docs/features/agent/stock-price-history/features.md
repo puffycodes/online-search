@@ -18,6 +18,7 @@
 - Pick the time window from what the user asked:
     - "yesterday", "last close", "previous session" → the last 2 sessions (report the most recent).
     - "last week", "past N days" → the last N sessions.
+    - A specific date ("on 3 March", "last Friday") → that date as both start and end.
     - A named month or span ("in August", "since June") → explicit start and end dates.
     - A longer horizon ("this year", "past 5 years") → the matching range (5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y, max).
     - If nothing is given, the default is the past month.

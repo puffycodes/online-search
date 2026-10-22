@@ -189,8 +189,8 @@ def build_params(interval="1d", range_=None, start=None, end=None, last=None):
         end_dt = parse_date(end) if end else dt.datetime.now(dt.timezone.utc)
         if start_dt is None:
             raise ValueError("--end requires --start")
-        if end_dt <= start_dt:
-            raise ValueError("--end must be after --start")
+        if end_dt < start_dt:
+            raise ValueError("--end must not be before --start")
         params["period1"] = int(start_dt.timestamp())
         # pad the end by a day so the final session is inclusive
         params["period2"] = int(end_dt.timestamp()) + SECONDS_PER_DAY

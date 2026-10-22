@@ -25,6 +25,7 @@ python3 stock_price_history.py SYMBOL [--last N | --range RANGE | --start YYYY-M
 - Pick the window from what the user asked:
   - "yesterday" / "last close" / "previous session" → `--last 2` (report the most recent settled session; the second row is context).
   - "last week" / "past N days" → `--last N` (e.g. 5 for a trading week).
+  - A specific date ("on 3 March", "last Friday") → `--start` and `--end` both set to that date.
   - "in August" / "since June" / a named month or span → `--start` and `--end` dates.
   - A longer horizon ("this year", "past 5 years") → `--range ytd` / `--range 5y` etc. Valid ranges: `5d`, `1mo`, `3mo`, `6mo`, `ytd`, `1y`, `2y`, `5y`, `10y`, `max`.
   - Nothing specific → default `--range 1mo`.
