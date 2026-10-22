@@ -2,7 +2,7 @@
 fetch_quote_summary, summary_num/summary_text, build_params, meta_summary, extract_series,
 fetch_history, and the stock_data adapter (parse_analyst_view, analyst_view,
 parse_earnings_view, earnings_view, parse_holders_view, holders_view and its
-transaction helpers)."""
+transaction helpers, parse_fundamentals_view, fundamentals_view)."""
 
 import argparse
 import datetime as dt
@@ -137,6 +137,55 @@ class TestFetchQuoteSummary:
         with pytest.raises(requests.RequestException, match="no fundamentals in response"):
             yf.fetch_quote_summary("AAA", ["price"])
 
+    def test_cookie_then_crumb_then_quote_summary(self, monkeypatch):
+        session = FakeSession(get_responses=[
+            FakeResponse(text="cookie"),
+            FakeResponse(text="crumb123"),
+            FakeResponse(json_data={"quoteSummary": {"result": [{"ok": 1}]}}),
+        ])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        yf.fetch_quote_summary("AAA", ["price"])
+        urls = [call[0] for call in session.get_calls]
+        assert urls[:2] == [yf.COOKIE_URLS[0], yf.CRUMB_URL]
+        assert session.headers == yf.HEADERS
+
+    def test_error_on_first_host_falls_through_to_next(self, monkeypatch):
+        session = FakeSession(get_responses=[
+            FakeResponse(text="cookie"),
+            FakeResponse(text="crumb123"),
+            FakeResponse(json_data={"quoteSummary": {"error": {"description": "busy"}}}),
+            FakeResponse(json_data={"quoteSummary": {"result": [{"ok": 1}]}}),
+        ])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        assert yf.fetch_quote_summary("AAA", ["price"]) == {"ok": 1}
+        assert session.get_calls[3][0] == yf.QUOTE_SUMMARY_HOSTS[1].format(symbol="AAA")
+
+    def test_html_crumb_is_ignored_and_crumbless_attempts_used(self, monkeypatch):
+        session = FakeSession(get_responses=[
+            FakeResponse(text="cookie"),
+            FakeResponse(text="<html>consent</html>"),
+            FakeResponse(json_data={"quoteSummary": {"result": [{"ok": 1}]}}),
+        ])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        assert yf.fetch_quote_summary("AAA", ["price"]) == {"ok": 1}
+        assert "crumb" not in session.get_calls[2][1]["params"]
+
+    def test_all_attempts_fail_raises_last_error(self, monkeypatch):
+        not_found = {"quoteSummary": {"error": {"description": "Quote not found for symbol: ZZZ"}}}
+        session = FakeSession(get_responses=[FakeResponse(text="cookie"), FakeResponse(text="crumb123")]
+                              + [FakeResponse(json_data=not_found) for _ in range(4)])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.fetch_quote_summary("ZZZ", ["price"])
+        assert len(session.get_calls) == 6  # cookie, crumb, 2 hosts x (with, without crumb)
+
+    def test_non_json_response_reports_status(self, monkeypatch):
+        session = FakeSession(get_responses=[FakeResponse(text="cookie"), FakeResponse(text="")]
+                              + [FakeResponse(json_data=None, status_code=429) for _ in range(2)])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        with pytest.raises(requests.RequestException, match=r"non-JSON response \(HTTP 429\)"):
+            yf.fetch_quote_summary("AAA", ["price"])
+
 
 class TestSummaryNumText:
     @pytest.mark.parametrize("node,expected", [
@@ -144,7 +193,9 @@ class TestSummaryNumText:
         ({"a": {"b": {"raw": 1.5, "fmt": "1.50"}}}, 1.5),
         ({"a": {"b": True}}, None),
         ({"a": {"b": "7"}}, None),
+        ({"a": {"b": {"fmt": "1M"}}}, None),
         ({"a": None}, None),
+        ({}, None),
     ])
     def test_num(self, node, expected):
         assert yf.summary_num(node, "a", "b") == expected
@@ -805,3 +856,136 @@ class TestHoldersView:
         monkeypatch.setattr(yf, "fetch_quote_summary", boom)
         with pytest.raises(requests.RequestException, match="Quote not found"):
             yf.holders_view("ZZZ", 180)
+
+
+def _fundamentals_modules(price=100.0):
+    """quoteSummary ``modules`` with every field parse_fundamentals_view() reads."""
+    return {
+        "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST",
+                  "regularMarketPrice": {"raw": price}, "marketCap": {"raw": 100e9}},
+        "financialData": {
+            "currentPrice": {"raw": price}, "freeCashflow": {"raw": 5e9},
+            "operatingCashflow": {"raw": 7e9}, "ebitda": {"raw": 8e9},
+            "totalDebt": {"raw": 2e9}, "totalCash": {"raw": 1e9}, "totalRevenue": {"raw": 40e9},
+            "grossMargins": {"raw": 0.45}, "operatingMargins": {"raw": 0.3},
+            "profitMargins": {"raw": 0.25}, "returnOnEquity": {"raw": 1.5},
+            "returnOnAssets": {"raw": 0.2}, "revenueGrowth": {"raw": 0.08},
+            "earningsGrowth": {"raw": -0.02}, "debtToEquity": {"raw": 150.0},
+            "currentRatio": {"raw": 0.9}, "quickRatio": {"raw": 0.8},
+        },
+        "defaultKeyStatistics": {
+            "sharesOutstanding": {"raw": 1e9}, "trailingEps": {"raw": 5.0},
+            "forwardEps": {"raw": 6.0}, "bookValue": {"raw": 20.0}, "beta": {"raw": 1.2},
+            "enterpriseValue": {"raw": 101e9}, "enterpriseToEbitda": {"raw": 12.0},
+            "priceToBook": {"raw": 40.0}, "netIncomeToCommon": {"raw": 4e9},
+        },
+        "summaryDetail": {"trailingPE": {"raw": 20.0}, "forwardPE": {"raw": 16.0},
+                          "priceToSalesTrailing12Months": {"raw": 2.5},
+                          "dividendYield": {"raw": 0.02}, "payoutRatio": {"raw": 0.4}},
+        "summaryProfile": {"sector": "Technology", "industry": "Consumer Electronics"},
+        "earningsTrend": {"trend": [{"period": "+1y", "growth": {"raw": 0.07}},
+                                    {"period": "+5y", "growth": {"raw": 0.10}}]},
+    }
+
+
+class TestParseFundamentalsView:
+    def test_reads_every_field(self):
+        view = yf.parse_fundamentals_view(_fundamentals_modules())
+        assert view == {
+            "source": "Yahoo Finance", "notes": [],
+            "name": "Triple A Inc.", "exchange": "TST", "currency": "USD",
+            "sector": "Technology", "industry": "Consumer Electronics",
+            "price": 100.0, "market_cap": 100e9, "shares_outstanding": 1e9,
+            "free_cash_flow": 5e9, "operating_cash_flow": 7e9, "ebitda": 8e9,
+            "revenue": 40e9, "net_income": 4e9, "total_debt": 2e9, "total_cash": 1e9,
+            "eps_ttm": 5.0, "eps_forward": 6.0, "book_value_per_share": 20.0, "beta": 1.2,
+            "trailing_pe": 20.0, "forward_pe": 16.0, "price_to_sales": 2.5,
+            "price_to_book": 40.0, "enterprise_value": 101e9, "ev_to_ebitda": 12.0,
+            "gross_margin": 0.45, "operating_margin": 0.3, "net_margin": 0.25,
+            "return_on_equity": 1.5, "return_on_assets": 0.2,
+            "revenue_growth": 0.08, "earnings_growth": -0.02,
+            "debt_to_equity": 1.5,  # Yahoo's 150 (percent) -> 1.5x
+            "current_ratio": 0.9, "quick_ratio": 0.8,
+            "dividend_per_share": pytest.approx(2.0),  # 2% yield x 100.0
+            "payout_ratio": 0.4,
+            "analyst_growth_1y": 0.07, "analyst_growth_5y": 0.10,
+        }
+
+    @pytest.mark.parametrize("current", [None, 0.0])
+    def test_price_falls_back_to_regular_market_price(self, current):
+        modules = _fundamentals_modules()
+        modules["financialData"]["currentPrice"] = None if current is None else {"raw": current}
+        modules["price"]["regularMarketPrice"] = {"raw": 90.0}
+        assert yf.parse_fundamentals_view(modules)["price"] == 90.0
+
+    def test_no_price(self):
+        modules = _fundamentals_modules()
+        del modules["financialData"]["currentPrice"]
+        del modules["price"]["regularMarketPrice"]
+        view = yf.parse_fundamentals_view(modules)
+        assert (view["price"], view["dividend_per_share"]) == (None, None)
+
+    def test_beta_falls_back_to_summary_detail(self):
+        modules = _fundamentals_modules()
+        del modules["defaultKeyStatistics"]["beta"]
+        modules["summaryDetail"]["beta"] = {"raw": 0.8}
+        assert yf.parse_fundamentals_view(modules)["beta"] == 0.8
+
+    def test_dividend_in_minor_units_like_the_price(self):
+        modules = _fundamentals_modules(price=614.2)  # an LSE quote in GBp
+        modules["price"]["currency"] = "GBp"
+        modules["summaryDetail"]["dividendYield"] = {"raw": 0.0411}
+        # Ignores dividendRate / trailingAnnualDividendRate, which Yahoo gives in pounds.
+        modules["summaryDetail"]["dividendRate"] = {"raw": 0.336}
+        modules["summaryDetail"]["trailingAnnualDividendRate"] = {"raw": 0.336}
+        assert yf.parse_fundamentals_view(modules)["dividend_per_share"] == pytest.approx(
+            25.244, abs=1e-3)
+
+    @pytest.mark.parametrize("dividend_yield", [0.0, None])
+    def test_zero_or_missing_yield_is_no_dividend(self, dividend_yield):
+        modules = _fundamentals_modules()
+        modules["summaryDetail"]["dividendYield"] = (
+            None if dividend_yield is None else {"raw": dividend_yield})
+        assert yf.parse_fundamentals_view(modules)["dividend_per_share"] is None
+
+    def test_zero_gross_margin_is_none(self):
+        # Yahoo's placeholder for banks (no cost of goods sold), not a real 0% margin.
+        modules = _fundamentals_modules()
+        modules["financialData"]["grossMargins"] = {"raw": 0.0}
+        assert yf.parse_fundamentals_view(modules)["gross_margin"] is None
+
+    def test_name_falls_back_to_short_name(self):
+        modules = _fundamentals_modules()
+        modules["price"]["longName"] = None
+        modules["price"]["shortName"] = "AAA Co"
+        assert yf.parse_fundamentals_view(modules)["name"] == "AAA Co"
+
+    def test_analyst_growth_by_period(self):
+        modules = _fundamentals_modules()
+        modules["earningsTrend"] = {"trend": [{"period": "+2y", "growth": {"raw": 0.2}}]}
+        view = yf.parse_fundamentals_view(modules)
+        assert (view["analyst_growth_1y"], view["analyst_growth_5y"]) == (None, None)
+
+    def test_empty_modules_are_all_none(self):
+        view = yf.parse_fundamentals_view({})
+        assert view["currency"] == ""
+        assert all(v is None for k, v in view.items()
+                   if k not in ("source", "notes", "currency"))
+
+
+class TestFundamentalsView:
+    def test_fetches_fundamentals_modules(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "fetch_quote_summary",
+                            lambda s, m: seen.append((s, m)) or _fundamentals_modules())
+        view = yf.fundamentals_view("AAA")
+        assert seen == [("AAA", yf.FUNDAMENTALS_MODULES)]
+        assert view["price"] == 100.0
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, modules):
+            raise requests.RequestException("Quote not found")
+
+        monkeypatch.setattr(yf, "fetch_quote_summary", boom)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.fundamentals_view("ZZZ")

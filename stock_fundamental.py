@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Retrieve a stock's fundamental indicators from Yahoo Finance's public
-``quoteSummary`` endpoint. No API key or authentication required (a cookie +
-crumb are fetched automatically, via stock_intrinsic_value.py's fetch).
+Retrieve a stock's fundamental indicators through
+stock_data.fundamentals_view(), which serves them from Yahoo Finance's public
+``quoteSummary`` endpoint today. No API key or authentication required
+(yahoo_finance.py fetches a cookie + crumb automatically).
 
 Give it a ticker in Yahoo's notation (AAPL, VOD.L, D05.SI, SAP.DE, ...). The
 script reports, in six groups:
@@ -16,9 +17,9 @@ script reports, in six groups:
 - cash flow           free and operating cash flow, cash conversion
 - shareholder returns dividend yield, payout ratio
 
-Most figures are read as Yahoo reports them; PEG, FCF yield, net
+Most figures are read as the provider reports them; PEG, FCF yield, net
 debt/EBITDA, cash conversion and dividend yield are derived. An indicator
-Yahoo leaves out, or that isn't meaningful (e.g. PEG with negative growth),
+the provider leaves out, or that isn't meaningful (e.g. PEG with negative growth),
 is reported as missing. extract_indicators() is also imported by the stock
 information web app (app/stock_information/). Supports --json for structured
 output. On failure the process exits non-zero and prints {"error": "..."} to
@@ -30,6 +31,7 @@ import json
 
 import requests
 
+import stock_data
 import stock_intrinsic_value as siv
 from cli_utils import die, use_utf8_output
 
@@ -86,18 +88,15 @@ def _ratio(numerator, denominator):
     return numerator / denominator
 
 
-def extract_indicators(modules, inputs):
-    """Pull the fundamental indicators from the quoteSummary ``modules``.
+def extract_indicators(view, inputs):
+    """The fundamental indicators from stock_data.fundamentals_view()'s ``view``.
 
-    ``inputs`` is stock_intrinsic_value.collect_inputs() of the same modules;
-    figures it already parsed are reused rather than read twice. Margins,
-    returns, growth rates and yields are fractions (0.25 == 25%); multiples
-    and ratios are plain numbers. Anything Yahoo leaves out, or that isn't
-    meaningful (e.g. PEG with negative growth), is None.
+    ``inputs`` is stock_intrinsic_value.collect_inputs() of the same view;
+    figures it already worked out are reused. Margins, returns, growth rates
+    and yields are fractions (0.25 == 25%); multiples and ratios are plain
+    numbers. Anything the provider leaves out, or that isn't meaningful (e.g.
+    PEG with negative growth), is None.
     """
-    def num(module, key):
-        return siv._num(modules, module, key)
-
     trailing_pe = inputs["trailing_pe"]
     growth_5y = inputs["analyst_growth_5y"]
     peg = (
@@ -105,37 +104,32 @@ def extract_indicators(modules, inputs):
         if trailing_pe and trailing_pe > 0 and growth_5y is not None
         else None
     )
-    # Yahoo reports debt/equity as a percentage (150.0 == 1.5x).
-    debt_to_equity = num("financialData", "debtToEquity")
-    # Yahoo reports a gross margin of exactly 0 for banks and others with no
-    # cost of goods sold; that means "not applicable", not a 0% margin.
-    gross_margin = num("financialData", "grossMargins") or None
     fcf = inputs["free_cash_flow"]
     return {
-        "gross_margin": gross_margin,
-        "operating_margin": num("financialData", "operatingMargins"),
-        "net_margin": num("financialData", "profitMargins"),
-        "return_on_equity": num("financialData", "returnOnEquity"),
-        "return_on_assets": num("financialData", "returnOnAssets"),
-        "revenue_growth": num("financialData", "revenueGrowth"),
-        "earnings_growth": num("financialData", "earningsGrowth"),
+        "gross_margin": view["gross_margin"],
+        "operating_margin": view["operating_margin"],
+        "net_margin": view["net_margin"],
+        "return_on_equity": view["return_on_equity"],
+        "return_on_assets": view["return_on_assets"],
+        "revenue_growth": view["revenue_growth"],
+        "earnings_growth": view["earnings_growth"],
         "analyst_growth_5y": growth_5y,
         "trailing_pe": trailing_pe,
         "forward_pe": inputs["forward_pe"],
         "peg": peg,
         "ev_to_ebitda": inputs["ev_to_ebitda"],
-        "price_to_book": num("defaultKeyStatistics", "priceToBook"),
+        "price_to_book": view["price_to_book"],
         "price_to_sales": inputs["price_to_sales"],
         "fcf_yield": _ratio(fcf, inputs["market_cap"]),
-        "debt_to_equity": None if debt_to_equity is None else debt_to_equity / 100.0,
+        "debt_to_equity": view["debt_to_equity"],
         "net_debt_to_ebitda": _ratio(inputs["net_debt"], inputs["ebitda"]),
-        "current_ratio": num("financialData", "currentRatio"),
-        "quick_ratio": num("financialData", "quickRatio"),
+        "current_ratio": view["current_ratio"],
+        "quick_ratio": view["quick_ratio"],
         "free_cash_flow": fcf,
-        "operating_cash_flow": num("financialData", "operatingCashflow"),
-        "cash_conversion": _ratio(fcf, num("defaultKeyStatistics", "netIncomeToCommon")),
+        "operating_cash_flow": view["operating_cash_flow"],
+        "cash_conversion": _ratio(fcf, view["net_income"]),
         "dividend_yield": _ratio(inputs["dividend_rate"], inputs["price"]),
-        "payout_ratio": num("summaryDetail", "payoutRatio"),
+        "payout_ratio": view["payout_ratio"],
     }
 
 
@@ -219,15 +213,15 @@ def main(argv=None):
     args = parse_args(argv)
 
     try:
-        modules = siv.fetch_fundamentals(args.symbol)
+        view = stock_data.fundamentals_view(args.symbol)
     except (requests.RequestException, ValueError, KeyError) as exc:
         die(f"failed to fetch fundamentals for {args.symbol!r}: {exc}", args.json)
 
-    inputs = siv.collect_inputs(modules)
+    inputs = siv.collect_inputs(view)
     if inputs["price"] is None:
         die(f"no usable fundamentals returned for {args.symbol!r}", args.json)
 
-    indicators = extract_indicators(modules, inputs)
+    indicators = extract_indicators(view, inputs)
     symbol = args.symbol.upper()
 
     if args.json:

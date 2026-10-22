@@ -140,26 +140,31 @@ class TestGetStockInfo:
 
 
 def _fundamentals(price=100.0):
-    """Minimal quoteSummary ``modules`` enough for every valuation method to run."""
+    """A neutral stock_data.fundamentals_view() with enough for every valuation method."""
     return {
-        "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST",
-                  "regularMarketPrice": {"raw": price}},
-        "financialData": {"currentPrice": {"raw": price}, "freeCashflow": {"raw": 5e9},
-                          "ebitda": {"raw": 8e9}, "totalDebt": {"raw": 2e9},
-                          "totalCash": {"raw": 1e9}, "totalRevenue": {"raw": 40e9}},
-        "defaultKeyStatistics": {"sharesOutstanding": {"raw": 1e9}, "trailingEps": {"raw": 5.0},
-                                 "beta": {"raw": 1.0}, "enterpriseValue": {"raw": 101e9},
-                                 "enterpriseToEbitda": {"raw": 12.0}},
-        "summaryDetail": {"trailingPE": {"raw": 20.0}, "priceToSalesTrailing12Months": {"raw": 2.5},
-                          "dividendYield": {"raw": 0.02}},
-        "summaryProfile": {"sector": "Technology", "industry": "Consumer Electronics"},
+        "source": "Test", "notes": [],
+        "name": "Triple A Inc.", "exchange": "TST", "currency": "USD",
+        "sector": "Technology", "industry": "Consumer Electronics",
+        "price": price, "market_cap": None, "shares_outstanding": 1e9,
+        "free_cash_flow": 5e9, "operating_cash_flow": None, "ebitda": 8e9, "revenue": 40e9,
+        "net_income": None, "total_debt": 2e9, "total_cash": 1e9,
+        "eps_ttm": 5.0, "eps_forward": None, "book_value_per_share": None, "beta": 1.0,
+        "trailing_pe": 20.0, "forward_pe": None, "price_to_sales": 2.5, "price_to_book": None,
+        "enterprise_value": 101e9, "ev_to_ebitda": 12.0,
+        "gross_margin": None, "operating_margin": None, "net_margin": None,
+        "return_on_equity": None, "return_on_assets": None,
+        "revenue_growth": None, "earnings_growth": None,
+        "debt_to_equity": None, "current_ratio": None, "quick_ratio": None,
+        "dividend_per_share": 0.02 * price, "payout_ratio": None,
+        "analyst_growth_1y": None, "analyst_growth_5y": None,
     }
 
 
 class TestGetValuation:
     def test_runs_intrinsic_value_pipeline_with_defaults(self, monkeypatch):
         seen = []
-        monkeypatch.setattr(sis.siv, "fetch_fundamentals", lambda s: seen.append(s) or _fundamentals())
+        monkeypatch.setattr(sis.stock_data, "fundamentals_view",
+                            lambda s: seen.append(s) or _fundamentals())
         out = sis.get_valuation("AAA")
         assert seen == ["AAA"]
         assert out["symbol"] == "AAA" and out["price"] == 100.0
@@ -186,10 +191,8 @@ class TestGetValuation:
         json.dumps(out)  # must be serializable for the HTTP response
 
     def test_no_price_raises(self, monkeypatch):
-        modules = _fundamentals()
-        del modules["financialData"]["currentPrice"]
-        del modules["price"]["regularMarketPrice"]
-        monkeypatch.setattr(sis.siv, "fetch_fundamentals", lambda s: modules)
+        view = {**_fundamentals(), "price": None}
+        monkeypatch.setattr(sis.stock_data, "fundamentals_view", lambda s: view)
         with pytest.raises(ValueError, match="no usable fundamentals"):
             sis.get_valuation("AAA")
 

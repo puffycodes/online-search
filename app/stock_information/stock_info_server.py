@@ -12,8 +12,8 @@ of the latest session with its date, and the 52-week low/high (both
 drawn as range bars with a marker at the current price).
 
 The page then calls /api/valuation, which runs the same pipeline as
-stock_intrinsic_value.py (Yahoo fundamentals -> every valuation.py
-method, with that script's default assumptions) and shows how many
+stock_intrinsic_value.py (fundamentals from stock_data.py, served by Yahoo
+today -> every valuation.py method, with that script's default assumptions) and shows how many
 estimates say the price is undervalued / fair value / overvalued, then each
 estimate next to the price. The company's market cap, trailing P/E, dividend yield,
 sector and industry come from the same fundamentals payload, as do the
@@ -37,13 +37,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# yahoo_finance.py, stock_price_history.py, stock_intrinsic_value.py and
-# stock_fundamental.py live at the repository root, two levels up from this file (app/stock_information/stock_info_server.py).
+# yahoo_finance.py, stock_data.py, stock_price_history.py, stock_intrinsic_value.py
+# and stock_fundamental.py live at the repository root, two levels up from this file (app/stock_information/stock_info_server.py).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 import requests  # noqa: E402
 
+import stock_data  # noqa: E402
 import stock_fundamental as sf  # noqa: E402
 import stock_intrinsic_value as siv  # noqa: E402
 import yahoo_finance as yf  # noqa: E402
@@ -721,8 +722,8 @@ def get_valuation(symbol):
     requests.RequestException / ValueError / KeyError on a failed fetch,
     and ValueError when Yahoo returns no usable fundamentals.
     """
-    modules = siv.fetch_fundamentals(symbol)
-    inputs = siv.collect_inputs(modules)
+    view = stock_data.fundamentals_view(symbol)
+    inputs = siv.collect_inputs(view)
     if inputs["price"] is None:
         raise ValueError("no usable fundamentals returned")
     args = siv.parse_args([symbol])
@@ -730,7 +731,7 @@ def get_valuation(symbol):
     estimates, used = siv.compute_estimates(inputs, assumptions, args)
     payload = siv.build_json(symbol, inputs, assumptions, estimates, used)
     payload["summary"] = summarize_estimates(payload)
-    payload["indicators"] = sf.extract_indicators(modules, inputs)
+    payload["indicators"] = sf.extract_indicators(view, inputs)
     return payload
 
 

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Estimate a stock's intrinsic value every way valuation.py can, from data
-pulled off Yahoo Finance's public ``quoteSummary`` endpoint. No API key or
-authentication required (a cookie + crumb are fetched automatically).
+fetched through stock_data.fundamentals_view(), which serves it from Yahoo
+Finance's public ``quoteSummary`` endpoint today. No API key or
+authentication required (yahoo_finance.py fetches a cookie + crumb
+automatically).
 
 Give it a ticker in Yahoo's notation (AAPL, VOD.L, D05.SI, SAP.DE, ...). The
 script retrieves the fundamentals each method needs - trailing free cash
@@ -23,9 +25,8 @@ horizon, and CAPM parameters) with the flags below. Supports --json for
 structured output. On failure the process exits non-zero and prints
 {"error": "..."} to stderr.
 
-fetch_fundamentals() and collect_inputs() are also imported by
-stock_fundamental.py and app/stock_information/stock_info_server.py, so a
-change to them affects both.
+collect_inputs() is also imported by stock_fundamental.py and
+app/stock_information/stock_info_server.py, so a change to it affects both.
 """
 
 import argparse
@@ -33,7 +34,7 @@ import json
 
 import requests
 
-import yahoo_finance as yf
+import stock_data
 from cli_utils import die, positive_int, use_utf8_output
 from valuation import (
     discounted_cash_flow,
@@ -43,16 +44,6 @@ from valuation import (
     implied_growth_rate,
     multiple_value,
 )
-
-QUOTE_SUMMARY_HOSTS = yf.QUOTE_SUMMARY_HOSTS
-MODULES = [
-    "price",
-    "summaryDetail",
-    "defaultKeyStatistics",
-    "financialData",
-    "earningsTrend",
-    "summaryProfile",
-]
 
 # Assumption defaults, all fractions (0.09 == 9%). Every one is overridable.
 DEFAULT_DISCOUNT_RATE = 0.09   # used only when there is no beta to run CAPM
@@ -65,81 +56,58 @@ GRAHAM_PE_CAP = 40.0         # keep 8.5 + 2g sane for high growth assumptions
 
 
 # --------------------------------------------------------------------------- #
-# Fetch                                                                        #
+# Inputs                                                                       #
 # --------------------------------------------------------------------------- #
-def fetch_fundamentals(symbol):
-    """Return the ``quoteSummary`` module dict for ``symbol`` (raises on failure)."""
-    return yf.fetch_quote_summary(symbol, MODULES)
+def collect_inputs(view):
+    """The numbers the valuation functions need, from stock_data.fundamentals_view().
 
-
-# --------------------------------------------------------------------------- #
-# Parse                                                                        #
-# --------------------------------------------------------------------------- #
-_num = yf.summary_num
-_text = yf.summary_text
-
-
-def _analyst_growth(modules, period):
-    for entry in (modules.get("earningsTrend") or {}).get("trend") or []:
-        if entry.get("period") == period:
-            return _num(entry, "growth")
-    return None
-
-
-def collect_inputs(modules):
-    """Flatten the raw modules into the numbers the valuation functions need."""
-    price = _num(modules, "financialData", "currentPrice")
-    price = price if price else _num(modules, "price", "regularMarketPrice")
-    market_cap = _num(modules, "price", "marketCap")
-    shares = _num(modules, "defaultKeyStatistics", "sharesOutstanding")
+    Adds what is worked out from the reported figures: shares from market
+    cap / price when the count is missing, net debt, and revenue per share.
+    ``dividend_rate`` is the forward dividend per share, in the price's unit.
+    """
+    price = view["price"]
+    market_cap = view["market_cap"]
+    shares = view["shares_outstanding"]
     if not shares and market_cap and price:
         shares = market_cap / price
 
-    total_debt = _num(modules, "financialData", "totalDebt")
-    total_cash = _num(modules, "financialData", "totalCash")
+    total_debt = view["total_debt"]
+    total_cash = view["total_cash"]
     net_debt = (
         total_debt - total_cash
         if total_debt is not None and total_cash is not None
         else None
     )
-    revenue = _num(modules, "financialData", "totalRevenue")
-    # The forward dividend per share, from Yahoo's forward yield rather than
-    # summaryDetail.dividendRate (mostly no longer returned) or
-    # trailingAnnualDividendRate (in pounds, not the GBp quote, on the LSE):
-    # yield x price is always in the price's own unit. A 0 yield is a non-payer.
-    dividend_yield = _num(modules, "summaryDetail", "dividendYield")
-    dividend_rate = dividend_yield * price if dividend_yield and price else None
+    revenue = view["revenue"]
 
     return {
-        "name": _text(modules, "price", "longName")
-        or _text(modules, "price", "shortName"),
-        "exchange": _text(modules, "price", "exchangeName"),
-        "currency": _text(modules, "price", "currency") or "",
-        "sector": _text(modules, "summaryProfile", "sector"),
-        "industry": _text(modules, "summaryProfile", "industry"),
+        "name": view["name"],
+        "exchange": view["exchange"],
+        "currency": view["currency"],
+        "sector": view["sector"],
+        "industry": view["industry"],
         "price": price,
         "market_cap": market_cap,
         "shares": shares,
-        "free_cash_flow": _num(modules, "financialData", "freeCashflow"),
-        "ebitda": _num(modules, "financialData", "ebitda"),
+        "free_cash_flow": view["free_cash_flow"],
+        "ebitda": view["ebitda"],
         "total_debt": total_debt,
         "total_cash": total_cash,
         "net_debt": net_debt,
         "revenue": revenue,
         "revenue_per_share": revenue / shares if revenue and shares else None,
-        "eps_ttm": _num(modules, "defaultKeyStatistics", "trailingEps"),
-        "eps_forward": _num(modules, "defaultKeyStatistics", "forwardEps"),
-        "book_value_per_share": _num(modules, "defaultKeyStatistics", "bookValue"),
-        "beta": _num(modules, "defaultKeyStatistics", "beta")
-        or _num(modules, "summaryDetail", "beta"),
-        "trailing_pe": _num(modules, "summaryDetail", "trailingPE"),
-        "forward_pe": _num(modules, "summaryDetail", "forwardPE"),
-        "price_to_sales": _num(modules, "summaryDetail", "priceToSalesTrailing12Months"),
-        "enterprise_value": _num(modules, "defaultKeyStatistics", "enterpriseValue"),
-        "ev_to_ebitda": _num(modules, "defaultKeyStatistics", "enterpriseToEbitda"),
-        "dividend_rate": dividend_rate,
-        "analyst_growth_5y": _analyst_growth(modules, "+5y"),
-        "analyst_growth_1y": _analyst_growth(modules, "+1y"),
+        "eps_ttm": view["eps_ttm"],
+        "eps_forward": view["eps_forward"],
+        "book_value_per_share": view["book_value_per_share"],
+        "beta": view["beta"],
+        "trailing_pe": view["trailing_pe"],
+        "forward_pe": view["forward_pe"],
+        "price_to_sales": view["price_to_sales"],
+        "enterprise_value": view["enterprise_value"],
+        "ev_to_ebitda": view["ev_to_ebitda"],
+        "dividend_rate": view["dividend_per_share"],
+        "analyst_growth_5y": view["analyst_growth_5y"],
+        "analyst_growth_1y": view["analyst_growth_1y"],
     }
 
 
@@ -529,11 +497,11 @@ def main(argv=None):
     args = parse_args(argv)
 
     try:
-        modules = fetch_fundamentals(args.symbol)
+        view = stock_data.fundamentals_view(args.symbol)
     except (requests.RequestException, ValueError, KeyError) as exc:
         die(f"failed to fetch fundamentals for {args.symbol!r}: {exc}", args.json)
 
-    inputs = collect_inputs(modules)
+    inputs = collect_inputs(view)
     if inputs["price"] is None:
         die(f"no usable fundamentals returned for {args.symbol!r}", args.json)
 

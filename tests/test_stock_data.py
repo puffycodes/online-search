@@ -37,6 +37,17 @@ TRANSACTION_KINDS = {"sale", "purchase", "option_exercise", "award", "gift", "bu
                      "holder_disclosure", "other", "unspecified"}
 HOLDER_KEYS = {"name", "pct_held", "shares", "value", "pct_change", "report_date"}
 
+FUNDAMENTALS_VIEW_KEYS = {
+    "source", "notes", "name", "exchange", "currency", "sector", "industry", "price",
+    "market_cap", "shares_outstanding", "free_cash_flow", "operating_cash_flow", "ebitda",
+    "revenue", "net_income", "total_debt", "total_cash", "eps_ttm", "eps_forward",
+    "book_value_per_share", "beta", "trailing_pe", "forward_pe", "price_to_sales",
+    "price_to_book", "enterprise_value", "ev_to_ebitda", "gross_margin", "operating_margin",
+    "net_margin", "return_on_equity", "return_on_assets", "revenue_growth", "earnings_growth",
+    "debt_to_equity", "current_ratio", "quick_ratio", "dividend_per_share", "payout_ratio",
+    "analyst_growth_1y", "analyst_growth_5y",
+}
+
 NOW = 1_790_000_000  # 2026-09-21 14:13 UTC
 
 # Raw data per adapter, filled in enough to produce a trend row and an action.
@@ -78,6 +89,16 @@ YAHOO_HOLDERS_MODULES = {
     "fundOwnership": {"ownershipList": [_YAHOO_HOLDER]},
     "institutionOwnership": {"ownershipList": [_YAHOO_HOLDER]},
 }
+YAHOO_FUNDAMENTALS_MODULES = {
+    "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST",
+              "marketCap": {"raw": 100e9}},
+    "financialData": {"currentPrice": {"raw": 100.0}, "freeCashflow": {"raw": 5e9},
+                      "debtToEquity": {"raw": 150.0}, "grossMargins": {"raw": 0.45}},
+    "defaultKeyStatistics": {"sharesOutstanding": {"raw": 1e9}, "beta": {"raw": 1.2}},
+    "summaryDetail": {"trailingPE": {"raw": 20.0}, "dividendYield": {"raw": 0.02}},
+    "summaryProfile": {"sector": "Technology", "industry": "Consumer Electronics"},
+    "earningsTrend": {"trend": [{"period": "+5y", "growth": {"raw": 0.10}}]},
+}
 
 
 class TestRouting:
@@ -103,6 +124,16 @@ class TestRouting:
                             lambda s, d: seen.append((s, d)) or {"ok": True})
         assert stock_data.holders_view("AAA", 30) == {"ok": True}
         assert seen == [("AAA", 30)]
+
+    def test_fundamentals_view_is_served_by_yahoo(self):
+        assert stock_data.PROVIDERS["fundamentals_view"] is yf.fundamentals_view
+
+    def test_fundamentals_view_delegates_to_its_provider(self, monkeypatch):
+        seen = []
+        monkeypatch.setitem(stock_data.PROVIDERS, "fundamentals_view",
+                            lambda s: seen.append(s) or {"ok": True})
+        assert stock_data.fundamentals_view("AAA") == {"ok": True}
+        assert seen == ["AAA"]
 
     def test_analyst_view_delegates_to_its_provider(self, monkeypatch):
         seen = []
@@ -203,3 +234,24 @@ class TestHoldersViewContract:
             assert t["shares"] is None or isinstance(t["shares"], int)
         for h in view["top_funds"]:
             assert _iso(h["report_date"]) and isinstance(h["shares"], int)
+
+
+@pytest.mark.parametrize("view", [
+    pytest.param(yf.parse_fundamentals_view(YAHOO_FUNDAMENTALS_MODULES), id="yahoo"),
+])
+class TestFundamentalsViewContract:
+    def test_keys(self, view):
+        assert set(view) == FUNDAMENTALS_VIEW_KEYS
+        assert isinstance(view["source"], str) and view["source"]
+        assert isinstance(view["notes"], list)
+
+    def test_values_are_plain(self, view):
+        text = {"source", "notes", "name", "exchange", "currency", "sector", "industry"}
+        assert all(v is None or isinstance(v, (int, float))
+                   for k, v in view.items() if k not in text)
+
+    def test_ratios_are_fractions_not_percents(self, view):
+        assert view["debt_to_equity"] == 1.5     # not 150
+        assert view["gross_margin"] == 0.45      # not 45
+        assert view["analyst_growth_5y"] == 0.10
+        assert view["dividend_per_share"] == pytest.approx(2.0)  # per share, not a yield

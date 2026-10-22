@@ -3,10 +3,9 @@
 ## Requirement
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
-- Use Yahoo Finance's quoteSummary endpoint (unofficial; needs a cookie and crumb, no API key).
-- Use yahoo_finance.py's fetch_quote_summary() for the cookie, crumb and quoteSummary request.
+- Get the data through stock_data.py's fundamentals_view(), never from a provider directly, so the script reads only stock_data's neutral shape. It is served by yahoo_finance.py's fundamentals_view() (Yahoo Finance's quoteSummary endpoint: unofficial, needs a cookie and crumb, no API key) today.
 - Use every valuation method in valuation.py.
-- Keep fetch_fundamentals(), collect_inputs(), resolve_assumptions(), compute_estimates() and build_json() importable, for the stock information web app and stock_fundamental.py.
+- Keep collect_inputs(), resolve_assumptions(), compute_estimates() and build_json() importable, for the stock information web app and stock_fundamental.py.
 
 ## Actions
 

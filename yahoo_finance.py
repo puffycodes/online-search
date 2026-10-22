@@ -5,22 +5,19 @@ Shared helpers for Yahoo Finance's public endpoints. No API key required.
 Used by stock_price_history.py, stock_candlestick_chart.py, stock_rebased_chart.py
 and stock_risk.py for the --range/--last/--start/--end window flags and for
 parsing chart results (their data now comes from price_source.py, which
-returns the same shape), by market_top_volume.py for the
-cookie + crumb handshake, by stock_intrinsic_value.py for the quoteSummary
-fetch built on that handshake
-(stock_fundamental.py gets it through stock_intrinsic_value.py's fetch),
-and by app/stock_information/stock_info_server.py for its quote (the last
-user of the chart endpoint itself, fetch_history()). Each caller
+returns the same shape), by market_top_volume.py for the cookie + crumb
+handshake, and by app/stock_information/stock_info_server.py for its quote
+(the last user of the chart endpoint itself, fetch_history()). Each caller
 keeps its own row shaping (rounding, date formatting, which rows to drop) and
 its own output stage; everything up to and including the HTTP call and the
 raw-payload navigation lives here.
 
 It is also the Yahoo adapter behind stock_data.py: analyst_view(),
-earnings_view() and holders_view() turn quoteSummary data into stock_data's
-provider-neutral shape, for stock_analyst_targets.py,
-stock_earnings_calendar.py and stock_holders.py. stock_intrinsic_value.py
-(and through it stock_fundamental.py) still reads the raw modules itself
-until it moves behind stock_data.py too.
+earnings_view(), holders_view() and fundamentals_view() fetch quoteSummary
+data and turn it into stock_data's provider-neutral shape, for
+stock_analyst_targets.py, stock_earnings_calendar.py, stock_holders.py, and
+stock_intrinsic_value.py, stock_fundamental.py and the stock web app's
+fundamentals.
 """
 
 import datetime as dt
@@ -637,3 +634,83 @@ def parse_holders_view(symbol, modules, days, now=None):
 def holders_view(symbol, days):
     """Fetch ``symbol``'s ownership data and return stock_data's neutral shape."""
     return parse_holders_view(symbol, fetch_quote_summary(symbol, HOLDERS_MODULES), days)
+
+
+FUNDAMENTALS_MODULES = ["price", "summaryDetail", "defaultKeyStatistics", "financialData",
+                        "earningsTrend", "summaryProfile"]
+
+
+def _analyst_growth(modules, period):
+    for entry in (modules.get("earningsTrend") or {}).get("trend") or []:
+        if entry.get("period") == period:
+            return summary_num(entry, "growth")
+    return None
+
+
+def parse_fundamentals_view(modules):
+    """stock_data.fundamentals_view()'s shape from quoteSummary ``modules``."""
+    def fd(key):
+        return summary_num(modules, "financialData", key)
+
+    def stats(key):
+        return summary_num(modules, "defaultKeyStatistics", key)
+
+    def detail(key):
+        return summary_num(modules, "summaryDetail", key)
+
+    price = fd("currentPrice") or summary_num(modules, "price", "regularMarketPrice")
+    # The forward dividend per share, from Yahoo's forward yield rather than
+    # summaryDetail.dividendRate (mostly no longer returned) or
+    # trailingAnnualDividendRate (in pounds, not the GBp quote, on the LSE):
+    # yield x price is always in the price's own unit. A 0 yield is a non-payer.
+    dividend_yield = detail("dividendYield")
+    # Yahoo reports debt/equity as a percentage (150.0 == 1.5x).
+    debt_to_equity = fd("debtToEquity")
+    return {
+        "source": SOURCE,
+        "notes": [],
+        **_profile(modules),
+        "sector": summary_text(modules, "summaryProfile", "sector"),
+        "industry": summary_text(modules, "summaryProfile", "industry"),
+        "price": price,
+        "market_cap": summary_num(modules, "price", "marketCap"),
+        "shares_outstanding": stats("sharesOutstanding"),
+        "free_cash_flow": fd("freeCashflow"),
+        "operating_cash_flow": fd("operatingCashflow"),
+        "ebitda": fd("ebitda"),
+        "revenue": fd("totalRevenue"),
+        "net_income": stats("netIncomeToCommon"),
+        "total_debt": fd("totalDebt"),
+        "total_cash": fd("totalCash"),
+        "eps_ttm": stats("trailingEps"),
+        "eps_forward": stats("forwardEps"),
+        "book_value_per_share": stats("bookValue"),
+        "beta": stats("beta") or detail("beta"),
+        "trailing_pe": detail("trailingPE"),
+        "forward_pe": detail("forwardPE"),
+        "price_to_sales": detail("priceToSalesTrailing12Months"),
+        "price_to_book": stats("priceToBook"),
+        "enterprise_value": stats("enterpriseValue"),
+        "ev_to_ebitda": stats("enterpriseToEbitda"),
+        # Yahoo reports a gross margin of exactly 0 for banks and others with no
+        # cost of goods sold; that means "not applicable", not a 0% margin.
+        "gross_margin": fd("grossMargins") or None,
+        "operating_margin": fd("operatingMargins"),
+        "net_margin": fd("profitMargins"),
+        "return_on_equity": fd("returnOnEquity"),
+        "return_on_assets": fd("returnOnAssets"),
+        "revenue_growth": fd("revenueGrowth"),
+        "earnings_growth": fd("earningsGrowth"),
+        "debt_to_equity": None if debt_to_equity is None else debt_to_equity / 100.0,
+        "current_ratio": fd("currentRatio"),
+        "quick_ratio": fd("quickRatio"),
+        "dividend_per_share": dividend_yield * price if dividend_yield and price else None,
+        "payout_ratio": detail("payoutRatio"),
+        "analyst_growth_1y": _analyst_growth(modules, "+1y"),
+        "analyst_growth_5y": _analyst_growth(modules, "+5y"),
+    }
+
+
+def fundamentals_view(symbol):
+    """Fetch ``symbol``'s fundamentals and return stock_data's neutral shape."""
+    return parse_fundamentals_view(fetch_quote_summary(symbol, FUNDAMENTALS_MODULES))

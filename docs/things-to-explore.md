@@ -279,9 +279,13 @@ before the top picks because it's about the repo's existing sources, not new one
   `stock_earnings_calendar.py` followed the same day through `earnings_view()`
   (functions 7–9): identical on 39 fixture cases and on a live `MSFT` run, and
   `stock_holders.py` through `holders_view()` (functions 13–15): identical on 176
-  fixture cases and on a live `AAPL --trades-only` run. Still to move:
-  `stock_intrinsic_value.py` (with `stock_fundamental.py` and the app's
-  fundamentals), `market_top_volume.py` and the app's quote.
+  fixture cases and on a live `AAPL --trades-only` run. Then
+  `stock_intrinsic_value.py`, `stock_fundamental.py` and the app's fundamentals
+  together through `fundamentals_view()` (functions 4–6): identical on 170
+  fixture comparisons, on a live `AAPL` valuation and on a live `VOD.L` run of
+  the old and new code back to back. No script reads `quoteSummary` modules
+  itself any more. Still to move: `market_top_volume.py` (function 3) and the
+  app's quote (function 2).
 
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for

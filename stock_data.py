@@ -7,8 +7,8 @@ plain dicts in a shape no provider dictates, and PROVIDERS routes the call
 to the adapter that serves it. Swapping a provider then means changing one
 entry in PROVIDERS, not a script. See docs/things-to-explore.md ("Proposed
 design") for the full list of functions planned; only analyst_view(),
-earnings_view() and holders_view() are here so far, all served by
-yahoo_finance.py.
+earnings_view(), holders_view() and fundamentals_view() are here so far, all
+served by yahoo_finance.py.
 
 Shared conventions for every result:
 
@@ -28,6 +28,7 @@ PROVIDERS = {
     "analyst_view": yf.analyst_view,
     "earnings_view": yf.earnings_view,
     "holders_view": yf.holders_view,
+    "fundamentals_view": yf.fundamentals_view,
 }
 
 
@@ -106,3 +107,30 @@ def holders_view(symbol, days):
                                             # isn't meaningful
     """
     return PROVIDERS["holders_view"](symbol, days)
+
+
+def fundamentals_view(symbol):
+    """``symbol``'s company figures: profile, size, results, ratios, multiples
+    and analysts' growth estimates (functions 4-6), as the provider reports them.
+    Trailing-12-month amounts are in the reporting currency as the provider
+    gives them; per-share figures and the price in the quote currency.
+
+    Returns::
+
+        {source, notes, name, exchange, currency, sector, industry,
+         price, market_cap, shares_outstanding,
+         free_cash_flow, operating_cash_flow, ebitda, revenue, net_income,
+         total_debt, total_cash,
+         eps_ttm, eps_forward, book_value_per_share, beta,
+         trailing_pe, forward_pe, price_to_sales, price_to_book,
+         enterprise_value, ev_to_ebitda,
+         gross_margin, operating_margin, net_margin,      # fractions; gross_margin
+         return_on_equity, return_on_assets,             # None if not applicable
+         revenue_growth, earnings_growth,                # YoY, latest quarter
+         debt_to_equity, current_ratio, quick_ratio,     # plain ratios (1.5 == 1.5x)
+         dividend_per_share,                             # forward, in the quote's
+                                                         # unit; None for a non-payer
+         payout_ratio,
+         analyst_growth_1y, analyst_growth_5y}           # fractions
+    """
+    return PROVIDERS["fundamentals_view"](symbol)
