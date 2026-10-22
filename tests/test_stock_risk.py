@@ -1,4 +1,5 @@
-"""Tests for stock_risk: close extraction, annualization, per-symbol figures, pairing and main()."""
+"""Tests for stock_risk: close extraction from stock_data's neutral daily history,
+annualization, per-symbol figures, pairing and main()."""
 
 import datetime as dt
 import json
@@ -6,8 +7,8 @@ import json
 import pytest
 import requests
 
+import stock_data
 import stock_risk as sr
-import price_source
 import yahoo_finance as yf
 
 MON = dt.date(2024, 1, 1)  # a Monday
@@ -22,39 +23,47 @@ def _rows(prices, offsets=None):
     return list(zip(_days(*offsets), prices))
 
 
+def _history(closes=(10.2, 11.2, 12.2), adj=(10.1, 11.1, 12.1), **changes):
+    """A neutral stock_data.daily_history(): one bar a day from Monday 2024-01-01."""
+    history = {
+        "source": "EODHD", "notes": [], "symbol": "AAA", "exchange": "Test", "currency": "USD",
+        "bars": [{"date": d.isoformat(), "open": None, "high": None, "low": None, "close": c,
+                  "adj_close": a, "volume": None}
+                 for d, c, a in zip(_days(*range(len(closes))), closes, adj)],
+    }
+    history.update(changes)
+    return history
+
+
+NO_LISTING = {"source": None, "notes": [], "symbol": None, "exchange": None, "currency": None,
+              "bars": []}
+
+
 class TestExtractCloses:
-    def test_prefers_adjusted_close(self, chart_result):
-        _, rows, basis = sr.extract_closes(chart_result)
+    def test_prefers_adjusted_close(self):
+        rows, basis = sr.extract_closes(_history())
         assert basis == "adj_close"
         assert [p for _, p in rows] == [10.1, 11.1, 12.1]
         assert [d for d, _ in rows] == _days(0, 1, 2)
 
-    def test_falls_back_to_close_without_adjclose(self, chart_result):
-        del chart_result["indicators"]["adjclose"]
-        _, rows, basis = sr.extract_closes(chart_result)
+    def test_falls_back_to_close_without_adjclose(self):
+        rows, basis = sr.extract_closes(_history(adj=(None, None, None)))
         assert basis == "close"
         assert [p for _, p in rows] == [10.2, 11.2, 12.2]
 
-    def test_one_missing_adjclose_uses_close_throughout(self, chart_result):
+    def test_one_missing_adjclose_uses_close_throughout(self):
         # Mixing the two bases in one series would invent a jump.
-        chart_result["indicators"]["adjclose"][0]["adjclose"] = [10.1, None, 12.1]
-        _, rows, basis = sr.extract_closes(chart_result)
+        rows, basis = sr.extract_closes(_history(adj=(10.1, None, 12.1)))
         assert basis == "close"
         assert [p for _, p in rows] == [10.2, 11.2, 12.2]
 
-    def test_skips_unsettled_close(self, chart_result):
-        chart_result["indicators"]["quote"][0]["close"] = [10.2, None, 12.2]
-        _, rows, basis = sr.extract_closes(chart_result)
+    def test_skips_unsettled_close(self):
+        rows, basis = sr.extract_closes(_history(closes=(10.2, None, 12.2)))
         assert [d for d, _ in rows] == _days(0, 2)
         assert basis == "adj_close"
 
-    def test_gmtoffset_shifts_date(self, chart_result):
-        chart_result["meta"]["gmtoffset"] = -3600
-        _, rows, _ = sr.extract_closes(chart_result)
-        assert rows[0][0] == dt.date(2023, 12, 31)
-
-    def test_empty_result(self):
-        _, rows, basis = sr.extract_closes({"meta": {}})
+    def test_empty_history(self):
+        rows, basis = sr.extract_closes(NO_LISTING)
         assert rows == []
         assert basis == "close"
 
@@ -68,7 +77,7 @@ class TestPeriodsPerYear:
 
 
 class TestSummarize:
-    META = {"symbol": "AAA", "fullExchangeName": "Test", "currency": "USD"}
+    META = _history()
 
     def test_reference_figures(self):
         out = sr.summarize("aaa", self.META, _rows([100, 120, 90, 110]), "close")
@@ -105,13 +114,18 @@ class TestSummarize:
 
     def test_weekend_series_annualizes_over_365(self):
         rows = _rows([100, 102, 99, 103], offsets=[4, 5, 6, 7])
-        out = sr.summarize("BTC-USD", {}, rows, "close")
+        out = sr.summarize("BTC-USD", NO_LISTING, rows, "close")
         assert out["periods_per_year"] == 365
         assert out["volatility"] == pytest.approx(
             sr.volatility([100, 102, 99, 103], 365))
 
     def test_symbol_falls_back_to_argument(self):
-        assert sr.summarize("bbb", {}, _rows([1, 2, 3]), "close")["symbol"] == "bbb"
+        assert sr.summarize("bbb", NO_LISTING, _rows([1, 2, 3]), "close")["symbol"] == "bbb"
+
+    def test_source_and_notes_from_the_history(self):
+        out = sr.summarize("AAA", _history(notes=["limited to one year"]), _rows([1, 2, 3]), "close")
+        assert (out["source"], out["notes"]) == ("EODHD", ["limited to one year"])
+        assert (out["exchange"], out["currency"]) == ("Test", "USD")
 
 
 class TestPairCorrelation:
@@ -185,7 +199,7 @@ class TestMain:
                 return "failed to fetch prices: nope"
             rows = _rows(data[symbol])
             rows = rows[-last:] if last else rows
-            return {"symbol": symbol, "fullExchangeName": "Test", "currency": "USD"}, rows, "close"
+            return _history(symbol=symbol), rows, "close"
 
         monkeypatch.setattr(yf, "build_params", lambda **k: {})
         monkeypatch.setattr(sr, "load_symbol", load)
@@ -275,21 +289,23 @@ class TestLoadSymbol:
         def boom(symbol, params):
             raise requests.RequestException("symbol may be delisted")
 
-        monkeypatch.setattr(price_source, "fetch_history", boom)
+        monkeypatch.setattr(stock_data, "daily_history", boom)
         assert sr.load_symbol("AAA", {}, None) == (
             "failed to fetch prices: symbol may be delisted")
 
-    def test_no_rows_is_reason(self, monkeypatch, chart_result):
-        chart_result["indicators"]["quote"][0]["close"] = [None, None, None]
-        monkeypatch.setattr(price_source, "fetch_history", lambda symbol, params: chart_result)
+    def test_no_rows_is_reason(self, monkeypatch):
+        history = _history(closes=(None, None, None))
+        monkeypatch.setattr(stock_data, "daily_history", lambda symbol, params: history)
         assert sr.load_symbol("AAA", {}, None) == "no settled price data in the window"
 
-    def test_non_positive_price_is_reason(self, monkeypatch, chart_result):
-        chart_result["indicators"]["adjclose"][0]["adjclose"] = [10.1, 0.0, 12.1]
-        monkeypatch.setattr(price_source, "fetch_history", lambda symbol, params: chart_result)
+    def test_non_positive_price_is_reason(self, monkeypatch):
+        history = _history(adj=(10.1, 0.0, 12.1))
+        monkeypatch.setattr(stock_data, "daily_history", lambda symbol, params: history)
         assert sr.load_symbol("AAA", {}, None) == "non-positive prices in the window"
 
-    def test_last_trims(self, monkeypatch, chart_result):
-        monkeypatch.setattr(price_source, "fetch_history", lambda symbol, params: chart_result)
-        _, rows, _ = sr.load_symbol("AAA", {}, 2)
+    def test_last_trims(self, monkeypatch):
+        history = _history()
+        monkeypatch.setattr(stock_data, "daily_history", lambda symbol, params: history)
+        got, rows, _ = sr.load_symbol("AAA", {}, 2)
+        assert got is history
         assert [d for d, _ in rows] == _days(1, 2)

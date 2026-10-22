@@ -1,4 +1,5 @@
-"""Tests for stock_candlestick_chart: the --ma / --flip-ma arg parsers and extract_rows."""
+"""Tests for stock_candlestick_chart: the --ma / --flip-ma arg parsers and extract_rows
+(from stock_data's neutral daily history)."""
 
 import argparse
 import datetime as dt
@@ -52,31 +53,28 @@ class TestParseFlipMaArg:
 
 
 class TestExtractRows:
-    def _result(self):
-        return {
-            "meta": {"symbol": "AAA", "gmtoffset": 0},
-            "timestamp": [1704067200, 1704153600, 1704240000],
-            "indicators": {
-                "quote": [{
-                    "open": [10.0, 11.0, None],
-                    "high": [10.5, 11.5, 12.5],
-                    "low": [9.5, 10.5, 11.5],
-                    "close": [10.2, 11.2, 12.2],
-                    "volume": [1000, None, 3000],
-                }],
-            },
-        }
+    def _history(self):
+        """A neutral stock_data.daily_history() result; the third bar has no open."""
+        def bar(date, o, h, low, c, v):
+            return {"date": date, "open": o, "high": h, "low": low, "close": c,
+                    "adj_close": c, "volume": v}
+
+        return {"source": "EODHD", "notes": [], "symbol": "AAA", "exchange": "X",
+                "currency": "USD", "bars": [
+                    bar("2024-01-01", 10.0, 10.5, 9.5, 10.2, 1000),
+                    bar("2024-01-02", 11.0, 11.5, 10.5, 11.2, None),
+                    bar("2024-01-03", None, 12.5, 11.5, 12.2, 3000),
+                ]}
 
     def test_skips_bar_with_missing_ohlc(self):
-        _, rows = scdl.extract_rows(self._result())
-        assert len(rows) == 2
+        assert len(scdl.extract_rows(self._history())) == 2
 
-    def test_date_is_datetime(self):
-        _, rows = scdl.extract_rows(self._result())
-        assert isinstance(rows[0]["date"], dt.datetime)
+    def test_date_is_naive_midnight_datetime(self):
+        rows = scdl.extract_rows(self._history())
+        assert rows[0]["date"] == dt.datetime(2024, 1, 1)
 
     def test_volume_none_safe(self):
-        _, rows = scdl.extract_rows(self._result())
+        rows = scdl.extract_rows(self._history())
         assert rows[1]["volume"] is None
         assert rows[0]["volume"] == 1000
 

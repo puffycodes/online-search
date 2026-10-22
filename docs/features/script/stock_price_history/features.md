@@ -3,9 +3,9 @@
 ## Requirement
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
-- Use price_source.py's fetch_history() for the data: EODHD (EODHD_API_KEY), or Alpha Vantage (ALPHAVANTAGE_API_KEY) for Indian tickers, chosen from the Yahoo-notation ticker. Until 2026-10-21 this used Yahoo Finance's chart endpoint, which fails the source audit.
+- Get the data through stock_data.py's daily_history() (never from a provider directly), served by price_source.py: EODHD (EODHD_API_KEY), or Alpha Vantage (ALPHAVANTAGE_API_KEY) for Indian tickers, chosen from the Yahoo-notation ticker. Until 2026-10-21 this used Yahoo Finance's chart endpoint, which fails the source audit.
 - Show any notes price_source returns (e.g. a free plan returning less history than asked).
-- Use yahoo_finance.py's add_window_args(), build_params(), extract_series(), session_datetime() and meta_summary().
+- Use yahoo_finance.py's add_window_args() and build_params() for the window, and stock_data.py's label() for the heading.
 
 ## Actions
 

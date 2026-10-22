@@ -4,6 +4,7 @@ against the same keys)."""
 
 import pytest
 
+import price_source
 import stock_data
 import yahoo_finance as yf
 
@@ -134,6 +135,16 @@ class TestRouting:
                             lambda s: seen.append(s) or {"ok": True})
         assert stock_data.fundamentals_view("AAA") == {"ok": True}
         assert seen == ["AAA"]
+
+    def test_daily_history_is_served_by_price_source(self):
+        assert stock_data.PROVIDERS["daily_history"] is price_source.daily_history
+
+    def test_daily_history_delegates_to_its_provider(self, monkeypatch):
+        seen = []
+        monkeypatch.setitem(stock_data.PROVIDERS, "daily_history",
+                            lambda s, p: seen.append((s, p)) or {"ok": True})
+        assert stock_data.daily_history("AAA", {"range": "1mo"}) == {"ok": True}
+        assert seen == [("AAA", {"range": "1mo"})]
 
     @pytest.mark.parametrize("name", ["top_movers", "mover_markets", "quote"])
     def test_screener_and_quote_served_by_yahoo(self, name):
@@ -327,3 +338,44 @@ class TestQuoteContract:
             "price", "session_high", "session_low", "previous_close", "week52_low",
             "week52_high"))
         assert quote["previous_close"] == 11.2  # the close before the session
+
+
+class TestLabel:
+    def test_the_views_own(self):
+        view = {"symbol": "VOD.L", "exchange": "London Exchange", "currency": "GBp"}
+        assert stock_data.label(view, "vod.l") == ("VOD.L", "London Exchange", "GBp")
+
+    def test_defaults(self):
+        view = {"symbol": None, "exchange": None, "currency": None}
+        assert stock_data.label(view, "aaa") == ("aaa", "?", "")
+        assert stock_data.label(view) == ("?", "?", "")
+
+
+BAR_KEYS = {"date", "open", "high", "low", "close", "adj_close", "volume"}
+
+
+class TestDailyHistoryContract:
+    """price_source.daily_history() over stubbed provider rows (no network)."""
+
+    @pytest.fixture
+    def history(self, monkeypatch):
+        rows = [{"date": "2026-10-19", "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5,
+                 "adj_close": 1.4, "volume": 10},
+                {"date": "2026-10-20", "open": None, "high": None, "low": None, "close": None,
+                 "adj_close": None, "volume": None}]
+        monkeypatch.setattr(price_source, "_api_key", lambda provider: "key")
+        monkeypatch.setattr(price_source, "fetch_daily", lambda *a: (list(rows), ["a note"]))
+        return price_source.daily_history("AAPL", yf.build_params(start="2026-10-19",
+                                                                  end="2026-10-20"))
+
+    def test_keys(self, history):
+        assert set(history) == {"source", "notes", "symbol", "exchange", "currency", "bars"}
+        assert isinstance(history["source"], str) and history["notes"] == ["a note"]
+        assert history["bars"] and all(set(b) == BAR_KEYS for b in history["bars"])
+
+    def test_values_are_plain(self, history):
+        for bar in history["bars"]:
+            assert _iso(bar["date"])
+            assert all(bar[k] is None or isinstance(bar[k], (int, float))
+                       for k in BAR_KEYS - {"date"})
+        assert history["bars"][-1]["close"] is None  # an unsettled bar is passed on

@@ -1,73 +1,64 @@
-"""Tests for stock_price_history: extract_rows row shaping and main() output/exit paths."""
+"""Tests for stock_price_history: extract_rows row shaping from stock_data's neutral
+daily history, and main() output/exit paths."""
 
 import json
 
 import pytest
 import requests
 
+import stock_data
 import stock_price_history as sch
-import price_source
 import yahoo_finance as yf
 
 
-def _result(**overrides):
-    base = {
-        "meta": {"symbol": "AAA", "fullExchangeName": "Test", "currency": "USD", "gmtoffset": 0},
-        "timestamp": [1704067200, 1704153600, 1704240000],
-        "indicators": {
-            "quote": [{
-                "open": [10.0, 11.0, 12.0],
-                "high": [10.5, 11.5, 12.5],
-                "low": [9.5, 10.5, 11.5],
-                "close": [10.25, 11.25, None],
-                "volume": [1000, 2000, None],
-            }],
-            "adjclose": [{"adjclose": [10.2, 11.2, None]}],
-        },
+def _bar(date, open_=10.0, high=10.5, low=9.5, close=10.25, adj=10.2, volume=1000):
+    return {"date": date, "open": open_, "high": high, "low": low, "close": close,
+            "adj_close": adj, "volume": volume}
+
+
+def _history(bars=None, **changes):
+    """A neutral stock_data.daily_history() result."""
+    history = {
+        "source": "EODHD", "notes": [], "symbol": "AAA", "exchange": "Test", "currency": "USD",
+        "bars": bars if bars is not None else [
+            _bar("2024-01-01"),
+            _bar("2024-01-02", 11.0, 11.5, 10.5, 11.25, 11.2, 2000),
+            _bar("2024-01-03", 12.0, 12.5, 11.5, None, None, None),
+        ],
     }
-    base.update(overrides)
-    return base
+    history.update(changes)
+    return history
 
 
 class TestExtractRows:
     def test_skips_unsettled_close(self):
-        _, rows = sch.extract_rows(_result())
+        rows = sch.extract_rows(_history())
         assert [r["date"] for r in rows] == ["2024-01-01", "2024-01-02"]
 
     def test_rounds_to_4dp(self):
-        res = _result()
-        res["indicators"]["quote"][0]["open"] = [10.123456, 11.0, 12.0]
-        _, rows = sch.extract_rows(res)
+        rows = sch.extract_rows(_history([_bar("2024-01-01", open_=10.123456)]))
         assert rows[0]["open"] == 10.1235
 
     def test_volume_int_and_none_safe(self):
-        _, rows = sch.extract_rows(_result())
-        assert rows[0]["volume"] == 1000
-        assert isinstance(rows[0]["volume"], int)
+        rows = sch.extract_rows(_history([_bar("2024-01-01", volume=1000.0),
+                                          _bar("2024-01-02", volume=None)]))
+        assert rows[0]["volume"] == 1000 and isinstance(rows[0]["volume"], int)
+        assert rows[1]["volume"] is None
 
     def test_missing_adjclose_is_none(self):
-        res = _result()
-        del res["indicators"]["adjclose"]
-        _, rows = sch.extract_rows(res)
-        assert rows[0]["adj_close"] is None
+        assert sch.extract_rows(_history([_bar("2024-01-01", adj=None)]))[0]["adj_close"] is None
 
-    def test_gmtoffset_shifts_date(self):
-        res = _result()
-        res["meta"]["gmtoffset"] = -3600
-        res["timestamp"] = [1704067200]  # 2024-01-01 00:00 UTC -> 2023-12-31 local
-        res["indicators"]["quote"][0] = {
-            "open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0], "volume": [1],
-        }
-        res["indicators"]["adjclose"] = [{"adjclose": [1.0]}]
-        _, rows = sch.extract_rows(res)
-        assert rows[0]["date"] == "2023-12-31"
+    def test_row_keys(self):
+        assert list(sch.extract_rows(_history())[0]) == [
+            "date", "open", "high", "low", "close", "adj_close", "volume"]
 
 
 class TestMain:
-    def _wire(self, monkeypatch, rows, meta=None):
+    def _wire(self, monkeypatch, rows, **changes):
         monkeypatch.setattr(yf, "build_params", lambda **k: {})
-        monkeypatch.setattr(price_source, "fetch_history", lambda sym, params: object())
-        monkeypatch.setattr(sch, "extract_rows", lambda result: (meta or {"symbol": "AAA"}, list(rows)))
+        monkeypatch.setattr(stock_data, "daily_history",
+                            lambda sym, params: _history(**{"source": None, **changes}))
+        monkeypatch.setattr(sch, "extract_rows", lambda history: list(rows))
 
     def test_last_trims_rows_json(self, monkeypatch, capsys):
         rows = [{"date": "2024-01-0%d" % i, "open": i, "high": i, "low": i, "close": i,
@@ -80,8 +71,7 @@ class TestMain:
     def test_source_and_notes(self, monkeypatch, capsys):
         rows = [{"date": "2024-01-01", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0,
                  "adj_close": 1.0, "volume": 10}]
-        meta = {"symbol": "AAA", "source": "EODHD", "notes": ["limited to one year"]}
-        self._wire(monkeypatch, rows, meta)
+        self._wire(monkeypatch, rows, source="EODHD", notes=["limited to one year"])
         sch.main(["AAA", "--json"])
         payload = json.loads(capsys.readouterr().out)
         assert payload["source"] == "EODHD" and payload["notes"] == ["limited to one year"]
@@ -94,10 +84,15 @@ class TestMain:
             raise requests.RequestException("delisted")
 
         monkeypatch.setattr(yf, "build_params", lambda **k: {})
-        monkeypatch.setattr(price_source, "fetch_history", boom)
+        monkeypatch.setattr(stock_data, "daily_history", boom)
         with pytest.raises(SystemExit):
             sch.main(["AAA", "--json"])
         assert json.loads(capsys.readouterr().err)["error"].endswith("delisted")
+
+    def test_header_from_the_history(self, monkeypatch, capsys):
+        self._wire(monkeypatch, [_bar("2024-01-01")], exchange=None, source="EODHD")
+        sch.main(["aaa"])
+        assert "AAA - ? (USD) - EODHD - 1 session(s)" in capsys.readouterr().out
 
     def test_empty_rows_text(self, monkeypatch, capsys):
         self._wire(monkeypatch, [])

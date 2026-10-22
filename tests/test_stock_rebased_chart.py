@@ -5,21 +5,32 @@ import datetime as dt
 import pytest
 import requests
 
+import stock_data
 import stock_rebased_chart as src
-import price_source
 import yahoo_finance as yf
 
 
 class TestFetchCloses:
     def test_skips_none_closes_and_returns_date_pairs(self, monkeypatch):
-        result = {
-            "meta": {"gmtoffset": 0},
-            "timestamp": [1704067200, 1704153600, 1704240000],
-            "indicators": {"quote": [{"close": [10.0, None, 12.0]}]},
-        }
-        monkeypatch.setattr(price_source, "fetch_history", lambda sym, params: result)
-        _, rows = src.fetch_closes("AAA", {})
+        history = {"source": "EODHD", "notes": [], "symbol": "AAA", "exchange": "X",
+                   "currency": "USD", "bars": [
+                       {"date": d, "open": None, "high": None, "low": None, "close": c,
+                        "adj_close": None, "volume": None}
+                       for d, c in (("2024-01-01", 10.0), ("2024-01-02", None),
+                                    ("2024-01-03", 12.0))]}
+        seen = []
+        monkeypatch.setattr(stock_data, "daily_history",
+                            lambda sym, params: seen.append((sym, params)) or history)
+        got, rows = src.fetch_closes("AAA", {"range": "1mo"})
+        assert seen == [("AAA", {"range": "1mo"})] and got is history
         assert rows == [(dt.date(2024, 1, 1), 10.0), (dt.date(2024, 1, 3), 12.0)]
+
+    def test_notes_go_to_stderr(self, monkeypatch, capsys):
+        history = {"source": "EODHD", "notes": ["limited to one year"], "symbol": "AAA",
+                   "exchange": "X", "currency": "USD", "bars": []}
+        monkeypatch.setattr(stock_data, "daily_history", lambda sym, params: history)
+        src.fetch_closes("AAA", {})
+        assert "Note: AAA: limited to one year" in capsys.readouterr().err
 
 
 class TestMain:

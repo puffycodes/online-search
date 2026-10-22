@@ -293,6 +293,16 @@ before the top picks because it's about the repo's existing sources, not new one
   stays in percent, an exception to the fractions rule, so printed figures don't
   change.
 
+  **Step 2 done on 2026-10-22:** `stock_data.daily_history()` (function 1), served
+  by `price_source.daily_history()`, returns neutral bars, and the four price
+  scripts read those instead of Yahoo's chart-result shape (`price_source`'s
+  `chart_result()` and `fetch_history()` are gone, and the scripts no longer use
+  `yahoo_finance.extract_series()`, `session_datetime()` or `meta_summary()`).
+  Output unchanged: identical on 288 fixture comparisons, and live runs matched
+  (TSLA risk and Reliance prices against the morning's output, AAPL old vs new).
+  The window flags still go through `yahoo_finance.build_params()`; giving
+  `daily_history()` a neutral window is a later change.
+
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
   US fundamentals and insider data to save Alpha Vantage requests. **No free

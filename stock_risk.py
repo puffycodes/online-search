@@ -3,8 +3,8 @@
 Describe how risky one or more instruments' recent prices have been -
 volatility, the worst peak-to-trough drawdown, and how closely each pair
 moved together - using daily prices from EODHD or Alpha Vantage through
-price_source.py (which needs EODHD_API_KEY and, for India,
-ALPHAVANTAGE_API_KEY).
+stock_data.daily_history() (served by price_source.py, which needs
+EODHD_API_KEY and, for India, ALPHAVANTAGE_API_KEY).
 
 Give it one or more tickers in Yahoo notation (AAPL, VOD.L, RELIANCE.NS,
 ^GSPC, EURUSD=X, BTC-USD, ...; not Singapore .SI, Tokyo .T or futures =F for
@@ -30,13 +30,14 @@ prints {"error": "..."} to stderr.
 """
 
 import argparse
+import datetime as dt
 import itertools
 import json
 import sys
 
 import requests
 
-import price_source
+import stock_data
 import yahoo_finance as yf
 from cli_utils import die, use_utf8_output
 from indicators import correlation, max_drawdown, volatility
@@ -46,28 +47,22 @@ TRADING_DAYS_PER_YEAR = 252
 CALENDAR_DAYS_PER_YEAR = 365
 
 
-def extract_closes(result):
-    """Return (meta, rows, basis) from a Yahoo chart result.
+def extract_closes(history):
+    """Return (rows, basis) from stock_data.daily_history()'s ``history``.
 
     rows is a list of (date, price) pairs, oldest first, skipping sessions
     with no close. basis is "adj_close" when every kept session has an
     adjusted close (and prices are those), otherwise "close".
     """
-    meta, series = yf.extract_series(result)
-    gmtoffset = series["gmtoffset"]
-    closes = series["close"]
-    adj_closes = series["adjclose"] or []
     kept = []
-    for i, ts in enumerate(series["timestamp"]):
-        close = closes[i] if i < len(closes) else None
-        if close is None:
+    for bar in history["bars"]:
+        if bar["close"] is None:
             # In-progress session or a data gap - not a settled close.
             continue
-        adj = adj_closes[i] if i < len(adj_closes) else None
-        kept.append((yf.session_datetime(ts, gmtoffset).date(), close, adj))
+        kept.append((dt.date.fromisoformat(bar["date"]), bar["close"], bar["adj_close"]))
     use_adj = bool(kept) and all(adj is not None for _, _, adj in kept)
     rows = [(date, adj if use_adj else close) for date, close, adj in kept]
-    return meta, rows, "adj_close" if use_adj else "close"
+    return rows, "adj_close" if use_adj else "close"
 
 
 def periods_per_year(dates):
@@ -77,7 +72,7 @@ def periods_per_year(dates):
     return TRADING_DAYS_PER_YEAR
 
 
-def summarize(symbol, meta, rows, basis):
+def summarize(symbol, history, rows, basis):
     """The per-symbol risk figures as a JSON-ready dict."""
     dates = [d for d, _ in rows]
     prices = [p for _, p in rows]
@@ -91,13 +86,13 @@ def summarize(symbol, meta, rows, basis):
 
     dd = max_drawdown(prices)
     high_index = prices.index(max(prices))
-    symbol, exchange, currency = yf.meta_summary(meta, symbol)
+    symbol, exchange, currency = stock_data.label(history, symbol)
     return {
         "symbol": symbol,
         "exchange": exchange,
         "currency": currency,
-        "source": meta.get("source"),
-        "notes": meta.get("notes") or [],
+        "source": history["source"],
+        "notes": history["notes"] or [],
         "basis": basis,
         "sessions": len(prices),
         "start": iso(0),
@@ -139,10 +134,10 @@ def pair_correlation(name_a, rows_a, name_b, rows_b):
 
 
 def load_symbol(symbol, params, last):
-    """(meta, rows, basis) for symbol, or a skip reason string on failure."""
+    """(history, rows, basis) for symbol, or a skip reason string on failure."""
     try:
-        result = price_source.fetch_history(symbol, params)
-        meta, rows, basis = extract_closes(result)
+        history = stock_data.daily_history(symbol, params)
+        rows, basis = extract_closes(history)
     except (requests.RequestException, ValueError, KeyError) as exc:
         return f"failed to fetch prices: {exc}"
     if last:
@@ -151,7 +146,7 @@ def load_symbol(symbol, params, last):
         return "no settled price data in the window"
     if any(price <= 0 for _, price in rows):
         return "non-positive prices in the window"
-    return meta, rows, basis
+    return history, rows, basis
 
 
 def parse_args(argv=None):

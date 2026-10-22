@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Fetch closing-price history for a series of symbols from EODHD or Alpha
-Vantage through price_source.py (which needs EODHD_API_KEY and, for India,
-ALPHAVANTAGE_API_KEY), rebase each to 100 as of a common reference date, and
+Vantage through stock_data.daily_history() (served by price_source.py, which
+needs EODHD_API_KEY and, for India, ALPHAVANTAGE_API_KEY), rebase each to 100 as of a common reference date, and
 plot the rebased series together with matplotlib.
 
 Give it one or more tickers in Yahoo's notation (AAPL, VOD.L, SAP.DE,
@@ -28,11 +28,12 @@ On failure the process exits non-zero and prints an error to stderr.
 """
 
 import argparse
+import datetime as dt
 import sys
 
 import requests
 
-import price_source
+import stock_data
 import yahoo_finance as yf
 from cli_utils import die, use_utf8_output
 from indicators import rebase
@@ -50,20 +51,18 @@ BENCHMARK_COLOR = "#000000"
 
 
 def fetch_closes(symbol, params):
-    """Return a list of (date, close) pairs for symbol, oldest first."""
-    result = price_source.fetch_history(symbol, params)
-    meta, series = yf.extract_series(result)
-    for note in meta.get("notes") or []:
+    """Return ``(history, rows)``: stock_data.daily_history() for symbol and its
+    (date, close) pairs, oldest first, leaving out bars with no close."""
+    history = stock_data.daily_history(symbol, params)
+    for note in history["notes"] or []:
         print(f"Note: {symbol}: {note}", file=sys.stderr)
-    gmtoffset = series["gmtoffset"]
     rows = []
-    for ts, close in zip(series["timestamp"], series["close"]):
-        if close is None:
+    for bar in history["bars"]:
+        if bar["close"] is None:
             # In-progress session or a data gap - not a settled close.
             continue
-        date = yf.session_datetime(ts, gmtoffset).date()
-        rows.append((date, close))
-    return meta, rows
+        rows.append((dt.date.fromisoformat(bar["date"]), bar["close"]))
+    return history, rows
 
 
 def render_chart(series, base_date, out_path, show, benchmark=None):

@@ -1,5 +1,5 @@
-"""Tests for price_source: routing, window translation, bar aggregation, the
-chart-result shape, and fetch_history's provider dispatch and errors."""
+"""Tests for price_source: routing, window translation, bar aggregation, and
+daily_history's neutral shape, provider dispatch and errors."""
 
 import datetime as dt
 
@@ -112,20 +112,7 @@ class TestAggregate:
             ps.aggregate([], "1h")
 
 
-class TestChartResult:
-    def test_round_trips_through_yahoo_helpers(self):
-        rows = [_row("2026-10-19"), _row("2026-10-20", adj=None)]
-        result = ps.chart_result("VOD.L", "London Exchange", "GBp", "EODHD", ["n"], rows)
-        meta, series = yf.extract_series(result)
-        assert yf.meta_summary(meta) == ("VOD.L", "London Exchange", "GBp")
-        assert meta["source"] == "EODHD" and meta["notes"] == ["n"]
-        dates = [yf.session_datetime(t, series["gmtoffset"]).date().isoformat()
-                 for t in series["timestamp"]]
-        assert dates == ["2026-10-19", "2026-10-20"]
-        assert series["close"] == [1.5, 1.5] and series["adjclose"] == [1.4, None]
-
-
-class TestFetchHistory:
+class TestDailyHistory:
     @pytest.fixture(autouse=True)
     def keys(self, monkeypatch):
         monkeypatch.setattr(ps, "load_dotenv", lambda *a, **k: None)
@@ -155,24 +142,32 @@ class TestFetchHistory:
         calls = self._eod(monkeypatch, [self._bar("2025-10-21", warning=warning),
                                         self._bar("2026-01-05")])
         params = yf.build_params(start="2026-01-01", end="2026-01-31")
-        result = ps.fetch_history("VOD.L", params)
+        history = ps.daily_history("VOD.L", params)
         assert calls == [("VOD.LSE", dt.date(2026, 1, 1), dt.date(2026, 1, 31), KEY)]
-        meta, series = yf.extract_series(result)
-        assert meta["source"] == "EODHD" and meta["notes"] == [warning]
-        assert len(series["timestamp"]) == 1  # the out-of-window bar is dropped
+        assert (history["source"], history["notes"]) == ("EODHD", [warning])
+        assert (history["symbol"], history["exchange"], history["currency"]) == (
+            "VOD.L", "London Exchange", "GBp")
+        assert [b["date"] for b in history["bars"]] == ["2026-01-05"]  # out-of-window bar dropped
+
+    def test_bars_are_neutral_rows(self, monkeypatch):
+        self._eod(monkeypatch, [self._bar("2026-01-05", close=10.123456789)])
+        history = ps.daily_history("AAPL", yf.build_params(start="2026-01-01", end="2026-01-31"))
+        # daily_prices.price_row() has already rounded the provider's figures to 4 places.
+        assert history["bars"] == [{"date": "2026-01-05", "open": 9.0, "high": 11.0, "low": 8.0,
+                                    "close": 10.1235, "adj_close": 10.1235, "volume": 100}]
 
     def test_five_day_range_keeps_five(self, monkeypatch):
         today = dt.datetime.now(dt.timezone.utc).date()
         dates = [(today - dt.timedelta(days=i)).isoformat() for i in range(8, -1, -1)]
         self._eod(monkeypatch, [self._bar(d) for d in dates])
-        result = ps.fetch_history("AAPL", {"range": "5d", "interval": "1d"})
-        assert len(result["timestamp"]) == 5
+        history = ps.daily_history("AAPL", {"range": "5d", "interval": "1d"})
+        assert len(history["bars"]) == 5
 
     def test_weekly_interval_aggregates(self, monkeypatch):
         self._eod(monkeypatch, [self._bar("2026-10-13"), self._bar("2026-10-14", close=12.0)])
         params = yf.build_params(interval="1wk", start="2026-10-01", end="2026-10-20")
-        result = ps.fetch_history("AAPL", params)
-        assert result["indicators"]["quote"][0]["close"] == [12.0]
+        history = ps.daily_history("AAPL", params)
+        assert [(b["date"], b["close"]) for b in history["bars"]] == [("2026-10-12", 12.0)]
 
     def test_alphavantage_dispatch_and_history_note(self, monkeypatch):
         series = {(dt.date(2026, 6, 1) + dt.timedelta(days=i)).isoformat():
@@ -185,11 +180,11 @@ class TestFetchHistory:
             return {avph.SERIES_KEY: series}
 
         monkeypatch.setattr(avph, "fetch_daily", fake)
-        result = ps.fetch_history("RELIANCE.NS", yf.build_params(start="2026-01-01"))
+        history = ps.daily_history("RELIANCE.NS", yf.build_params(start="2026-01-01"))
         assert calls == [("RELIANCE.BSE", KEY, False)]
-        assert result["meta"]["source"] == "Alpha Vantage"
-        assert "latest 100 sessions" in result["meta"]["notes"][0]
-        assert result["indicators"]["adjclose"][0]["adjclose"][0] is None
+        assert history["source"] == "Alpha Vantage"
+        assert "latest 100 sessions" in history["notes"][0]
+        assert history["bars"][0]["adj_close"] is None
 
     def test_provider_error_named_and_redacted(self, monkeypatch):
         def boom(symbol, first, final, key):
@@ -197,7 +192,7 @@ class TestFetchHistory:
 
         monkeypatch.setattr(eodph, "fetch_eod", boom)
         with pytest.raises(requests.RequestException) as exc:
-            ps.fetch_history("AAPL", {"range": "1mo"})
+            ps.daily_history("AAPL", {"range": "1mo"})
         message = str(exc.value)
         assert message.startswith("EODHD (AAPL.US):")
         assert KEY not in message and "<redacted>" in message
@@ -208,7 +203,7 @@ class TestFetchHistory:
 
         monkeypatch.setattr(eodph, "fetch_eod", missing)
         with pytest.raises(requests.RequestException, match="Ticker Not Found"):
-            ps.fetch_history("NOPE", {"range": "1mo"})
+            ps.daily_history("NOPE", {"range": "1mo"})
 
     def test_alphavantage_calls_spaced(self, monkeypatch):
         sleeps = []
@@ -217,17 +212,17 @@ class TestFetchHistory:
         monkeypatch.setattr(ps, "_last_alphavantage_call", 99.5)
         monkeypatch.setattr(avph, "fetch_daily", lambda symbol, key, full=False: {
             avph.SERIES_KEY: {"2026-10-20": {"4. close": "1"}}})
-        ps.fetch_history("RELIANCE.NS", {"range": "1mo"})
+        ps.daily_history("RELIANCE.NS", {"range": "1mo"})
         assert sleeps == [pytest.approx(0.6)]
         assert ps._last_alphavantage_call == 100.0
 
     def test_missing_key(self, monkeypatch):
         monkeypatch.delenv("ALPHAVANTAGE_API_KEY")
         with pytest.raises(ValueError, match="ALPHAVANTAGE_API_KEY must be set"):
-            ps.fetch_history("RELIANCE.NS", {"range": "1mo"})
+            ps.daily_history("RELIANCE.NS", {"range": "1mo"})
 
     def test_unsupported_symbol_before_any_call(self, monkeypatch):
         calls = self._eod(monkeypatch, [])
         with pytest.raises(ValueError, match="Singapore"):
-            ps.fetch_history("D05.SI", {"range": "1mo"})
+            ps.daily_history("D05.SI", {"range": "1mo"})
         assert calls == []

@@ -4,11 +4,11 @@ Shared price-history source for stock_price_history.py, stock_candlestick_chart.
 stock_rebased_chart.py and stock_risk.py, in place of Yahoo Finance's chart
 endpoint (which fails the source audit, docs/source-audit.md).
 
-fetch_history(symbol, params) takes a ticker in Yahoo notation and the params
+daily_history(symbol, params) takes a ticker in Yahoo notation and the params
 yahoo_finance.build_params() makes, routes the ticker to a keyed provider, and
-returns the daily (or weekly / monthly) bars in the chart-result shape
-yahoo_finance.extract_series() already parses, so the scripts' row shaping is
-unchanged. Routing, as decided on 2026-10-21 (docs/things-to-explore.md):
+returns the daily (or weekly / monthly) bars in stock_data.daily_history()'s
+provider-neutral shape; the scripts reach it through stock_data.py. Routing,
+as decided on 2026-10-21 (docs/things-to-explore.md):
 
 - EODHD (EODHD_API_KEY) for US stocks (no suffix), the exchanges in
   EODHD_EXCHANGES (.L, .DE, .PA, .TO, .AX, .HK, ...), indices (^GSPC ->
@@ -20,7 +20,7 @@ unchanged. Routing, as decided on 2026-10-21 (docs/things-to-explore.md):
 
 Weekly and monthly bars are built here from the daily ones. Notes about the
 data (EODHD's free-plan warning, Alpha Vantage's 100-session limit) come back
-in meta["notes"]; meta["source"] names the provider.
+in "notes"; "source" names the provider.
 
 Not a CLI itself - this module is imported, not run.
 """
@@ -210,37 +210,6 @@ def aggregate(rows, interval):
     return bars
 
 
-def chart_result(symbol, exchange, currency, source, notes, rows):
-    """``rows`` in the chart-result shape yahoo_finance.extract_series() parses.
-
-    Timestamps are UTC midnight of each date with a zero gmtoffset, so
-    yahoo_finance.session_datetime() gives back the same date.
-    """
-    def column(key):
-        return [r[key] for r in rows]
-
-    timestamps = [
-        int(dt.datetime.combine(dt.date.fromisoformat(r["date"]), dt.time(),
-                                dt.timezone.utc).timestamp())
-        for r in rows
-    ]
-    return {
-        "meta": {
-            "symbol": symbol,
-            "fullExchangeName": exchange,
-            "currency": currency,
-            "gmtoffset": 0,
-            "source": source,
-            "notes": notes,
-        },
-        "timestamp": timestamps,
-        "indicators": {
-            "quote": [{key: column(key) for key in ("open", "high", "low", "close", "volume")}],
-            "adjclose": [{"adjclose": column("adj_close")}],
-        },
-    }
-
-
 def _api_key(provider):
     name, script = KEYS[provider]
     load_dotenv()
@@ -268,9 +237,9 @@ def fetch_daily(provider, provider_symbol, first, final, api_key):
     return rows, [note] if note else []
 
 
-def fetch_history(symbol, params):
-    """Return a chart result for the Yahoo ticker ``symbol`` over the
-    yahoo_finance.build_params() window ``params``.
+def daily_history(symbol, params):
+    """Return stock_data.daily_history()'s shape for the Yahoo ticker
+    ``symbol`` over the yahoo_finance.build_params() window ``params``.
 
     Raises ``ValueError`` for a ticker no source covers, a missing key, or an
     unsupported window, and ``requests.RequestException`` (key redacted, the
@@ -291,5 +260,11 @@ def fetch_history(symbol, params):
     rows = daily_prices.in_window(rows, first, final)
     if keep:
         rows = rows[-keep:]
-    rows = aggregate(rows, interval)
-    return chart_result(symbol, exchange, currency, source, notes, rows)
+    return {
+        "source": source,
+        "notes": notes,
+        "symbol": symbol,
+        "exchange": exchange,
+        "currency": currency,
+        "bars": aggregate(rows, interval),
+    }

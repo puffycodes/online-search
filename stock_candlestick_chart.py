@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Fetch the past price history of a single stock, index, currency pair or
-crypto coin from EODHD or Alpha Vantage through price_source.py (which needs
-EODHD_API_KEY and, for India, ALPHAVANTAGE_API_KEY) and render it as a
+crypto coin from EODHD or Alpha Vantage through stock_data.daily_history()
+(served by price_source.py, which needs EODHD_API_KEY and, for India,
+ALPHAVANTAGE_API_KEY) and render it as a
 candlestick chart with matplotlib.
 
 Give it a ticker in Yahoo's notation (AAPL, VOD.L, SAP.DE, RELIANCE.NS, ...) and
@@ -28,10 +29,11 @@ On failure the process exits non-zero and prints an error to stderr.
 """
 
 import argparse
+import datetime as dt
 
 import requests
 
-import price_source
+import stock_data
 import yahoo_finance as yf
 from cli_utils import die, use_utf8_output
 from indicators import moving_average, moving_average_cross, moving_average_cross_flip
@@ -100,39 +102,25 @@ def _parse_flip_ma_arg(value):
     return tuple(windows)
 
 
-def extract_rows(result):
-    """Return (meta, rows) where each row is a dict with date + OHLCV."""
-    meta, series = yf.extract_series(result)
-    gmtoffset = series["gmtoffset"]
-    timestamps = series["timestamp"]
-    opens = series["open"]
-    highs = series["high"]
-    lows = series["low"]
-    closes = series["close"]
-    volumes = series["volume"]
-
+def extract_rows(history):
+    """Return the bars of stock_data.daily_history()'s ``history`` as rows with a
+    ``datetime`` date and OHLCV, leaving out any bar missing open, high, low or
+    close (an in-progress bar or a data gap)."""
     rows = []
-    for i, ts in enumerate(timestamps):
-        o = opens[i] if i < len(opens) else None
-        h = highs[i] if i < len(highs) else None
-        low = lows[i] if i < len(lows) else None
-        c = closes[i] if i < len(closes) else None
-        if None in (o, h, low, c):
-            # In-progress bar or a data gap - skip it.
+    for bar in history["bars"]:
+        if None in (bar["open"], bar["high"], bar["low"], bar["close"]):
             continue
-        date = yf.session_datetime(ts, gmtoffset)
-        volume = volumes[i] if i < len(volumes) else None
         rows.append(
             {
-                "date": date,
-                "open": o,
-                "high": h,
-                "low": low,
-                "close": c,
-                "volume": int(volume) if volume is not None else None,
+                "date": dt.datetime.strptime(bar["date"], "%Y-%m-%d"),
+                "open": bar["open"],
+                "high": bar["high"],
+                "low": bar["low"],
+                "close": bar["close"],
+                "volume": int(bar["volume"]) if bar["volume"] is not None else None,
             }
         )
-    return meta, rows
+    return rows
 
 
 def render_chart(symbol, exchange, currency, interval, rows, ma_series,
@@ -357,8 +345,8 @@ def main(argv=None):
             interval=args.interval, range_=args.range,
             start=args.start, end=args.end, last=args.last,
         )
-        result = price_source.fetch_history(args.symbol, params)
-        meta, rows = extract_rows(result)
+        history = stock_data.daily_history(args.symbol, params)
+        rows = extract_rows(history)
     except (requests.RequestException, ValueError, KeyError) as exc:
         die(f"failed to fetch prices for {args.symbol!r}: {exc}")
 
@@ -384,12 +372,12 @@ def main(argv=None):
         if flip_dir is not None:
             flip_dir = flip_dir[-args.last:]
 
-    for note in meta.get("notes") or []:
+    for note in history["notes"] or []:
         print(f"Note: {note}")
     if not rows:
         die(f"no price data found for {args.symbol!r}")
 
-    symbol, exchange, currency = yf.meta_summary(meta, args.symbol)
+    symbol, exchange, currency = stock_data.label(history, args.symbol)
     out_path = args.output or f"{symbol.replace('.', '_')}_candlestick.png"
 
     try:

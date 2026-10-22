@@ -6,10 +6,11 @@ Scripts import this module, not a provider's: each function here returns
 plain dicts in a shape no provider dictates, and PROVIDERS routes the call
 to the adapter that serves it. Swapping a provider then means changing one
 entry in PROVIDERS, not a script. See docs/things-to-explore.md ("Proposed
-design") for the full list of functions planned. Every stock script except the
-price scripts (which use price_source.py), and the stock web app, get their
-data here now: analyst_view(), earnings_view(), holders_view(),
-fundamentals_view(), top_movers() and quote(), all served by yahoo_finance.py.
+design") for the full list of functions planned. Every stock script and the
+stock web app get their data here: daily_history(), served by
+price_source.py (EODHD, and Alpha Vantage for India), and analyst_view(),
+earnings_view(), holders_view(), fundamentals_view(), top_movers() and
+quote(), served by yahoo_finance.py.
 
 Shared conventions for every result:
 
@@ -23,10 +24,12 @@ Fetch failures raise requests.RequestException (or ValueError / KeyError for
 a malformed answer), which the scripts turn into an exit-1 error.
 """
 
+import price_source
 import yahoo_finance as yf
 
 # function name -> adapter callable with the same signature
 PROVIDERS = {
+    "daily_history": price_source.daily_history,
     "analyst_view": yf.analyst_view,
     "earnings_view": yf.earnings_view,
     "holders_view": yf.holders_view,
@@ -38,6 +41,35 @@ PROVIDERS = {
 
 # The rankings top_movers() offers.
 MOVER_METRICS = ("volume", "gainers", "losers")
+
+
+def label(view, fallback_symbol=None):
+    """``(symbol, exchange, currency)`` for a report heading: the view's own,
+    else ``fallback_symbol`` then "?" for the symbol, "?" for the exchange and
+    "" for the currency."""
+    return (
+        view.get("symbol") or fallback_symbol or "?",
+        view.get("exchange") or "?",
+        view.get("currency") or "",
+    )
+
+
+def daily_history(symbol, params):
+    """``symbol``'s price bars over a window (function 1).
+
+    ``params`` is the window yahoo_finance.build_params() makes from the
+    scripts' --range / --last / --start / --end / --interval flags. A daily
+    bar is a session; weekly and monthly bars are dated their first day.
+
+    Returns::
+
+        {source, notes, symbol, exchange, currency,
+         bars: [{date, open, high, low, close, adj_close, volume}]}
+                                            # oldest first; a value the provider
+                                            # lacks is None, and a bar with no
+                                            # close is an unsettled session
+    """
+    return PROVIDERS["daily_history"](symbol, params)
 
 
 def analyst_view(symbol, days):
