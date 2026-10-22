@@ -6,8 +6,9 @@ Scripts import this module, not a provider's: each function here returns
 plain dicts in a shape no provider dictates, and PROVIDERS routes the call
 to the adapter that serves it. Swapping a provider then means changing one
 entry in PROVIDERS, not a script. See docs/things-to-explore.md ("Proposed
-design") for the full list of functions planned; only analyst_view() and
-earnings_view() are here so far, both served by yahoo_finance.py.
+design") for the full list of functions planned; only analyst_view(),
+earnings_view() and holders_view() are here so far, all served by
+yahoo_finance.py.
 
 Shared conventions for every result:
 
@@ -26,6 +27,7 @@ import yahoo_finance as yf
 PROVIDERS = {
     "analyst_view": yf.analyst_view,
     "earnings_view": yf.earnings_view,
+    "holders_view": yf.holders_view,
 }
 
 
@@ -76,3 +78,31 @@ def earnings_view(symbol):
                                             # oldest first; surprise_pct a fraction
     """
     return PROVIDERS["earnings_view"](symbol)
+
+
+def holders_view(symbol, days):
+    """Who owns ``symbol`` and what its insiders did in the last ``days`` days:
+    the ownership split, insider transactions and the top holders (functions
+    13-15, with the profile they need).
+
+    Returns::
+
+        {source, notes, name, exchange, currency,
+         us_listing,                        # no exchange suffix on the ticker
+         transaction_currency,              # of transaction prices and values;
+                                            # None if unknown
+         ownership: {insiders_pct, institutions_pct, institutions_float_pct,
+                     institutions_count},   # fractions, and an int count
+         transactions: [{date, name, relation, kind, text, shares, value,
+                         price_low, price_high, ownership}],
+                                            # newest first; kind is sale / purchase
+                                            # / option_exercise / award / gift /
+                                            # buyback / holder_disclosure / other /
+                                            # unspecified; text the provider's own
+                                            # description; ownership direct /
+                                            # indirect / "direct and indirect"
+         top_funds: [{name, pct_held, shares, value, pct_change, report_date}],
+         top_institutions: [same] | None}   # None where the provider's list
+                                            # isn't meaningful
+    """
+    return PROVIDERS["holders_view"](symbol, days)

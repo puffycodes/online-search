@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Retrieve who owns a stock and what its insiders have been doing, from Yahoo
-Finance's public ``quoteSummary`` endpoint. No API key or authentication
-required (a cookie + crumb are fetched automatically, via
-yahoo_finance.fetch_quote_summary()).
+Retrieve who owns a stock and what its insiders have been doing, through
+stock_data.holders_view(), which serves it from Yahoo Finance's public
+``quoteSummary`` endpoint today. No API key or authentication required
+(yahoo_finance.py fetches a cookie + crumb automatically).
 
 Give it a ticker in Yahoo's notation (AAPL, VOD.L, D05.SI, SAP.DE, ...). The
 script reports:
@@ -28,121 +28,31 @@ to stderr.
 
 import argparse
 import json
-import re
-from datetime import datetime, timezone
 
 import requests
 
-import yahoo_finance as yf
+import stock_data
 from cli_utils import die, positive_int, use_utf8_output
 from stock_intrinsic_value import _fmt_money
 
-MODULES = ["price", "majorHoldersBreakdown", "insiderTransactions",
-           "fundOwnership", "institutionOwnership"]
 DEFAULT_DAYS = 180
 
-# Transaction descriptions, matched case-insensitively at the start of
-# Yahoo's "transactionText" ("Sale at price 222.19 - 223.75 per share.").
-KINDS = [
-    (r"sale\b|sold\b", "sale"),
-    (r"purchase\b|bought\b", "purchase"),
-    (r"buy ?back\b", "buyback"),
-    (r"conversion of exercise|option exercise", "option_exercise"),
-    (r"stock award|grant\b", "award"),
-    (r"stock gift|gift\b", "gift"),
-]
 KIND_LABELS = {
     "sale": "sale", "purchase": "purchase", "option_exercise": "exercise",
     "award": "award", "gift": "gift", "buyback": "buyback",
     "holder_disclosure": "holder", "other": "other", "unspecified": "?",
 }
-OWNERSHIP = {"D": "direct", "I": "indirect", "D/I": "direct and indirect"}
 # Kinds that are an insider's own buying or selling decision.
 TRADE_KINDS = ("sale", "purchase")
 # What --trades-only keeps in the transaction list (exercises turn options
 # into shares, so they are kept alongside the trades).
 TRADES_ONLY_KINDS = ("sale", "purchase", "option_exercise")
 BY_INSIDER_TO_SHOW = 10
-PRICE_RE = re.compile(r"at price ([\d.,]+)(?:\s*-\s*([\d.,]+))?", re.IGNORECASE)
 
 
 # --------------------------------------------------------------------------- #
-# Parse                                                                        #
+# Shape                                                                        #
 # --------------------------------------------------------------------------- #
-def is_us_listing(symbol):
-    """Yahoo writes non-US listings with an exchange suffix (VOD.L, 7203.T)."""
-    return "." not in symbol
-
-
-def _name_key(name):
-    """The first two words of a company name, lower-cased, for matching."""
-    return " ".join(re.sub(r"[^a-z0-9 ]", " ", (name or "").lower()).split()[:2])
-
-
-def classify(text, filer, relation, company_names):
-    """The kind of one insider transaction (see KIND_LABELS)."""
-    text = (text or "").strip()
-    for pattern, kind in KINDS:
-        if re.match(pattern, text, re.IGNORECASE):
-            return kind
-    if text:
-        return "other"
-    # No description: the company itself, a large holder, or unknown.
-    filer_key = _name_key(filer)
-    if filer_key and any(filer_key == _name_key(n) for n in company_names if n):
-        return "buyback"
-    if not relation:
-        return "holder_disclosure"
-    return "unspecified"
-
-
-def _price_range(text):
-    """(low, high) per-share price from a description, None for 0 or none."""
-    match = PRICE_RE.search(text or "")
-    if not match:
-        return None, None
-    low = float(match.group(1).replace(",", ""))
-    high = float(match.group(2).replace(",", "")) if match.group(2) else low
-    return (low, high) if low > 0 else (None, None)
-
-
-def _positive(value):
-    return value if value is not None and value > 0 else None
-
-
-def insider_transactions(modules, company_names, days=DEFAULT_DAYS, now=None):
-    """Insider transactions in the last ``days``, newest first.
-
-    ``now`` (epoch seconds) is for tests.
-    """
-    now = now if now is not None else datetime.now(timezone.utc).timestamp()
-    cutoff = now - days * 86400
-    dated = []
-    for entry in (modules.get("insiderTransactions") or {}).get("transactions") or []:
-        epoch = yf.summary_num(entry, "startDate")
-        if epoch is None or epoch < cutoff:
-            continue
-        text = yf.summary_text(entry, "transactionText")
-        relation = yf.summary_text(entry, "filerRelation")
-        filer = yf.summary_text(entry, "filerName")
-        low, high = _price_range(text)
-        shares = _positive(yf.summary_num(entry, "shares"))
-        dated.append((epoch, {
-            "date": datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%d"),
-            "name": filer,
-            "relation": relation,
-            "kind": classify(text, filer, relation, company_names),
-            "text": text,
-            "shares": None if shares is None else int(shares),
-            "value": _positive(yf.summary_num(entry, "value")),
-            "price_low": low,
-            "price_high": high,
-            "ownership": OWNERSHIP.get(yf.summary_text(entry, "ownership")),
-        }))
-    dated.sort(key=lambda pair: pair[0], reverse=True)
-    return [row for _, row in dated]
-
-
 def _totals(rows):
     return {
         "count": len(rows),
@@ -186,59 +96,28 @@ def insider_summary(transactions):
     }
 
 
-def holders(modules, module):
-    """Top holders from ``fundOwnership`` / ``institutionOwnership``."""
-    rows = []
-    for entry in (modules.get(module) or {}).get("ownershipList") or []:
-        report = yf.summary_num(entry, "reportDate")
-        shares = yf.summary_num(entry, "position")
-        rows.append({
-            "name": yf.summary_text(entry, "organization"),
-            "pct_held": yf.summary_num(entry, "pctHeld"),
-            "shares": None if shares is None else int(shares),
-            "value": yf.summary_num(entry, "value"),
-            "pct_change": yf.summary_num(entry, "pctChange"),
-            "report_date": None if report is None
-            else datetime.fromtimestamp(report, timezone.utc).strftime("%Y-%m-%d"),
-        })
-    return rows
-
-
-def extract_holders(symbol, modules, days=DEFAULT_DAYS, now=None, trades_only=False):
-    """Flatten the raw modules into the JSON-shaped dict (without ``symbol``).
+def extract_holders(view, days=DEFAULT_DAYS, trades_only=False):
+    """Turn stock_data.holders_view()'s ``view`` into the JSON-shaped dict
+    (without ``symbol``).
 
     With ``trades_only`` the transaction list keeps only TRADES_ONLY_KINDS;
     the summary is still worked out from every transaction.
     """
-    def breakdown(key):
-        return yf.summary_num(modules, "majorHoldersBreakdown", key)
-
-    long_name = yf.summary_text(modules, "price", "longName")
-    short_name = yf.summary_text(modules, "price", "shortName")
-    us = is_us_listing(symbol)
-    transactions = insider_transactions(modules, [long_name, short_name], days, now)
-    count = breakdown("institutionsCount")
+    transactions = view["transactions"]
     return {
-        "name": long_name or short_name,
-        "exchange": yf.summary_text(modules, "price", "exchangeName"),
-        "currency": yf.summary_text(modules, "price", "currency") or "",
-        "us_listing": us,
-        # Yahoo doesn't label it. For non-US listings, insider-trade prices
-        # matched the local quote converted to US dollars (VOD.L, D05.SI).
-        "transaction_currency": (yf.summary_text(modules, "price", "currency") or None) if us else "USD",
-        "ownership": {
-            "insiders_pct": breakdown("insidersPercentHeld"),
-            "institutions_pct": breakdown("institutionsPercentHeld"),
-            "institutions_float_pct": breakdown("institutionsFloatPercentHeld"),
-            "institutions_count": None if count is None else int(count),
-        },
+        "name": view["name"],
+        "exchange": view["exchange"],
+        "currency": view["currency"],
+        "us_listing": view["us_listing"],
+        "transaction_currency": view["transaction_currency"],
+        "ownership": view["ownership"],
         "days": days,
         "trades_only": trades_only,
         "insider_summary": insider_summary(transactions),
         "transactions": [t for t in transactions if t["kind"] in TRADES_ONLY_KINDS]
         if trades_only else transactions,
-        "top_funds": holders(modules, "fundOwnership"),
-        "top_institutions": holders(modules, "institutionOwnership") if us else None,
+        "top_funds": view["top_funds"],
+        "top_institutions": view["top_institutions"],
     }
 
 
@@ -415,12 +294,12 @@ def main(argv=None):
     args = parse_args(argv)
 
     try:
-        modules = yf.fetch_quote_summary(args.symbol, MODULES)
+        view = stock_data.holders_view(args.symbol, args.days)
     except (requests.RequestException, ValueError, KeyError) as exc:
         die(f"failed to fetch holders for {args.symbol!r}: {exc}", args.json)
 
     symbol = args.symbol.upper()
-    data = extract_holders(symbol, modules, args.days, trades_only=args.trades_only)
+    data = extract_holders(view, args.days, trades_only=args.trades_only)
     if not has_data(data):
         die(
             f"no ownership data for {args.symbol!r} (only company stocks have holders)",

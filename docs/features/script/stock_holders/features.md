@@ -3,7 +3,7 @@
 ## Requirement
 
 - Reuse the shared modules and scripts in this project (rather than copying their logic) as much as possible.
-    - Use yahoo_finance.py's fetch_quote_summary() to retrieve Yahoo Finance's quoteSummary data, and its summary_num() / summary_text() to read it.
+    - Get the data through stock_data.py's holders_view(), never from a provider directly, so the script reads only stock_data's neutral shape. It is served by yahoo_finance.py's holders_view() (Yahoo Finance's quoteSummary) today, which also sorts each transaction into its kind.
 
 ## Actions
 

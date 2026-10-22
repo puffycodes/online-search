@@ -35,9 +35,9 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-rebased-chart.md`](#claude-code-agent-stock-rebased-chart) — Claude Code subagent that calls `stock_rebased_chart.py` and produces a rebased (indexed-to-100) comparison chart for several named stocks, indices, currency pairs, crypto coins or commodity futures
 - [`stock_risk.py`](#stock_riskpy) — how risky one or more instruments' prices have been: annualized volatility, the worst peak-to-trough drawdown and its recovery, distance from the high, and the correlation of each pair, via `indicators.py`
 - [`.claude/agents/stock-risk.md`](#claude-code-agent-stock-risk) — Claude Code subagent that calls `stock_risk.py` and reports how volatile named stocks, indices, currency pairs, crypto coins or commodity futures have been, their worst falls, and how closely they moved together
-- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the price scripts' window flags and chart-result parsing (their data now comes from `price_source.py`), Yahoo's chart-endpoint fetch (still used by `app/stock_information/` for its quote) and the cookie + crumb `quoteSummary` fetch, used by the four price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py` and `stock_analyst_targets.py` (both through `stock_data.py`), `stock_holders.py` and `app/stock_information/`
+- [`yahoo_finance.py`](#yahoo_financepy) — shared helper module for the price scripts' window flags and chart-result parsing (their data now comes from `price_source.py`), Yahoo's chart-endpoint fetch (still used by `app/stock_information/` for its quote) and the cookie + crumb `quoteSummary` fetch, used by the four price scripts, `market_top_volume.py`, `stock_intrinsic_value.py`, `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py` (the last three through `stock_data.py`) and `app/stock_information/`
 - [`price_source.py`](#price_sourcepy) — shared price-history source for the four price scripts: routes a Yahoo-notation ticker to EODHD (Alpha Vantage for India) and returns the bars in the shape they already parse; Singapore, Tokyo and futures are refused for now
-- [`stock_data.py`](#stock_datapy) — provider-neutral stock data: each function returns plain dicts in one shape and is routed to the provider that serves it (only `analyst_view()` and `earnings_view()`, both from Yahoo, so far)
+- [`stock_data.py`](#stock_datapy) — provider-neutral stock data: each function returns plain dicts in one shape and is routed to the provider that serves it (only `analyst_view()`, `earnings_view()` and `holders_view()`, all from Yahoo, so far)
 - [`eodhd_price_history.py`](#eodhd_price_historypy) — past daily open / high / low / close prices of a stock, index, currency pair or crypto coin from EODHD's end-of-day API (requires a free `EODHD_API_KEY`); the main provider behind `price_source.py`
 - [`alphavantage_price_history.py`](#alphavantage_price_historypy) — past daily open / high / low / close prices of a stock from Alpha Vantage's `TIME_SERIES_DAILY` API (requires a free `ALPHAVANTAGE_API_KEY`; free keys get the latest 100 sessions)
 - [`daily_prices.py`](#daily_pricespy) — shared helper module for the two keyed price scripts: the `--start`/`--end`/`--last` window, the price row and the text table
@@ -1922,7 +1922,7 @@ The agent's frontmatter restricts it to `Bash` (run the script). `model: sonnet`
 
 ## yahoo_finance.py
 
-Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy) (for the window flags and chart-result parsing: since 2026-10-21 their data comes from [`price_source.py`](#price_sourcepy), which returns the same shape); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It is also the Yahoo adapter behind [`stock_data.py`](#stock_datapy): `analyst_view()` and `earnings_view()` turn `quoteSummary` data into that module's neutral shape for `stock_analyst_targets.py` and `stock_earnings_calendar.py`. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
+Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`stock_candlestick_chart.py`](#stock_candlestick_chartpy), [`stock_rebased_chart.py`](#stock_rebased_chartpy) and [`stock_risk.py`](#stock_riskpy) (for the window flags and chart-result parsing: since 2026-10-21 their data comes from [`price_source.py`](#price_sourcepy), which returns the same shape); [`market_top_volume.py`](#market_top_volumepy) uses its cookie + crumb handshake; [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_analyst_targets.py`](#stock_analyst_targetspy) and [`stock_holders.py`](#stock_holderspy) its `quoteSummary` fetch built on that handshake (as does [`stock_fundamental.py`](#stock_fundamentalpy), through `stock_intrinsic_value.py`'s fetch); and [`app/stock_information/`](#appstock_information) its fetch for the quote. It is also the Yahoo adapter behind [`stock_data.py`](#stock_datapy): `analyst_view()`, `earnings_view()` and `holders_view()` turn `quoteSummary` data into that module's neutral shape for `stock_analyst_targets.py`, `stock_earnings_calendar.py` and `stock_holders.py`. It holds everything those scripts had in common — the Yahoo Finance endpoint constants, the `--range`/`--last`/`--start`/`--end` flags and the query-window builder, the HTTP call, the raw-payload navigation, exchange-local session dates, the crumb handshake, and the `quoteSummary` fetch and value readers. Each script keeps its own row shaping (rounding, date type, which rows to drop) and its own output stage. Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -1947,6 +1947,8 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 | `GRADE_ACTIONS`, `TARGET_ACTIONS` | `up` → `upgrade`, `Raises` → `raised`, … | Yahoo's analyst-action codes and target verbs, mapped to `stock_data`'s words |
 | `EARNINGS_MODULES` | `price`, `financialData`, `defaultKeyStatistics`, `calendarEvents`, `earningsHistory`, `earnings` | The `quoteSummary` modules `earnings_view()` fetches |
 | `MINOR_UNIT_CURRENCIES` | `GBp`, `GBX`, `ILA`, `ZAc` | Quote currencies in a minor unit, whose dividend Yahoo gives in an unstated currency |
+| `HOLDERS_MODULES` | `price`, `majorHoldersBreakdown`, `insiderTransactions`, `fundOwnership`, `institutionOwnership` | The `quoteSummary` modules `holders_view()` fetches |
+| `TRANSACTION_KINDS`, `OWNERSHIP_TYPES`, `PRICE_RE` | `Sale` → `sale`, `D` → `direct`, … | How Yahoo's insider-transaction descriptions and ownership codes are read |
 
 ### API reference
 
@@ -1964,10 +1966,11 @@ Shared helper module for [`stock_price_history.py`](#stock_price_historypy), [`s
 - `analyst_view(symbol, days)` — The adapter `stock_data.analyst_view()` routes to: fetches `ANALYST_MODULES` and returns `parse_analyst_view()` of them.
 - `parse_analyst_view(modules, days, now=None)` — Turns `quoteSummary` modules into `stock_data.analyst_view()`'s neutral shape (see [`stock_data.py`](#stock_datapy)); `now` (epoch seconds) fixes the clock for tests.
 - `earnings_view(symbol)` / `parse_earnings_view(modules)` — The same pair for `stock_data.earnings_view()`: fetch `EARNINGS_MODULES`, then turn them into its neutral shape.
+- `holders_view(symbol, days)` / `parse_holders_view(symbol, modules, days, now=None)` — The same pair for `stock_data.holders_view()`, with `classify_transaction(text, filer, relation, company_names)` (one transaction's kind from its description, or for a blank one from the filer: the company itself → `buyback`, no role → `holder_disclosure`, else `unspecified`) and `is_us_listing(symbol)` (no exchange suffix).
 
 ### Notes / limitations
 
-- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it (and `price_source.window()`, which reads `build_params()` output), and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py` and `stock_analyst_targets.py` (both through `stock_data.py`) and `stock_holders.py`. Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
+- Changing a constant, the window flags or the `build_params` window logic here affects **all four** price scripts that use it (and `price_source.window()`, which reads `build_params()` output), and changing the crumb handshake or `fetch_quote_summary()` affects `market_top_volume.py` (handshake only), `stock_intrinsic_value.py` (and through it `stock_fundamental.py` and `app/stock_information/`), `stock_earnings_calendar.py`, `stock_analyst_targets.py` and `stock_holders.py` (all through `stock_data.py`). Behaviour was kept identical to the pre-refactor scripts: the interval-aware `--last` look-back is a no-op for the default `interval="1d"`, so `stock_price_history.py` gets the same params it did before.
 
 ---
 
@@ -2024,7 +2027,7 @@ The markets were decided on 2026-10-21 (see the Yahoo item in [`docs/things-to-e
 
 ## stock_data.py
 
-Provider-neutral stock data for the stock scripts. A script imports this module, not a provider's: each function returns plain dicts in a shape no provider dictates, and `PROVIDERS` routes the call to the adapter module that serves it, so swapping a provider means changing one entry, not a script. It is step 1 of the design in [`docs/things-to-explore.md`](docs/things-to-explore.md) ("Proposed design"), which lists the 15 functions planned. Only `analyst_view()`, for [`stock_analyst_targets.py`](#stock_analyst_targetspy), and `earnings_view()`, for [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), are here so far, both served by [`yahoo_finance.py`](#yahoo_financepy). Not a CLI — it is imported, not run.
+Provider-neutral stock data for the stock scripts. A script imports this module, not a provider's: each function returns plain dicts in a shape no provider dictates, and `PROVIDERS` routes the call to the adapter module that serves it, so swapping a provider means changing one entry, not a script. It is step 1 of the design in [`docs/things-to-explore.md`](docs/things-to-explore.md) ("Proposed design"), which lists the 15 functions planned. Only `analyst_view()`, for [`stock_analyst_targets.py`](#stock_analyst_targetspy), `earnings_view()`, for [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), and `holders_view()`, for [`stock_holders.py`](#stock_holderspy), are here so far, all served by [`yahoo_finance.py`](#yahoo_financepy). Not a CLI — it is imported, not run.
 
 ### Requirements
 
@@ -2044,9 +2047,10 @@ A fetch failure raises `requests.RequestException` (or `ValueError` / `KeyError`
 
 ### API reference
 
-- `PROVIDERS` — Function name → the adapter callable that serves it: `{"analyst_view": yahoo_finance.analyst_view, "earnings_view": yahoo_finance.earnings_view}`.
+- `PROVIDERS` — Function name → the adapter callable that serves it: `{"analyst_view": yahoo_finance.analyst_view, "earnings_view": yahoo_finance.earnings_view, "holders_view": yahoo_finance.holders_view}`.
 - `analyst_view(symbol, days)` — Analyst opinion on `symbol`: `{source, notes, name, exchange, currency, price, analysts, targets: {low, median, mean, high}, recommendation: {key, mean}, trend: [{period, strong_buy, buy, hold, sell, strong_sell}], actions: [{date, firm, action, from_grade, to_grade, target_action, target, prior_target}]}`. `trend` is newest first with `period` `0m`, `-1m`, …; `actions` covers the last `days` days, newest first, with `action` one of `upgrade` / `downgrade` / `initiate` / `reiterate` / `maintain` and `target_action` one of `raised` / `lowered` / `maintained` / `announced` / `adjusted` or `None`.
 - `earnings_view(symbol)` — The earnings calendar: `{source, notes, name, exchange, currency, reporting_currency, next_earnings: {date, date_end, datetime_utc, is_estimate, eps_estimate, revenue_estimate} | None, dividend: {ex_dividend_date, payment_date, last_amount, last_amount_date, amount_currency} | None, earnings_history: [{quarter_end, fiscal_quarter, reported_date, eps_estimate, eps_actual, surprise_pct, currency}]}`. Each estimate is `{low, average, high}` or `None`; `date_end` is later than `date` for an estimated window; `reporting_currency` and `amount_currency` are `None` when unknown; `earnings_history` is oldest first. Dates carry no upcoming / past status: that depends on today, so the script adds it.
+- `holders_view(symbol, days)` — Ownership and insider activity: `{source, notes, name, exchange, currency, us_listing, transaction_currency, ownership: {insiders_pct, institutions_pct, institutions_float_pct, institutions_count}, transactions: [{date, name, relation, kind, text, shares, value, price_low, price_high, ownership}], top_funds: [{name, pct_held, shares, value, pct_change, report_date}], top_institutions: [...] | None}`. `transactions` covers the last `days` days, newest first, every kind included (`sale`, `purchase`, `option_exercise`, `award`, `gift`, `buyback`, `holder_disclosure`, `other`, `unspecified`); `text` is the provider's own description; `transaction_currency` is `None` when unknown; `top_institutions` is `None` where the provider's list isn't meaningful (Yahoo's, for non-US listings). Totals and `--trades-only` filtering are the script's.
 
 ### Notes / limitations
 
@@ -3044,11 +3048,11 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ## stock_holders.py
 
-Pulls who owns a stock and what its insiders have been doing, from Yahoo Finance's public `quoteSummary` endpoint: the share held by insiders and institutions, each insider transaction over the last `--days` days, and the top fund and institutional holders. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
+Pulls who owns a stock and what its insiders have been doing: the share held by insiders and institutions, each insider transaction over the last `--days` days, and the top fund and institutional holders. It gets them through [`stock_data.holders_view()`](#stock_datapy), which serves them from Yahoo Finance's public `quoteSummary` endpoint today, so the script never reads Yahoo's own structures. No API key or authentication required — the cookie + crumb handshake and the fetch are [`yahoo_finance.fetch_quote_summary()`](#yahoo_financepy).
 
 | Section | What it shows | Source |
 |---|---|---|
-| Ownership | % held by insiders and by institutions (and of the float), number of institutions | `majorHoldersBreakdown` |
+| Ownership | % held by insiders and by institutions (and of the float), number of institutions | Yahoo's `majorHoldersBreakdown` |
 | Insider activity | each transaction in the window, sorted into kinds, with sales and purchases totalled separately from everything else | `insiderTransactions` |
 | Top funds | the 10 largest fund holders: % held, change since their last report, shares, report date | `fundOwnership` |
 | Top institutions | the same for institutions — **US listings only** | `institutionOwnership` |
@@ -3057,7 +3061,7 @@ Pulls who owns a stock and what its insiders have been doing, from Yahoo Finance
 
 - Python 3.7+
 - [`requests`](https://pypi.org/project/requests/)
-- the repo's own `yahoo_finance.py` (the fetch), `stock_intrinsic_value.py` (number formatting) and `cli_utils.py` — run from the repo root so they import
+- the repo's own `stock_data.py` and `yahoo_finance.py` (the fetch and parsing), `stock_intrinsic_value.py` (number formatting) and `cli_utils.py` — run from the repo root so they import
 
 ### Usage
 
@@ -3122,24 +3126,22 @@ Top institutions
 
 ### How it works
 
-1. **Fetch** — `yahoo_finance.fetch_quote_summary()`: the cookie + crumb handshake, then `quoteSummary` for `price,majorHoldersBreakdown,insiderTransactions,fundOwnership,institutionOwnership`.
-2. **Transactions** — `insider_transactions()` keeps entries dated within `--days` of now, newest first, and reads the per-share price (or low–high range) out of Yahoo's description ("Sale at price 222.19 - 223.75 per share."). Yahoo's `0` placeholders for value and price become `null`.
-3. **Kinds** — `classify()` decides each transaction's kind from that description first: `Sale`/`Sold`, `Purchase`/`Bought`, `Buy Back`, `Conversion of Exercise of derivative security`, `Stock Award(Grant)`, `Stock Gift`, else `other`. With **no** description, it's a `buyback` when the filer is the company itself (matched on the first two words of its name: "Vodafone Group Plc" ↔ "Vodafone Group Public Limited Company"), a `holder_disclosure` when no role is given (a bank or fund reporting its stake), and `unspecified` otherwise.
-4. **Summary** — `insider_summary()` totals sales and purchases (count, shares, value), overall and per insider, and only counts every other kind, so awards, gifts, exercises and buybacks never look like buying or selling. `--trades-only` then trims the listed transactions to sales, purchases and exercises; the summary is worked out first, so it still counts everything.
-5. **Holders** — `holders()` reads the fund and institution lists. The institution list is dropped for non-US listings (`is_us_listing()`: a symbol without an exchange suffix such as `.L`).
+1. **Fetch** — `stock_data.holders_view(symbol, days)`, routed to `yahoo_finance.holders_view()`: the cookie + crumb handshake, then `quoteSummary` for `price,majorHoldersBreakdown,insiderTransactions,fundOwnership,institutionOwnership`, turned into the neutral shape by `yahoo_finance.parse_holders_view()` (steps 2, 3 and 5).
+2. **Transactions** — the adapter keeps entries dated within `--days` of now, newest first, and reads the per-share price (or low–high range) out of Yahoo's description ("Sale at price 222.19 - 223.75 per share."). Yahoo's `0` placeholders for value and price become `null`.
+3. **Kinds** — `yahoo_finance.classify_transaction()` decides each transaction's kind from that description first: `Sale`/`Sold`, `Purchase`/`Bought`, `Buy Back`, `Conversion of Exercise of derivative security`, `Stock Award(Grant)`, `Stock Gift`, else `other`. With **no** description, it's a `buyback` when the filer is the company itself (matched on the first two words of its name: "Vodafone Group Plc" ↔ "Vodafone Group Public Limited Company"), a `holder_disclosure` when no role is given (a bank or fund reporting its stake), and `unspecified` otherwise.
+4. **Summary** — the script's `insider_summary()` totals sales and purchases (count, shares, value), overall and per insider, and only counts every other kind, so awards, gifts, exercises and buybacks never look like buying or selling. `--trades-only` then trims the listed transactions to sales, purchases and exercises; the summary is worked out first, so it still counts everything.
+5. **Holders** — the adapter reads the fund and institution lists. The institution list is dropped for non-US listings (`yahoo_finance.is_us_listing()`: a symbol without an exchange suffix such as `.L`), and their transaction currency is set to `USD`.
 6. **Coverage** — `has_data()` is false with no ownership breakdown, no transactions and no holders; `main()` then fails.
 
 Yahoo's `netSharePurchaseActivity` module (a 6-month buy/sell summary) is deliberately not used: it counts stock awards as purchases, and its institutional net-buying figure was implausible in testing (Apple: −14% in six months).
 
 ### API reference
 
-- `MODULES` / `DEFAULT_DAYS` — The `quoteSummary` modules fetched, and the default window (180).
-- `extract_holders(symbol, modules, days=DEFAULT_DAYS, now=None, trades_only=False)` — Returns the JSON-shaped dict (without `symbol`). `now` (epoch seconds) fixes the clock for tests.
-- `insider_transactions(modules, company_names, days=DEFAULT_DAYS, now=None)` / `insider_summary(transactions)` — The transactions in the window, and their totals (overall, per kind, and per insider in `by_insider`).
+- `DEFAULT_DAYS` — The default window (180).
+- `extract_holders(view, days=DEFAULT_DAYS, trades_only=False)` — Turns `stock_data.holders_view()`'s result into the JSON-shaped dict (without `symbol`).
+- `insider_summary(transactions)` — The transactions' totals (overall, per kind, and per insider in `by_insider`).
 - `transaction_count(data)` — Every transaction in the window, including any `--trades-only` left out of the list.
-- `classify(text, filer, relation, company_names)` — The kind of one transaction.
-- `holders(modules, module)` — A fund or institution list.
-- `is_us_listing(symbol)`, `has_data(data)` — The listing and coverage checks.
+- `has_data(data)` — The coverage check.
 - `build_report(symbol, data)` / `build_json(symbol, data)` — The text report and the JSON payload.
 - `parse_args(argv=None)`, `main(argv=None)` — The CLI.
 

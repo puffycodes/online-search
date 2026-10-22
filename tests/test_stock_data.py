@@ -26,6 +26,17 @@ DIVIDEND_KEYS = {"ex_dividend_date", "payment_date", "last_amount", "last_amount
 QUARTER_KEYS = {"quarter_end", "fiscal_quarter", "reported_date", "eps_estimate",
                 "eps_actual", "surprise_pct", "currency"}
 
+HOLDERS_VIEW_KEYS = {"source", "notes", "name", "exchange", "currency", "us_listing",
+                     "transaction_currency", "ownership", "transactions", "top_funds",
+                     "top_institutions"}
+OWNERSHIP_KEYS = {"insiders_pct", "institutions_pct", "institutions_float_pct",
+                  "institutions_count"}
+TRANSACTION_KEYS = {"date", "name", "relation", "kind", "text", "shares", "value",
+                    "price_low", "price_high", "ownership"}
+TRANSACTION_KINDS = {"sale", "purchase", "option_exercise", "award", "gift", "buyback",
+                     "holder_disclosure", "other", "unspecified"}
+HOLDER_KEYS = {"name", "pct_held", "shares", "value", "pct_change", "report_date"}
+
 NOW = 1_790_000_000  # 2026-09-21 14:13 UTC
 
 # Raw data per adapter, filled in enough to produce a trend row and an action.
@@ -53,6 +64,20 @@ YAHOO_EARNINGS_MODULES = {
         {"quarter": {"raw": NOW - 80 * 86400}, "epsEstimate": {"raw": 1.89},
          "epsActual": {"raw": 2.02}, "surprisePercent": {"raw": 0.0674}, "currency": "USD"}]},
 }
+_YAHOO_HOLDER = {"organization": "Index Fund", "pctHeld": {"raw": 0.03},
+                 "position": {"raw": 3_000_000}, "value": {"raw": 30_000_000},
+                 "pctChange": {"raw": 0.01}, "reportDate": {"raw": NOW - 60 * 86400}}
+YAHOO_HOLDERS_MODULES = {
+    "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST"},
+    "majorHoldersBreakdown": {"insidersPercentHeld": 0.02, "institutionsPercentHeld": 0.6,
+                              "institutionsFloatPercentHeld": 0.61, "institutionsCount": 900},
+    "insiderTransactions": {"transactions": [
+        {"startDate": {"raw": NOW - 5 * 86400}, "filerName": "ROE RICHARD",
+         "filerRelation": "Director", "transactionText": "Sale at price 11.50 per share.",
+         "shares": {"raw": 1000}, "value": {"raw": 11500}, "ownership": "D"}]},
+    "fundOwnership": {"ownershipList": [_YAHOO_HOLDER]},
+    "institutionOwnership": {"ownershipList": [_YAHOO_HOLDER]},
+}
 
 
 class TestRouting:
@@ -68,6 +93,16 @@ class TestRouting:
                             lambda s: seen.append(s) or {"ok": True})
         assert stock_data.earnings_view("AAA") == {"ok": True}
         assert seen == ["AAA"]
+
+    def test_holders_view_is_served_by_yahoo(self):
+        assert stock_data.PROVIDERS["holders_view"] is yf.holders_view
+
+    def test_holders_view_delegates_to_its_provider(self, monkeypatch):
+        seen = []
+        monkeypatch.setitem(stock_data.PROVIDERS, "holders_view",
+                            lambda s, d: seen.append((s, d)) or {"ok": True})
+        assert stock_data.holders_view("AAA", 30) == {"ok": True}
+        assert seen == [("AAA", 30)]
 
     def test_analyst_view_delegates_to_its_provider(self, monkeypatch):
         seen = []
@@ -141,3 +176,30 @@ class TestEarningsViewContract:
             assert _iso(row["quarter_end"])
             assert all(row[k] is None or isinstance(row[k], (int, float))
                        for k in ("eps_estimate", "eps_actual", "surprise_pct"))
+
+
+@pytest.mark.parametrize("view", [
+    pytest.param(yf.parse_holders_view("AAA", YAHOO_HOLDERS_MODULES, 180, now=NOW), id="yahoo"),
+])
+class TestHoldersViewContract:
+    def test_top_level_keys(self, view):
+        assert set(view) == HOLDERS_VIEW_KEYS
+        assert isinstance(view["source"], str) and view["source"]
+        assert isinstance(view["notes"], list)
+        assert isinstance(view["us_listing"], bool)
+
+    def test_part_keys(self, view):
+        assert set(view["ownership"]) == OWNERSHIP_KEYS
+        assert view["transactions"]
+        assert all(set(t) == TRANSACTION_KEYS for t in view["transactions"])
+        assert view["top_funds"] and view["top_institutions"]
+        assert all(set(h) == HOLDER_KEYS for h in view["top_funds"] + view["top_institutions"])
+
+    def test_values_are_plain(self, view):
+        assert all(v is None or isinstance(v, (int, float)) for v in view["ownership"].values())
+        assert isinstance(view["ownership"]["institutions_count"], int)
+        for t in view["transactions"]:
+            assert _iso(t["date"]) and t["kind"] in TRANSACTION_KINDS
+            assert t["shares"] is None or isinstance(t["shares"], int)
+        for h in view["top_funds"]:
+            assert _iso(h["report_date"]) and isinstance(h["shares"], int)

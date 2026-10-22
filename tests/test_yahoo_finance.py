@@ -1,7 +1,8 @@
 """Tests for yahoo_finance: parse_date, window args, session dates, crumb handshake,
 fetch_quote_summary, summary_num/summary_text, build_params, meta_summary, extract_series,
 fetch_history, and the stock_data adapter (parse_analyst_view, analyst_view,
-parse_earnings_view, earnings_view)."""
+parse_earnings_view, earnings_view, parse_holders_view, holders_view and its
+transaction helpers)."""
 
 import argparse
 import datetime as dt
@@ -627,3 +628,180 @@ class TestEarningsView:
         monkeypatch.setattr(yf, "fetch_quote_summary", boom)
         with pytest.raises(requests.RequestException, match="Quote not found"):
             yf.earnings_view("ZZZ")
+
+
+def _tx(days_ago, name, relation, text, shares=1000, value=0, ownership="D"):
+    return {"startDate": {"raw": int(NOW - days_ago * DAY)}, "filerName": name,
+            "filerRelation": relation, "transactionText": text,
+            "shares": {"raw": shares}, "value": {"raw": value}, "ownership": ownership}
+
+
+def _holder(name, pct, shares, change, report=NOW - 60 * DAY):
+    return {"organization": name, "pctHeld": {"raw": pct}, "position": {"raw": shares},
+            "value": {"raw": shares * 10}, "pctChange": {"raw": change},
+            "reportDate": {"raw": int(report)}}
+
+
+def _holders_modules():
+    """quoteSummary ``modules`` with every field parse_holders_view() reads."""
+    return {
+        "price": {"longName": "Triple A Inc.", "shortName": "Triple A Inc", "currency": "USD",
+                  "exchangeName": "TST"},
+        "majorHoldersBreakdown": {"insidersPercentHeld": 0.02, "institutionsPercentHeld": 0.6,
+                                  "institutionsFloatPercentHeld": 0.61, "institutionsCount": 900},
+        "insiderTransactions": {"transactions": [
+            # Out of order on purpose; one outside 180 days.
+            _tx(30, "DOE JANE", "Director", "Sale at price 10.00 - 12.00 per share.", 2000, 22000),
+            _tx(5, "ROE RICHARD", "Chief Executive Officer", "Sale at price 11.50 per share.",
+                1000, 11500, "I"),
+            _tx(10, "DOE JANE", "Director", "Purchase at price 9.00 per share.", 500, 4500),
+            _tx(12, "ROE RICHARD", "Chief Executive Officer",
+                "Stock Award(Grant) at price 0.00 per share.", 3000),
+            _tx(15, "POE PAT", "Officer", "", 400),
+            _tx(400, "OLD OLIVER", "Director", "Sale at price 5.00 per share.", 10, 50),
+        ]},
+        "fundOwnership": {"ownershipList": [_holder("Index Fund", 0.03, 3_000_000, 0.01)]},
+        "institutionOwnership": {"ownershipList": [_holder("Big Asset Co", 0.08, 8_000_000, -0.02)]},
+    }
+
+
+class TestClassifyTransaction:
+    @pytest.mark.parametrize("text, kind", [
+        ("Sale at price 222.19 - 223.75 per share.", "sale"),
+        ("Sold at price 1.70 per share.", "sale"),
+        ("Purchase at price 9.00 per share.", "purchase"),
+        ("Bought at price 1.58 per share.", "purchase"),
+        ("Buy Back at price 1.20 per share.", "buyback"),
+        ("Conversion of Exercise of derivative security at price 0.00 per share.", "option_exercise"),
+        ("Stock Award(Grant) at price 0.00 per share.", "award"),
+        ("Stock Gift at price 0.00 per share.", "gift"),
+        ("Other at price 44.41 per share.", "other"),
+        ("Decrease", "other"),
+    ])
+    def test_by_description(self, text, kind):
+        assert yf.classify_transaction(text, "SOMEONE", "Director", ["Acme Corp"]) == kind
+
+    def test_description_wins_without_a_role(self):
+        # Vodafone's directors' trades come with no role filled in.
+        assert yf.classify_transaction("Bought at price 1.58 per share.", "Carter (Stephen A.)",
+                                       None, ["Vodafone Group Public Limited Company"]) == "purchase"
+
+    def test_blank_from_the_company_is_a_buyback(self):
+        names = ["Vodafone Group Public Limited Company", "VODAFONE GROUP PLC ORD USD0.20"]
+        assert yf.classify_transaction("", "Vodafone Group Plc", None, names) == "buyback"
+        assert yf.classify_transaction(None, "Toyota Motor Corp", None,
+                                       ["Toyota Motor Corporation"]) == "buyback"
+
+    def test_blank_without_role_is_a_holder_disclosure(self):
+        assert yf.classify_transaction("", "Societe Generale S.A", None,
+                                       ["Vodafone Group Plc"]) == "holder_disclosure"
+
+    def test_blank_with_role_is_unspecified(self):
+        assert yf.classify_transaction("", "COOK TIMOTHY D", "Officer and Director",
+                                       ["Apple Inc."]) == "unspecified"
+
+
+class TestHoldersHelpers:
+    @pytest.mark.parametrize("symbol, us", [
+        ("AAPL", True), ("BRK-B", True), ("VOD.L", False), ("7203.T", False), ("D05.SI", False),
+    ])
+    def test_us_listing(self, symbol, us):
+        assert yf.is_us_listing(symbol) is us
+
+    @pytest.mark.parametrize("text, expected", [
+        ("Sale at price 222.19 - 223.75 per share.", (222.19, 223.75)),
+        ("Sale at price 1,234.50 per share.", (1234.5, 1234.5)),
+        ("Stock Gift at price 0.00 per share.", (None, None)),
+        ("", (None, None)),
+        (None, (None, None)),
+    ])
+    def test_price_range(self, text, expected):
+        assert yf._price_range(text) == expected
+
+
+class TestParseHoldersView:
+    def test_us_listing(self):
+        view = yf.parse_holders_view("AAA", _holders_modules(), 180, now=NOW)
+        assert (view["source"], view["notes"]) == ("Yahoo Finance", [])
+        assert view["name"] == "Triple A Inc."
+        assert view["us_listing"] is True
+        assert view["ownership"] == {"insiders_pct": 0.02, "institutions_pct": 0.6,
+                                     "institutions_float_pct": 0.61, "institutions_count": 900}
+        assert view["top_funds"] == [{"name": "Index Fund", "pct_held": 0.03, "shares": 3_000_000,
+                                      "value": 30_000_000.0, "pct_change": 0.01,
+                                      "report_date": "2026-07-23"}]
+        assert view["top_institutions"][0]["name"] == "Big Asset Co"
+
+    def test_non_us_listing_hides_institutions(self):
+        view = yf.parse_holders_view("AAA.L", _holders_modules(), 180, now=NOW)
+        assert view["us_listing"] is False
+        assert view["top_institutions"] is None
+        assert view["top_funds"]
+
+    def test_transaction_currency(self):
+        assert yf.parse_holders_view("AAA", _holders_modules(), 180, now=NOW)["transaction_currency"] == "USD"
+        modules = _holders_modules()
+        modules["price"]["currency"] = "GBp"
+        assert yf.parse_holders_view("AAA.L", modules, 180, now=NOW)["transaction_currency"] == "USD"
+        modules["price"]["currency"] = "CAD"  # a US-listed stock quoted in another currency
+        assert yf.parse_holders_view("AAA", modules, 180, now=NOW)["transaction_currency"] == "CAD"
+        assert yf.parse_holders_view("AAA", {}, 180, now=NOW)["transaction_currency"] is None
+
+    def test_no_data(self):
+        view = yf.parse_holders_view("SPY", {"price": {"currency": "USD"}}, 180, now=NOW)
+        assert set(view["ownership"].values()) == {None}
+        assert (view["transactions"], view["top_funds"], view["top_institutions"]) == ([], [], [])
+
+
+class TestInsiderTransactions:
+    def _rows(self, days, modules=None, symbol="AAA"):
+        return yf.parse_holders_view(symbol, modules or _holders_modules(), days, now=NOW)["transactions"]
+
+    def test_window_and_newest_first(self):
+        rows = self._rows(180)
+        assert [r["date"] for r in rows] == [
+            "2026-09-16", "2026-09-11", "2026-09-09", "2026-09-06", "2026-08-22"]
+        assert "OLD OLIVER" not in [r["name"] for r in rows]
+
+    def test_fields(self):
+        rows = self._rows(180)
+        assert rows[0] == {
+            "date": "2026-09-16", "name": "ROE RICHARD", "relation": "Chief Executive Officer",
+            "kind": "sale", "text": "Sale at price 11.50 per share.", "shares": 1000,
+            "value": 11500.0, "price_low": 11.5, "price_high": 11.5, "ownership": "indirect",
+        }
+        award = next(r for r in rows if r["kind"] == "award")
+        assert (award["value"], award["price_low"]) == (None, None)  # Yahoo's 0 placeholders
+        assert next(r for r in rows if r["name"] == "POE PAT")["kind"] == "unspecified"
+
+    def test_company_names_come_from_the_price_module(self):
+        modules = {"price": {"longName": "Acme Corp Holdings"},
+                   "insiderTransactions": {"transactions": [_tx(3, "Acme Corp", None, "")]}}
+        assert self._rows(180, modules, "ACME.L")[0]["kind"] == "buyback"
+
+    def test_days_narrows_window(self):
+        assert [r["name"] for r in self._rows(7)] == ["ROE RICHARD"]
+
+    def test_undated_entries_skipped(self):
+        assert self._rows(180, {"insiderTransactions": {"transactions": [{"filerName": "X"}]}}) == []
+
+    def test_missing_module(self):
+        assert self._rows(180, {"price": {}}) == []
+
+
+class TestHoldersView:
+    def test_fetches_holders_modules(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "fetch_quote_summary",
+                            lambda s, m: seen.append((s, m)) or _holders_modules())
+        view = yf.holders_view("AAA", 180)
+        assert seen == [("AAA", yf.HOLDERS_MODULES)]
+        assert view["top_funds"][0]["name"] == "Index Fund"
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, modules):
+            raise requests.RequestException("Quote not found")
+
+        monkeypatch.setattr(yf, "fetch_quote_summary", boom)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.holders_view("ZZZ", 180)

@@ -6,8 +6,8 @@ Used by stock_price_history.py, stock_candlestick_chart.py, stock_rebased_chart.
 and stock_risk.py for the --range/--last/--start/--end window flags and for
 parsing chart results (their data now comes from price_source.py, which
 returns the same shape), by market_top_volume.py for the
-cookie + crumb handshake, by stock_intrinsic_value.py and stock_holders.py
-for the quoteSummary fetch built on that handshake
+cookie + crumb handshake, by stock_intrinsic_value.py for the quoteSummary
+fetch built on that handshake
 (stock_fundamental.py gets it through stock_intrinsic_value.py's fetch),
 and by app/stock_information/stock_info_server.py for its quote (the last
 user of the chart endpoint itself, fetch_history()). Each caller
@@ -15,14 +15,16 @@ keeps its own row shaping (rounding, date formatting, which rows to drop) and
 its own output stage; everything up to and including the HTTP call and the
 raw-payload navigation lives here.
 
-It is also the Yahoo adapter behind stock_data.py: analyst_view() and
-earnings_view() turn quoteSummary data into stock_data's provider-neutral
-shape, for stock_analyst_targets.py and stock_earnings_calendar.py. The other
-quoteSummary scripts still read the raw modules themselves until they move
-behind stock_data.py too.
+It is also the Yahoo adapter behind stock_data.py: analyst_view(),
+earnings_view() and holders_view() turn quoteSummary data into stock_data's
+provider-neutral shape, for stock_analyst_targets.py,
+stock_earnings_calendar.py and stock_holders.py. stock_intrinsic_value.py
+(and through it stock_fundamental.py) still reads the raw modules itself
+until it moves behind stock_data.py too.
 """
 
 import datetime as dt
+import re
 
 import requests
 
@@ -497,3 +499,141 @@ def parse_earnings_view(modules):
 def earnings_view(symbol):
     """Fetch ``symbol``'s earnings calendar and return stock_data's neutral shape."""
     return parse_earnings_view(fetch_quote_summary(symbol, EARNINGS_MODULES))
+
+
+HOLDERS_MODULES = ["price", "majorHoldersBreakdown", "insiderTransactions",
+                   "fundOwnership", "institutionOwnership"]
+# Transaction descriptions, matched case-insensitively at the start of
+# Yahoo's "transactionText" ("Sale at price 222.19 - 223.75 per share.").
+TRANSACTION_KINDS = [
+    (r"sale\b|sold\b", "sale"),
+    (r"purchase\b|bought\b", "purchase"),
+    (r"buy ?back\b", "buyback"),
+    (r"conversion of exercise|option exercise", "option_exercise"),
+    (r"stock award|grant\b", "award"),
+    (r"stock gift|gift\b", "gift"),
+]
+OWNERSHIP_TYPES = {"D": "direct", "I": "indirect", "D/I": "direct and indirect"}
+PRICE_RE = re.compile(r"at price ([\d.,]+)(?:\s*-\s*([\d.,]+))?", re.IGNORECASE)
+
+
+def is_us_listing(symbol):
+    """Yahoo writes non-US listings with an exchange suffix (VOD.L, 7203.T)."""
+    return "." not in symbol
+
+
+def _name_key(name):
+    """The first two words of a company name, lower-cased, for matching."""
+    return " ".join(re.sub(r"[^a-z0-9 ]", " ", (name or "").lower()).split()[:2])
+
+
+def classify_transaction(text, filer, relation, company_names):
+    """The kind of one insider transaction (see stock_data.holders_view())."""
+    text = (text or "").strip()
+    for pattern, kind in TRANSACTION_KINDS:
+        if re.match(pattern, text, re.IGNORECASE):
+            return kind
+    if text:
+        return "other"
+    # No description: the company itself, a large holder, or unknown.
+    filer_key = _name_key(filer)
+    if filer_key and any(filer_key == _name_key(n) for n in company_names if n):
+        return "buyback"
+    if not relation:
+        return "holder_disclosure"
+    return "unspecified"
+
+
+def _price_range(text):
+    """(low, high) per-share price from a description, None for 0 or none."""
+    match = PRICE_RE.search(text or "")
+    if not match:
+        return None, None
+    low = float(match.group(1).replace(",", ""))
+    high = float(match.group(2).replace(",", "")) if match.group(2) else low
+    return (low, high) if low > 0 else (None, None)
+
+
+def _insider_transactions(modules, company_names, days, now=None):
+    """Insider transactions in the last ``days``, newest first.
+
+    ``now`` (epoch seconds) is for tests.
+    """
+    now = now if now is not None else dt.datetime.now(dt.timezone.utc).timestamp()
+    cutoff = now - days * SECONDS_PER_DAY
+    dated = []
+    for entry in (modules.get("insiderTransactions") or {}).get("transactions") or []:
+        epoch = summary_num(entry, "startDate")
+        if epoch is None or epoch < cutoff:
+            continue
+        text = summary_text(entry, "transactionText")
+        relation = summary_text(entry, "filerRelation")
+        filer = summary_text(entry, "filerName")
+        low, high = _price_range(text)
+        shares = _positive(summary_num(entry, "shares"))
+        dated.append((epoch, {
+            "date": _iso_date(epoch),
+            "name": filer,
+            "relation": relation,
+            "kind": classify_transaction(text, filer, relation, company_names),
+            "text": text,
+            "shares": None if shares is None else int(shares),
+            "value": _positive(summary_num(entry, "value")),
+            "price_low": low,
+            "price_high": high,
+            "ownership": OWNERSHIP_TYPES.get(summary_text(entry, "ownership")),
+        }))
+    dated.sort(key=lambda pair: pair[0], reverse=True)
+    return [row for _, row in dated]
+
+
+def _holders(modules, module):
+    """Top holders from ``fundOwnership`` / ``institutionOwnership``."""
+    rows = []
+    for entry in (modules.get(module) or {}).get("ownershipList") or []:
+        shares = summary_num(entry, "position")
+        rows.append({
+            "name": summary_text(entry, "organization"),
+            "pct_held": summary_num(entry, "pctHeld"),
+            "shares": None if shares is None else int(shares),
+            "value": summary_num(entry, "value"),
+            "pct_change": summary_num(entry, "pctChange"),
+            "report_date": _iso_date(summary_num(entry, "reportDate")),
+        })
+    return rows
+
+
+def parse_holders_view(symbol, modules, days, now=None):
+    """stock_data.holders_view()'s shape from quoteSummary ``modules``."""
+    def breakdown(key):
+        return summary_num(modules, "majorHoldersBreakdown", key)
+
+    long_name = summary_text(modules, "price", "longName")
+    short_name = summary_text(modules, "price", "shortName")
+    us = is_us_listing(symbol)
+    count = breakdown("institutionsCount")
+    profile = _profile(modules)
+    return {
+        "source": SOURCE,
+        "notes": [],
+        **profile,
+        "us_listing": us,
+        # Yahoo doesn't label it. For non-US listings, insider-trade prices
+        # matched the local quote converted to US dollars (VOD.L, D05.SI).
+        "transaction_currency": (profile["currency"] or None) if us else "USD",
+        "ownership": {
+            "insiders_pct": breakdown("insidersPercentHeld"),
+            "institutions_pct": breakdown("institutionsPercentHeld"),
+            "institutions_float_pct": breakdown("institutionsFloatPercentHeld"),
+            "institutions_count": None if count is None else int(count),
+        },
+        "transactions": _insider_transactions(modules, [long_name, short_name], days, now),
+        "top_funds": _holders(modules, "fundOwnership"),
+        # For non-US listings Yahoo's institution list holds only small US filers.
+        "top_institutions": _holders(modules, "institutionOwnership") if us else None,
+    }
+
+
+def holders_view(symbol, days):
+    """Fetch ``symbol``'s ownership data and return stock_data's neutral shape."""
+    return parse_holders_view(symbol, fetch_quote_summary(symbol, HOLDERS_MODULES), days)
