@@ -24,6 +24,8 @@ End your report with a "Run notes" section listing every command you ran, in ord
 
 The cases are independent and can run in parallel. Don't judge a run from its run notes alone: check the numbered files in the scratch directory (which scripts ran, in what order, their exit codes and stderr) against the pass criteria. Scan the `.err` files for API keys before keeping or sharing them (see case 5).
 
+The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 and 5 in the 2026-10-22 rerun, so its `model:` line was removed the same day and it runs on the session's model again. Rerun these cases in a session started after that change.
+
 ## Cases
 
 ### 1. Normal path
@@ -33,7 +35,8 @@ The cases are independent and can run in parallel. Don't judge a run from its ru
 - **A correct run:**
   - One command: `web_search_brave.py ... --limit 5 --json`, exit 0, empty stderr, five results.
   - No other script runs; the report doesn't mention which engine answered.
-- **Last checked:** 2026-10-21, passed.
+- **Found on 2026-10-22 (Sonnet):** the agent ran the one correct command, but its report opened "from Brave, the default engine", which the rule says not to mention.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed on naming Brave.
 
 ### 2. Missing key
 
@@ -43,7 +46,7 @@ The cases are independent and can run in parallel. Don't judge a run from its ru
   - `01-brave` exits 1 with `BRAVE_API_KEY environment variable must be set`; it is not run again.
   - `02-serper` exits 0, and the agent stops there.
   - The report says the results came from Serper because Brave's key was missing.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed.
 
 ### 3. Invalid key
 
@@ -54,7 +57,7 @@ The cases are independent and can run in parallel. Don't judge a run from its ru
   - `02-serper` answers and the agent stops.
   - The report names `BRAVE_API_KEY` as possibly misconfigured.
 - **Found on 2026-10-21:** Brave's stderr was only `422 Client Error:  for url: …`, because the scripts called `response.raise_for_status()`, which drops the API's own message. The agent still flagged the key, but by guesswork. Fixed the same day: the keyed `web_search_*.py` scripts now go through `cli_utils.raise_for_status()`, which keeps the provider's reason.
-- **Last checked:** 2026-10-21, passed (the agent run predates the fix; the fixed stderr was checked by running the script directly).
+- **Last checked:** 2026-10-21, passed (the agent run predates the fix; the fixed stderr was checked by running the script directly). Rerun on 2026-10-22 on Sonnet: passed, with the provider's `SUBSCRIPTION_TOKEN_INVALID` reason now reaching the agent.
 
 ### 4. Transient error
 
@@ -64,7 +67,8 @@ The cases are independent and can run in parallel. Don't judge a run from its ru
   - `01-brave` and `02-brave` both exit 1 with a refused-connection `ProxyError`: exactly one retry.
   - `03-serper` answers and the agent stops.
   - The report says Brave couldn't be reached and the results came from Serper.
-- **Last checked:** 2026-10-21, passed.
+- **Found on 2026-10-22 (Sonnet):** the agent ran `01-brave` once, called the refused connection "a deterministic failure and not a transient-looking one", and fell back to Serper without the retry.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed (no retry).
 
 ### 5. Every engine fails
 
@@ -75,7 +79,8 @@ The cases are independent and can run in parallel. Don't judge a run from its ru
   - No `web_search_perplexity.py`, no results from the agent's own knowledge.
   - The report says plainly that no web search is available and why.
 - **Found on 2026-10-21:** `web_search_serpapi.py` sends its key as a URL query parameter, and a connection error's message contains the URL, so the key was printed in the error and saved in `07-serpapi.err` and `08-serpapi.err`. Fixed the same day: the keyed scripts pass their error messages through `cli_utils.redact()`, and the two files were redacted. The run was otherwise correct.
-- **Last checked:** 2026-10-21, passed.
+- **Found on 2026-10-22 (Sonnet):** seven commands instead of twelve: Brave was retried once, then Serper, Tavily, SerpApi, Exa and DuckDuckGo ran once each ("Brave's retry had already shown the failure was persistent"). The rest was correct: no Perplexity, a plain no-search-available report, and SerpApi's key `<redacted>`.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed (missing retries).
 
 ## Not covered
 

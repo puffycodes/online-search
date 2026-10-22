@@ -986,7 +986,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 ### Notes / limitations
 
 - Requires `trip_weather.py` and the weather modules it imports (plus `requests`) to be runnable from the repo root.
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/trip-weather/test-runs.md`](docs/features/agent/trip-weather/test-runs.md) lists targeted live runs of its judgement rules ("next week", forecast plus typical, a stay over 31 days, past dates, packing advice with air quality, °F, an ambiguous place name); all passed on 2026-10-21 and found the daylight-saving error in sun times that `weather.local_daily()` now fixes.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/trip-weather/test-runs.md`](docs/features/agent/trip-weather/test-runs.md) lists targeted live runs of its judgement rules ("next week", forecast plus typical, a stay over 31 days, past dates, packing advice with air quality, °F, an ambiguous place name); all passed on 2026-10-21, and again on Sonnet on 2026-10-22, and the first run found the daylight-saving error in sun times that `weather.local_daily()` now fixes.
 - Inherits all the limitations of [`trip_weather.py`](#trip_weatherpy) itself (typical weather is history, short air-quality forecast, 31-day trips).
 
 ---
@@ -4181,7 +4181,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 ### Configuration
 
-The agent's frontmatter restricts it to `Bash` (run the script). `model: sonnet` runs it on Sonnet, as its judgement is bounded.
+The agent's frontmatter restricts it to `Bash` (run the script). It sets no `model:`, so it runs on the session's model: on Sonnet it missed judgement rules in its test runs (see below).
 
 | Field | Value |
 |---|---|
@@ -4193,7 +4193,7 @@ The agent's frontmatter restricts it to `Bash` (run the script). `model: sonnet`
 - Requires `osv_vulnerabilities.py` and its `cli_utils.py` helper (plus the `requests` dependency) to be present and runnable from the repo root.
 - Only as good as the package name and ecosystem it picks; a wrong one gives an empty result that looks like a clean package.
 - The "lowest version that clears them all" is the agent's reading of the per-vulnerability fixed versions, not a figure the script computes; across several release lines it lists fixes per vulnerability instead.
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/package-vulnerabilities/test-runs.md`](docs/features/agent/package-vulnerabilities/test-runs.md) lists targeted live runs of its judgement rules (the lowest version that clears everything, never calling a clean result "safe", a misspelled name, a name in several registries, malware, no version given, the fix for one named bug); all passed on 2026-10-21.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/package-vulnerabilities/test-runs.md`](docs/features/agent/package-vulnerabilities/test-runs.md) lists targeted live runs of its judgement rules (the lowest version that clears everything, never calling a clean result "safe", a misspelled name, a name in several registries, malware, no version given, the fix for one named bug); all passed on 2026-10-21. A rerun on Sonnet on 2026-10-22 failed the misspelled-name and several-registries cases, so the agent went back to the session's model.
 - Inherits all the limitations of [`osv_vulnerabilities.py`](#osv_vulnerabilitiespy) itself.
 
 ---
@@ -5027,7 +5027,7 @@ It never runs more than one script once a prior one has already returned results
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the scripts and reading their stdout is all it needs. `model: sonnet` runs it on Sonnet, as its judgement is bounded.
+The agent's frontmatter restricts it to the `Bash` tool only, since running the scripts and reading their stdout is all it needs. It sets no `model:`, so it runs on the session's model: on Sonnet it skipped retries and named Brave in its test runs (see below).
 
 | Field | Value |
 |---|---|
@@ -5040,7 +5040,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - [`web_search_perplexity.py`](#web_search_perplexitypy) is deliberately excluded from this agent's fallback chain — it returns a synthesized answer plus sources, not a ranked `[{rank, title, url, snippet}, ...]` array, so it doesn't fit this agent's uniform result-list parsing. Use it directly (or via a dedicated agent) for "give me a cited answer" requests rather than "give me a list of pages" requests.
 - Inherits all the limitations of whichever underlying script actually serves the request — see that script's own "Notes / limitations" section.
 - The fallback order favors quota and official-API-ness over result quality; it does not compare or merge results across engines, it just uses the first one that works.
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/web-search/test-runs.md`](docs/features/agent/web-search/test-runs.md) lists targeted live runs of its fallback rules (normal path, missing key, invalid key, transient error, every engine failing), each forced with an environment variable on the command line. Their first run, on 2026-10-21, found two script bugs, both fixed: the scripts dropped the provider's error reason, and `web_search_serpapi.py` printed its key in connection errors.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/web-search/test-runs.md`](docs/features/agent/web-search/test-runs.md) lists targeted live runs of its fallback rules (normal path, missing key, invalid key, transient error, every engine failing), each forced with an environment variable on the command line. Their first run, on 2026-10-21, found two script bugs, both fixed: the scripts dropped the provider's error reason, and `web_search_serpapi.py` printed its key in connection errors. A rerun on Sonnet on 2026-10-22 skipped the network-error retries and named Brave, so the agent went back to the session's model.
 
 ---
 
@@ -5873,7 +5873,7 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 - Requires `url_feed.py` and its dependencies (`requests`, `defusedxml`, `beautifulsoup4`) to be runnable from the repo root.
 - Never scrapes a site that has no feed; it says so instead. To summarize posts, it points to the `url-summary` agent.
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/url-feed/test-runs.md`](docs/features/agent/url-feed/test-runs.md) lists targeted live runs of its judgement rules (a user-given site, a named site, a robots note, a date window beyond the feed, no feed, a robots refusal); all passed on 2026-10-21, and the `--since` run led to raising `--limit` with a date window.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/url-feed/test-runs.md`](docs/features/agent/url-feed/test-runs.md) lists targeted live runs of its judgement rules (a user-given site, a named site, a robots note, a date window beyond the feed, no feed, a robots refusal); all passed on 2026-10-21 and again on Sonnet on 2026-10-22, and the `--since` run led to raising `--limit` with a date window.
 - Inherits all the limitations of [`url_feed.py`](#url_feedpy) itself (short feed history, first advertised feed only, no JSON Feed).
 
 ---
@@ -6091,7 +6091,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - `--text` extraction is blunt (drops script/style, flattens the rest to one line, no paragraph breaks) — the agent summarizes from that flattened text, so nav/footer/cookie-banner text mixed into the extracted content can occasionally bleed into a summary.
 - The combined "how these pages relate" take, when given multiple URLs, is a judgment call made by the agent itself, not a deterministic script — it's included only when a real relationship exists, and omitted rather than invented for unrelated pages.
 - Sequential, one URL at a time — summarizing many URLs in one request means that many separate network round trips, not a single batched call.
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/url-summary/test-runs.md`](docs/features/agent/url-summary/test-runs.md) lists targeted live runs of its judgement rules (adding `https://`, truncation, a page with no title, the robots.txt disallow note, failed URLs kept in the report, a combined take only for related pages); all passed on 2026-10-21. The `ai-input=no` note is untested for want of a live site that sets it for every client.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/url-summary/test-runs.md`](docs/features/agent/url-summary/test-runs.md) lists targeted live runs of its judgement rules (adding `https://`, truncation, a page with no title, the robots.txt disallow note, failed URLs kept in the report, a combined take only for related pages); all passed on 2026-10-21 and again on Sonnet on 2026-10-22. The `ai-input=no` note is untested for want of a live site that sets it for every client.
 - Inherits all the limitations of [`url_content.py`](#url_contentpy) itself (no retry inside the script, bot-detection/Cloudflare challenges can surface as a false error, single-attempt GET, hard character-cutoff truncation).
 
 ---

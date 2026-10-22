@@ -30,21 +30,21 @@ The dates below are for today = Wednesday 2026-10-21.
 - **Question:** `What's the weather going to be like in Lisbon next week?`
 - **A correct run:** `trip_weather.py "Lisbon" --start 2026-10-26 --end 2026-11-01`; all seven days are forecast; the report states the dates, says there is no air-quality forecast that far ahead, and gives the forecast with UV and sun times.
 - **Found on 2026-10-21:** the report couldn't give the wind's unit, since the agent's field list didn't say. It now says km/h.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 (today Thursday) on Sonnet: passed, 2026-10-26 to 2026-11-01.
 
 ### 2. Forecast and typical weather in one trip
 
 - **Rule:** keep typical days visibly separate, labelled "typical weather for those dates over <years>, not a forecast", and never present them as a prediction.
 - **Question:** `I'm going to Kyoto from 3 to 10 November. What weather should I expect?`
 - **A correct run:** one run from 2026-11-03 to 2026-11-10; a forecast table for the first days and a separate, labelled table of typical days (with ranges and wet years); air quality said to be beyond its forecast.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed (forecast 3–6 November, typical 7–10 November).
 
 ### 3. A stay over 31 days
 
 - **Rule:** "For a longer stay, ask which part matters most, or run it in 31-day pieces."
 - **Question:** `I'll be staying in Cape Town for December and January. What will the weather be like?` (with the don't-ask instruction above).
 - **A correct run:** says what it would have asked, then runs two pieces within the limit (last time one per month) and explains why the two pieces' typical years differ (2021–2025 for December, 2022–2026 for January). Everything is labelled typical.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed, though it named the two pieces' years without explaining why they differ.
 
 ### 4. Past dates
 
@@ -52,14 +52,14 @@ The dates below are for today = Wednesday 2026-10-21.
 - **Question:** `What was the weather like in Rome last week during my trip?`
 - **A correct run:** runs nothing, gives no figures, and points to the `weather-history` agent with the dates worked out (2026-10-12 to 2026-10-18).
 - **Found on 2026-10-21:** the agent added the Open-Meteo credit line although nothing was fetched. Harmless, but the credit rule now says it's for reports with figures from the tool.
-- **Last checked:** 2026-10-21, passed. Rerun the same day in a session started after the fix: passed, with no command run and no credit line.
+- **Last checked:** 2026-10-21, passed. Rerun the same day in a session started after the fix: passed, with no command run and no credit line. Rerun on 2026-10-22 on Sonnet: passed, with no command run and no credit line.
 
 ### 5. Packing advice and air quality
 
 - **Rules:** advice only from the figures; air quality as each day's worst hour; never combine the US and European AQI; say pollen is Europe-only.
 - **Question:** `I fly to Delhi tomorrow for three days. What should I pack, and is the air OK?`
 - **A correct run:** 2026-10-22 to 2026-10-24, all forecast with air quality; the report answers "is the air OK" plainly (last time US AQI 170–187, Unhealthy), keeps the European AQI separate, and grounds every packing item in a figure.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed, 2026-10-23 to 2026-10-25, US AQI 177–181 (Unhealthy).
 
 ### 6. Fahrenheit, all typical
 
@@ -67,14 +67,14 @@ The dates below are for today = Wednesday 2026-10-21.
 - **Question:** `We're taking the kids to Orlando from December 20 to 27 — what kind of temperatures in °F should we expect?`
 - **A correct run:** `--unit fahrenheit`, eight typical days labelled as such, a cold-snap caveat from the ranges, and advice to re-check once the dates are within the forecast.
 - **Found on 2026-10-21:** the agent noticed that the typical days' sun times were an hour late (sunset 18:33 instead of about 17:33). The cause was Open-Meteo applying the place's offset *today* (EDT) to every date, including December (EST). It affected `weather_history.py` and forecast days after a daylight-saving change too. Fixed the same day in `weather.local_daily()`, which converts sunrise and sunset to each date's own offset; the agent's one-hour correction is no longer needed.
-- **Last checked:** 2026-10-21, passed. Rerun the same day after the fix: passed, with sunsets of 17:33–17:37 EST straight from the tool and no correction by the agent. It ended with two credit lines (the short one, then the tool's `attribution` text); redundant but harmless.
+- **Last checked:** 2026-10-21, passed. Rerun the same day after the fix: passed, with sunsets of 17:33–17:37 EST straight from the tool and no correction by the agent. It ended with two credit lines (the short one, then the tool's `attribution` text); redundant but harmless. Rerun on 2026-10-22 on Sonnet: passed, with sunsets of 17:33–17:37 from the tool, but without the advice to re-check once the dates are within the forecast.
 
 ### 7. An ambiguous place name
 
 - **Rule:** add a qualifier from context when a place name is ambiguous; turn "the weekend" into the coming Saturday and Sunday.
 - **Question:** `We're driving down from Chicago to Springfield for the weekend. What's the weather going to be like?` (with the don't-ask instruction above).
 - **A correct run:** `trip_weather.py "Springfield, Illinois" --start 2026-10-24 --end 2026-10-25`, resolved to Springfield, Illinois; the report names the place it used and says both days are forecast. Last time the agent also chose `--unit fahrenheit` as clearly expected for a US trip, which the rule allows.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed, with `--unit fahrenheit` again.
 
 ## Not covered
 

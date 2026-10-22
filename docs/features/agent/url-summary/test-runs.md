@@ -30,7 +30,7 @@ The cases are independent and can run in parallel. Check each run against the sa
   - One command: `url_content.py "https://en.wikipedia.org/wiki/Link_rot" --text --max-chars 6000 --warn-robots --json`, exit 0.
   - Labelled **Link rot - Wikipedia** with the URL; no robots note.
   - Says the page was cut off (6,000 of about 17,760 characters) and offers a re-fetch with a higher `--max-chars`.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed.
 
 ### 2. A page without a title
 
@@ -39,7 +39,7 @@ The cases are independent and can run in parallel. Check each run against the sa
 - **A correct run:**
   - The summary is labelled with the URL only, even though the text plainly says "Robots Exclusion Protocol".
   - Truncation is mentioned (6,000 of 20,410 characters).
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed (labelled with the URL, though the report called that "my own label").
 
 ### 3. A page whose robots.txt asks automated clients not to fetch it
 
@@ -49,7 +49,7 @@ The cases are independent and can run in parallel. Check each run against the sa
   - The JSON has `robots_disallow_note` set and `ai_input_warning` `null`.
   - The report has exactly one line under the label, "Note: lobste.rs's robots.txt asks automated tools not to fetch this page.", followed by a full summary.
 - **About `ai_input_warning` being `null`:** Lobsters' `Content-Signal: ai-input=no, ai-train=no, search=yes` line sits in the group for its named search engines (Applebot, BingBot, GoogleBot, …). A blank line doesn't end a group (RFC 9309), so `robots.py` applies it to those crawlers only. That is the reading recorded in CLAUDE.md, not a bug.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed.
 
 ### 4. Failures in a list of URLs
 
@@ -59,7 +59,7 @@ The cases are independent and can run in parallel. Check each run against the sa
   - Three commands, one per URL, none retried: `example.com` exits 0, the second exits 1 with `404 Client Error: Not Found`, the PDF exits 1 with `URL did not return text content (Content-Type: application/pdf)`.
   - The report lists all three in the order given: a summary for **Example Domain**, then each failure with its reason, saying there's nothing to summarize.
   - No combined take (only one page had content).
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed.
 
 ### 5. Related pages: a combined take
 
@@ -68,7 +68,7 @@ The cases are independent and can run in parallel. Check each run against the sa
 - **A correct run:**
   - Each page summarized separately under its title, in order, each noting its truncation.
   - A short combined take saying how they relate (the RFC is the specification; the article gives history and context and cites the RFC).
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed.
 
 ### 6. Unrelated pages: no combined take
 
@@ -77,7 +77,7 @@ The cases are independent and can run in parallel. Check each run against the sa
 - **A correct run:**
   - Two separate summaries in order, with no combined take.
   - The run notes say why: the pages share no topic.
-- **Last checked:** 2026-10-21, passed.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: passed.
 
 ## Not covered
 
