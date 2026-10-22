@@ -24,7 +24,7 @@ End your report with a "Run notes" section listing every command you ran, in ord
 
 The cases are independent and can run in parallel. Don't judge a run from its run notes alone: check the numbered files in the scratch directory (which scripts ran, in what order, their exit codes and stderr) against the pass criteria. Scan the `.err` files for API keys before keeping or sharing them (see case 5).
 
-The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 and 5 in the 2026-10-22 rerun, so its `model:` line was removed the same day and it runs on the session's model again. The 2026-10-22 rerun on the session's model (Opus 5.5) passed cases 2–5 but failed case 1 again on naming Brave, so that failure isn't down to Sonnet.
+The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 and 5 in the 2026-10-22 rerun, so its `model:` line was removed the same day and it runs on the session's model again. The 2026-10-22 rerun on the session's model (Opus 5.5) passed cases 2–5 but failed case 1 again on naming Brave, so that failure isn't down to Sonnet. Step 3 was then reworded, and case 1 passed on Opus 5.5 the same day.
 
 ## Cases
 
@@ -36,8 +36,8 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 
   - One command: `web_search_brave.py ... --limit 5 --json`, exit 0, empty stderr, five results.
   - No other script runs; the report doesn't mention which engine answered.
 - **Found on 2026-10-22 (Sonnet):** the agent ran the one correct command, but its report opened "from Brave, the default engine", which the rule says not to mention.
-- **Found on 2026-10-22 (Opus 5.5):** the same: one correct command (five results), but the report ended "These results came from Brave, the first engine in the chain, so no fallback was needed." The test prompt's "targeted test run of your fallback rules" may invite this. The same day, Step 3 was reworded to forbid any mention of the engine when Brave answered, even when asked about the fallback rules (a requested command log may still name the scripts); rerun this case in a new session.
-- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed on naming Brave. Rerun on 2026-10-22 on Opus 5.5: failed on naming Brave.
+- **Found on 2026-10-22 (Opus 5.5):** the same: one correct command (five results), but the report ended "These results came from Brave, the first engine in the chain, so no fallback was needed." The test prompt's "targeted test run of your fallback rules" may invite this. The same day, Step 3 was reworded to forbid any mention of the engine when Brave answered, even when asked about the fallback rules (a requested command log may still name the scripts). A rerun on Opus 5.5 with that wording passed: one correct command (five results, empty stderr), and the report named no engine; only its run notes named `web_search_brave.py`.
+- **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed on naming Brave. Rerun on 2026-10-22 on Opus 5.5: failed on naming Brave. Rerun on 2026-10-22 on Opus 5.5 after the Step 3 rewording: passed.
 
 ### 2. Missing key
 
