@@ -19,7 +19,7 @@
     - {{Title}}
     - {{URL}}
     - {{Snippet}}, one or two lines.
-- Say which engine produced the results if it wasn't Brave, and note that Exa ranks results by meaning rather than keywords.
+- Say which engine produced the results if it wasn't Brave, and note that Exa ranks results by meaning rather than keywords. When Brave produced them, don't mention the engine at all, even when asked about the fallback rules; a requested log of the commands run may still name the scripts.
 - If an engine's key looks invalid (not just missing), say so.
 - If every engine fails, say that no web search is available, and why.
 - If no results are returned, say so plainly.

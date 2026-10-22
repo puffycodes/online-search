@@ -5021,13 +5021,13 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 4. If that also fails (missing `TAVILY_API_KEY`, exhausted credits, request error), falls back to `python3 web_search_serpapi.py "QUERY" --json`.
 5. If that also fails (missing `SERPAPI_API_KEY`, exceeded quota, request error), falls back to `python3 web_search_exa.py "QUERY" --json`.
 6. If that also fails (missing `EXA_API_KEY`, exhausted credit, request error), falls back to `python3 web_search_duckduckgo.py "QUERY" --json`, which needs no key but is unofficial and rate-limit-prone.
-7. Reports the first successful script's results as a numbered list (title, URL, snippet), noting when a fallback occurred so the user knows results came from a lower-quota, unofficial, or differently-indexed source (called out explicitly for Exa, whose semantic ranking can look different from a keyword engine's). If all six fail, it says so plainly rather than answering from its own knowledge.
+7. Reports the first successful script's results as a numbered list (title, URL, snippet), noting when a fallback occurred so the user knows results came from a lower-quota, unofficial, or differently-indexed source (called out explicitly for Exa, whose semantic ranking can look different from a keyword engine's). When Brave answered, it doesn't mention the engine at all. If all six fail, it says so plainly rather than answering from its own knowledge.
 
 It never runs more than one script once a prior one has already returned results, and retries a given script at most once, only for a transient-looking network error.
 
 ### Configuration
 
-The agent's frontmatter restricts it to the `Bash` tool only, since running the scripts and reading their stdout is all it needs. It sets no `model:`, so it runs on the session's model: on Sonnet it skipped retries and named Brave in its test runs (see below).
+The agent's frontmatter restricts it to the `Bash` tool only, since running the scripts and reading their stdout is all it needs. It sets no `model:`, so it runs on the session's model: on Sonnet it skipped retries in its test runs (see below).
 
 | Field | Value |
 |---|---|
@@ -5040,7 +5040,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - [`web_search_perplexity.py`](#web_search_perplexitypy) is deliberately excluded from this agent's fallback chain — it returns a synthesized answer plus sources, not a ranked `[{rank, title, url, snippet}, ...]` array, so it doesn't fit this agent's uniform result-list parsing. Use it directly (or via a dedicated agent) for "give me a cited answer" requests rather than "give me a list of pages" requests.
 - Inherits all the limitations of whichever underlying script actually serves the request — see that script's own "Notes / limitations" section.
 - The fallback order favors quota and official-API-ness over result quality; it does not compare or merge results across engines, it just uses the first one that works.
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/web-search/test-runs.md`](docs/features/agent/web-search/test-runs.md) lists targeted live runs of its fallback rules (normal path, missing key, invalid key, transient error, every engine failing), each forced with an environment variable on the command line. Their first run, on 2026-10-21, found two script bugs, both fixed: the scripts dropped the provider's error reason, and `web_search_serpapi.py` printed its key in connection errors. A rerun on Sonnet on 2026-10-22 skipped the network-error retries and named Brave, so the agent went back to the session's model.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/web-search/test-runs.md`](docs/features/agent/web-search/test-runs.md) lists targeted live runs of its fallback rules (normal path, missing key, invalid key, transient error, every engine failing), each forced with an environment variable on the command line. Their first run, on 2026-10-21, found two script bugs, both fixed: the scripts dropped the provider's error reason, and `web_search_serpapi.py` printed its key in connection errors. A rerun on Sonnet on 2026-10-22 skipped the network-error retries and named Brave, so the agent went back to the session's model. A rerun on the session's model the same day fixed the retries but still named Brave, so the rule against naming it was made explicit.
 
 ---
 

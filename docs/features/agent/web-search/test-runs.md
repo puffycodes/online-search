@@ -36,7 +36,7 @@ The agent ran on Sonnet (`model: sonnet`) from 2026-10-21 and failed cases 1, 4 
   - One command: `web_search_brave.py ... --limit 5 --json`, exit 0, empty stderr, five results.
   - No other script runs; the report doesn't mention which engine answered.
 - **Found on 2026-10-22 (Sonnet):** the agent ran the one correct command, but its report opened "from Brave, the default engine", which the rule says not to mention.
-- **Found on 2026-10-22 (Opus 5.5):** the same: one correct command (five results), but the report ended "These results came from Brave, the first engine in the chain, so no fallback was needed." The test prompt's "targeted test run of your fallback rules" may invite this, so the rule itself may need firmer wording.
+- **Found on 2026-10-22 (Opus 5.5):** the same: one correct command (five results), but the report ended "These results came from Brave, the first engine in the chain, so no fallback was needed." The test prompt's "targeted test run of your fallback rules" may invite this. The same day, Step 3 was reworded to forbid any mention of the engine when Brave answered, even when asked about the fallback rules (a requested command log may still name the scripts); rerun this case in a new session.
 - **Last checked:** 2026-10-21, passed. Rerun on 2026-10-22 on Sonnet: failed on naming Brave. Rerun on 2026-10-22 on Opus 5.5: failed on naming Brave.
 
 ### 2. Missing key
