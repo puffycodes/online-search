@@ -170,6 +170,26 @@ before the top picks because it's about the repo's existing sources, not new one
   dropped. Check EODHD's bulk end-of-day and screener APIs for the same problems
   before choosing it for markets outside the US.
 
+  **Other top-mover sources**, checked on 2026-10-22 from each provider's docs
+  (none tested with a key). None is free with full coverage, and none is live on
+  the free or cheap plans.
+
+  | Source | Volume | Gainers / losers | Markets | Cost | Notes |
+  |---|---|---|---|---|---|
+  | **EODHD screener** (`/api/screener`) | yes, sort by `avgvol_1d` (last day's volume) | yes, sort by `refund_1d_p` (1-day % change) | `exchange` filter (`us`, `lse`, `to`, …) and `sub_exchange` (NYSE / NASDAQ) | 5 calls per request; EOD+Intraday ($29.99) or All-In-One, not Historian | Returns names; a `market_capitalization` filter could drop warrants and penny stocks. End of day only (`last_day_data_date`). Up to 500 rows per request |
+  | **EODHD bulk end of day** | computed by the script | computed by the script | one exchange per request | about 100 calls per exchange (a forum thread, not the pricing page); Historian ($19.99) | No names or market cap |
+  | **Twelve Data** `/market_movers/stocks` | no | yes, with name, exchange and a `price_greater_than` filter | `country` filter; up to 50 rows | 100 credits per request; Pro plan ($229) | No volume metric |
+  | **Alpaca** `/v1beta1/screener/stocks/most-actives` | yes, by volume or trade count, top 1–100 | not confirmed | US only (SIP) | free plan access unclear; needs an Alpaca account | Symbol, volume and trade count only. Terms not read |
+  | **FMP** `actives` / `gainers` / `losers` | yes | yes | probably US only | free tier unclear | Terms not read (site returns 403 to automated fetches) |
+
+  Exchanges' own websites (Nasdaq.com, LSE, …) weren't checked; they would be page
+  scraping, not a documented API, and need their own robots.txt and terms check.
+  **Best fit:** the EODHD screener on EOD+Intraday ($29.99, $10 more than
+  Historian), which covers all three metrics, the NYSE / NASDAQ split, names and a
+  market-cap filter on one provider. Before choosing it, confirm which non-US
+  exchanges it covers and whether its 1-day % change has Alpha Vantage's
+  junk-ticker problem.
+
   **Recommended:** Alpha Vantage as the single provider (a shared module in place
   of `yahoo_finance.py`, with `ALPHAVANTAGE_API_KEY` in `.env`), SEC EDGAR later for
   US fundamentals and insider data to save Alpha Vantage requests. **No free
