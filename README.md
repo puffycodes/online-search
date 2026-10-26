@@ -56,6 +56,7 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/stock-analyst-targets.md`](#claude-code-agent-stock-analyst-targets) — Claude Code subagent that calls `stock_analyst_targets.py` and summarizes what analysts think of a named stock
 - [`stock_holders.py`](#stock_holderspy) — pulls a stock's ownership breakdown (insiders / institutions), recent insider transactions sorted into sales, purchases, awards, gifts and buybacks, and its top fund and institutional holders from Yahoo Finance
 - [`.claude/agents/stock-holders.md`](#claude-code-agent-stock-holders) — Claude Code subagent that calls `stock_holders.py` and reports who owns a named stock and what its insiders have been doing
+- [`.claude/agents/stock-deep-dive.md`](#claude-code-agent-stock-deep-dive) — Claude Code subagent that chains the fundamentals, intrinsic value, analyst targets, holders, earnings calendar and price history scripts (with `indicators.py`) into one report on a named company's stock
 - [`docs/`](docs/) — plain-English guides to the [indicators](docs/indicators.md) (`indicators.py`) and the [valuation methods](docs/valuations.md) (`valuation.py`), for readers who want the concepts without the API detail; plus a feature spec (`features.md`) for every [script](docs/features/script/) and [agent](docs/features/agent/)
 
 **[Tech News & Discussions](#tech-news--discussions)**
@@ -3227,6 +3228,49 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 - Requires `stock_holders.py` and its `yahoo_finance.py` / `stock_intrinsic_value.py` / `cli_utils.py` helpers (and `requests`) to be runnable from the repo root.
 - Inherits all the limitations of [`stock_holders.py`](#stock_holderspy): thin and differently-shaped non-US data, periodic holder filings, unspecified US rows.
+
+---
+
+## Claude Code agent: `stock-deep-dive`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-deep-dive.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to six scripts in a fixed order: [`stock_fundamental.py`](#stock_fundamentalpy), [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_analyst_targets.py`](#stock_analyst_targetspy), [`stock_holders.py`](#stock_holderspy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy) and [`stock_price_history.py`](#stock_price_historypy), with [`indicators.py`](#indicatorspy) for the trend and risk figures.
+
+### Purpose
+
+Lets Claude Code answer requests like "give me a deep dive on Apple", "full report on NVDA" or "what's the whole picture on Vodafone?" with one report that puts a company's fundamentals, valuation, analyst view, ownership and insider trading, earnings calendar and price trend side by side, instead of six separate agent calls.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own when the user wants an all-round look at one named company's stock, based on the `description` field in its frontmatter. A question about a single aspect goes to that aspect's agent instead ([`stock-fundamental`](#claude-code-agent-stock-fundamental), [`stock-intrinsic-value`](#claude-code-agent-stock-intrinsic-value), [`stock-analyst-targets`](#claude-code-agent-stock-analyst-targets), [`stock-holders`](#claude-code-agent-stock-holders), [`stock-earnings-calendar`](#claude-code-agent-stock-earnings-calendar), [`stock-trend`](#claude-code-agent-stock-trend), [`stock-risk`](#claude-code-agent-stock-risk)).
+- **Explicitly** — via the `Agent` tool with `subagent_type: "stock-deep-dive"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Resolves the company to a Yahoo ticker, adding the exchange suffix for non-US listings; if the ticker is uncertain it says so rather than guessing. It declines indices, currency pairs, crypto, commodities and ETFs without running anything, and covers one company per report.
+2. Runs `stock_fundamental.py SYMBOL --json` alone first as the ticker check, saving its output to `/tmp/deep_dive_SYMBOL/`. If Yahoo returns no fundamentals it retries once for a confident ticker, then stops without running the rest.
+3. Runs the other five scripts into the same directory: `stock_intrinsic_value.py` (default assumptions, or the user's), `stock_analyst_targets.py` (90 days of firm actions), `stock_holders.py --trades-only` (180 days), `stock_earnings_calendar.py` and `stock_price_history.py --range 1y`. It skips the price fetch for Singapore (`.SI`) and Tokyo (`.T`), which the price source doesn't cover. A failed script loses only its own section, after at most one retry for a transient error.
+4. Reads the results through a digest step (a Python snippet passed the directory as an argument) that keeps only the rating changes among the analyst actions, the top 5 insiders and top 3 holders, and computes from the year of prices the change, the trend over the year and the last 60 and 20 sessions (`trend()`), the 50- and 200-session averages, the distance from the high, annualized volatility (`volatility()`) and the worst fall with its dates (`max_drawdown()`). For AAPL that is about 8 KB of digest in place of about 80 KB of JSON.
+5. Writes the report: a heading line, an "at a glance" list of what stands out (and where the sections disagree), then business quality, valuation, analysts, ownership and insiders, earnings and dividends, price trend and risk, and the gaps. It reads each tool's figures by the same rules as that tool's own agent and gives no buy / sell / hold view of its own. It closes with a caveat that this is one point-in-time snapshot of Yahoo Finance and EODHD / Alpha Vantage data, mechanical and assumption-sensitive, and not investment advice.
+
+### Configuration
+
+The agent's frontmatter restricts it to `Bash` (run the scripts and read their JSON). It sets no `model`, so it runs on the session's model: the report weighs six tools' output against each other, as `stock-intrinsic-value` does with its scenarios.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying scripts | [`stock_fundamental.py`](#stock_fundamentalpy), [`stock_intrinsic_value.py`](#stock_intrinsic_valuepy), [`stock_analyst_targets.py`](#stock_analyst_targetspy), [`stock_holders.py`](#stock_holderspy), [`stock_earnings_calendar.py`](#stock_earnings_calendarpy), [`stock_price_history.py`](#stock_price_historypy) |
+| Underlying module | [`indicators.py`](#indicatorspy) |
+| Test runs | [`docs/features/agent/stock-deep-dive/test-runs.md`](docs/features/agent/stock-deep-dive/test-runs.md) |
+
+### Notes / limitations
+
+- Requires the six scripts and their helpers (`stock_data.py`, `yahoo_finance.py`, `price_source.py`, `indicators.py`, `valuation.py`, `cli_utils.py`), `requests`, and an `EODHD_API_KEY` (plus `ALPHAVANTAGE_API_KEY` for Indian stocks) for the price section, all runnable from the repo root.
+- Each report makes five Yahoo `quoteSummary` calls and one price call, which is one of EODHD's 20 free calls a day.
+- Inherits the limitations of every script it chains: one trailing snapshot of Yahoo's unofficial data, thin non-US analyst and holder data, assumption-sensitive valuations, and a year of price history on EODHD's free plan.
+- The targeted live cases in `test-runs.md` were written on 2026-10-26 and haven't been run through the agent yet; the digest step was checked by hand on AAPL.
 
 ---
 

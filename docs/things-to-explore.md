@@ -333,9 +333,8 @@ the RSS/Atom feed reader). Choose the next ones from the sections below.
 
 No new data source, so nothing new to vet; mostly agent work or small glue scripts.
 
-- [ ] **Stock deep-dive agent**: one request chains fundamentals, intrinsic value,
-  analyst targets, holders, the earnings calendar and the trend for one ticker into
-  a single report, the way the research summary agent chains its tools.
+Nothing open: the stock deep-dive agent was built on 2026-10-26
+(`.claude/agents/stock-deep-dive.md`).
 
 ## Weather and environment
 
