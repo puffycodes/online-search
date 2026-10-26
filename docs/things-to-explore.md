@@ -148,7 +148,10 @@ before the top picks because it's about the repo's existing sources, not new one
   (`FTSE.INDX`) returns no data; EODHD's code for it is still to find. Still to
   do: add Databento for futures; revisit Singapore and Tokyo; replace the
   screener, the `quoteSummary` scripts and the stock web app's quote, which
-  still call Yahoo.
+  still call Yahoo. **2026-10-26:** `PRICE_PROVIDER=yahoo` (in `.env`) switches
+  the price scripts back to Yahoo's chart endpoint as an opt-in, off by default;
+  it covers `.SI`, `.T`, `=F` and `^FTSE` but fails the source audit, so it is a
+  stopgap, not the fix.
 
   **Alpha Vantage `TOP_GAINERS_LOSERS` tested** for `market_top_volume.py` on
   2026-10-22 with the free key (1 call). It returned three US-wide lists of 20

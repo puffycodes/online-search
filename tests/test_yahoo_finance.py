@@ -3,7 +3,7 @@ fetch_quote_summary, summary_num/summary_text, build_params, meta_summary, extra
 fetch_history, and the stock_data adapter (parse_analyst_view, analyst_view,
 parse_earnings_view, earnings_view, parse_holders_view, holders_view and its
 transaction helpers, parse_fundamentals_view, fundamentals_view, the screeners behind
-top_movers, and parse_quote / quote)."""
+top_movers, parse_quote / quote, and parse_daily_history / daily_history)."""
 
 import argparse
 import datetime as dt
@@ -1236,3 +1236,53 @@ class TestQuote:
         assert calls[0][0] == "AAA"
         assert calls[0][1]["range"] == yf.QUOTE_RANGE
         assert calls[0][1]["interval"] == "1d"
+
+
+class TestParseDailyHistory:
+    def test_neutral_shape(self, chart_result):
+        history = yf.parse_daily_history(chart_result, "AAA")
+        assert history["source"] == yf.SOURCE
+        assert history["notes"] == [yf.HISTORY_NOTE]
+        assert (history["symbol"], history["exchange"], history["currency"]) ==             ("AAA", "TestExchange", "USD")
+        assert history["bars"][0] == {"date": "2024-01-01", "open": 10.0, "high": 10.5,
+                                      "low": 9.5, "close": 10.2, "adj_close": 10.1,
+                                      "volume": 1000}
+        assert [b["date"] for b in history["bars"]] == ["2024-01-01", "2024-01-02",
+                                                        "2024-01-03"]
+
+    def test_unsettled_bar_is_passed_on(self, chart_result):
+        chart_result["indicators"]["quote"][0]["close"][-1] = None
+        bars = yf.parse_daily_history(chart_result, "AAA")["bars"]
+        assert len(bars) == 3 and bars[-1]["close"] is None
+
+    def test_dates_are_exchange_local(self, chart_result):
+        chart_result["meta"]["gmtoffset"] = -5 * 3600  # 2024-01-01 00:00 UTC is 31 Dec
+        assert yf.parse_daily_history(chart_result, "AAA")["bars"][0]["date"] == "2023-12-31"
+
+    def test_missing_adjclose_and_short_lists_are_none(self, chart_result):
+        del chart_result["indicators"]["adjclose"]
+        chart_result["indicators"]["quote"][0]["volume"] = [1000]
+        bars = yf.parse_daily_history(chart_result, "AAA")["bars"]
+        assert all(b["adj_close"] is None for b in bars)
+        assert [b["volume"] for b in bars] == [1000, None, None]
+
+    def test_symbol_falls_back(self, chart_result):
+        del chart_result["meta"]["symbol"]
+        assert yf.parse_daily_history(chart_result, "BBB")["symbol"] == "BBB"
+
+
+class TestDailyHistory:
+    def test_passes_the_window_through(self, monkeypatch, chart_result):
+        calls = []
+        monkeypatch.setattr(yf, "fetch_history",
+                            lambda s, p: calls.append((s, p)) or chart_result)
+        params = yf.build_params(interval="1wk", range_="6mo")
+        assert yf.daily_history("AAA", params)["bars"]
+        assert calls == [("AAA", params)]
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, params):
+            raise requests.RequestException("No data found, symbol may be delisted")
+        monkeypatch.setattr(yf, "fetch_history", boom)
+        with pytest.raises(requests.RequestException, match="delisted"):
+            yf.daily_history("ZZZ", yf.build_params(range_="1mo"))

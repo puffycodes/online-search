@@ -8,7 +8,8 @@ to the adapter that serves it. Swapping a provider then means changing one
 entry in PROVIDERS, not a script. See docs/things-to-explore.md ("Proposed
 design") for the full list of functions planned. Every stock script and the
 stock web app get their data here: daily_history(), served by
-price_source.py (EODHD, and Alpha Vantage for India), and analyst_view(),
+price_source.py (EODHD, and Alpha Vantage for India) unless
+PRICE_PROVIDER=yahoo switches it to yahoo_finance.py, and analyst_view(),
 earnings_view(), holders_view(), fundamentals_view(), top_movers() and
 quote(), served by yahoo_finance.py.
 
@@ -24,8 +25,11 @@ Fetch failures raise requests.RequestException (or ValueError / KeyError for
 a malformed answer), which the scripts turn into an exit-1 error.
 """
 
+import os
+
 import price_source
 import yahoo_finance as yf
+from cli_utils import load_dotenv
 
 # function name -> adapter callable with the same signature
 PROVIDERS = {
@@ -38,6 +42,11 @@ PROVIDERS = {
     "mover_markets": yf.mover_markets,
     "quote": yf.quote,
 }
+
+# PRICE_PROVIDER (in .env or the environment) -> daily_history()'s adapter.
+# Unset or "default" means PROVIDERS["daily_history"]; "yahoo" opts in to
+# Yahoo's chart endpoint, which fails the source audit (docs/source-audit.md).
+PRICE_PROVIDERS = {"yahoo": yf.daily_history}
 
 # The rankings top_movers() offers.
 MOVER_METRICS = ("volume", "gainers", "losers")
@@ -69,7 +78,19 @@ def daily_history(symbol, params):
                                             # lacks is None, and a bar with no
                                             # close is an unsettled session
     """
-    return PROVIDERS["daily_history"](symbol, params)
+    return _price_provider()(symbol, params)
+
+
+def _price_provider():
+    """daily_history()'s adapter: PROVIDERS's, unless PRICE_PROVIDER names another."""
+    load_dotenv()
+    name = os.environ.get("PRICE_PROVIDER", "").strip().lower()
+    if name in ("", "default"):
+        return PROVIDERS["daily_history"]
+    if name not in PRICE_PROVIDERS:
+        choices = ", ".join(["default", *PRICE_PROVIDERS])
+        raise ValueError(f"PRICE_PROVIDER={name!r} is not one of: {choices}")
+    return PRICE_PROVIDERS[name]
 
 
 def analyst_view(symbol, days):

@@ -140,6 +140,7 @@ class TestRouting:
         assert stock_data.PROVIDERS["daily_history"] is price_source.daily_history
 
     def test_daily_history_delegates_to_its_provider(self, monkeypatch):
+        _price_provider_env(monkeypatch, None)
         seen = []
         monkeypatch.setitem(stock_data.PROVIDERS, "daily_history",
                             lambda s, p: seen.append((s, p)) or {"ok": True})
@@ -351,6 +352,56 @@ class TestLabel:
         assert stock_data.label(view) == ("?", "?", "")
 
 
+def _price_provider_env(monkeypatch, value):
+    """Set PRICE_PROVIDER (None clears it) without reading the real .env."""
+    monkeypatch.setattr(stock_data, "load_dotenv", lambda: None)
+    if value is None:
+        monkeypatch.delenv("PRICE_PROVIDER", raising=False)
+    else:
+        monkeypatch.setenv("PRICE_PROVIDER", value)
+
+
+class TestPriceProvider:
+    """PRICE_PROVIDER picks daily_history()'s adapter; unset keeps PROVIDERS's."""
+
+    @pytest.fixture
+    def calls(self, monkeypatch):
+        seen = []
+        monkeypatch.setitem(stock_data.PROVIDERS, "daily_history",
+                            lambda s, p: seen.append("default") or {})
+        monkeypatch.setitem(stock_data.PRICE_PROVIDERS, "yahoo",
+                            lambda s, p: seen.append("yahoo") or {})
+        return seen
+
+    @pytest.mark.parametrize("value", [None, "", "default", " Default "])
+    def test_unset_or_default_uses_providers(self, monkeypatch, calls, value):
+        _price_provider_env(monkeypatch, value)
+        stock_data.daily_history("AAA", {"range": "1mo"})
+        assert calls == ["default"]
+
+    @pytest.mark.parametrize("value", ["yahoo", "YAHOO", " yahoo "])
+    def test_yahoo_opts_in(self, monkeypatch, calls, value):
+        _price_provider_env(monkeypatch, value)
+        stock_data.daily_history("AAA", {"range": "1mo"})
+        assert calls == ["yahoo"]
+
+    def test_unknown_value_raises_value_error(self, monkeypatch, calls):
+        _price_provider_env(monkeypatch, "stooq")
+        with pytest.raises(ValueError, match="PRICE_PROVIDER='stooq'.*default, yahoo"):
+            stock_data.daily_history("AAA", {"range": "1mo"})
+        assert calls == []
+
+    def test_yahoo_is_the_chart_adapter(self):
+        assert stock_data.PRICE_PROVIDERS["yahoo"] is yf.daily_history
+
+    def test_reads_dotenv(self, monkeypatch, calls):
+        monkeypatch.delenv("PRICE_PROVIDER", raising=False)
+        monkeypatch.setattr(stock_data, "load_dotenv",
+                            lambda: monkeypatch.setenv("PRICE_PROVIDER", "yahoo"))
+        stock_data.daily_history("AAA", {"range": "1mo"})
+        assert calls == ["yahoo"]
+
+
 BAR_KEYS = {"date", "open", "high", "low", "close", "adj_close", "volume"}
 
 
@@ -371,6 +422,28 @@ class TestDailyHistoryContract:
     def test_keys(self, history):
         assert set(history) == {"source", "notes", "symbol", "exchange", "currency", "bars"}
         assert isinstance(history["source"], str) and history["notes"] == ["a note"]
+        assert history["bars"] and all(set(b) == BAR_KEYS for b in history["bars"])
+
+    def test_values_are_plain(self, history):
+        for bar in history["bars"]:
+            assert _iso(bar["date"])
+            assert all(bar[k] is None or isinstance(bar[k], (int, float))
+                       for k in BAR_KEYS - {"date"})
+        assert history["bars"][-1]["close"] is None  # an unsettled bar is passed on
+
+
+class TestYahooDailyHistoryContract:
+    """yahoo_finance.daily_history() over a stubbed chart result (no network)."""
+
+    @pytest.fixture
+    def history(self, monkeypatch, chart_result):
+        chart_result["indicators"]["quote"][0]["close"][-1] = None
+        monkeypatch.setattr(yf, "fetch_history", lambda s, p: chart_result)
+        return yf.daily_history("AAA", yf.build_params(range_="1mo"))
+
+    def test_keys(self, history):
+        assert set(history) == {"source", "notes", "symbol", "exchange", "currency", "bars"}
+        assert isinstance(history["source"], str) and history["notes"]
         assert history["bars"] and all(set(b) == BAR_KEYS for b in history["bars"])
 
     def test_values_are_plain(self, history):

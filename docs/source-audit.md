@@ -15,7 +15,7 @@ crawlers; for those the API's own terms decide.
 
 | Source | Used by | Verdict | Action |
 |---|---|---|---|
-| Yahoo Finance (chart, screener, quoteSummary) | `yahoo_finance.py`, the `quoteSummary` `stock_*.py` scripts, `market_top_volume.py`, `stock_tech_buzz_agent.py`, `app/stock_information/`, 6 agents | **Violates** robots.txt and terms | **Open:** price history moved to EODHD / Alpha Vantage on 2026-10-21 (`price_source.py`); the rest still to remove or replace |
+| Yahoo Finance (chart, screener, quoteSummary) | `yahoo_finance.py`, the `quoteSummary` `stock_*.py` scripts, `market_top_volume.py`, `stock_tech_buzz_agent.py`, `app/stock_information/`, 6 agents | **Violates** robots.txt and terms | **Open:** price history moved to EODHD / Alpha Vantage on 2026-10-21 (`price_source.py`), with Yahoo back as an opt-in (`PRICE_PROVIDER=yahoo`, off by default) since 2026-10-26; the rest still to remove or replace |
 | `ddgs` default `"auto"` backend | `web_search_duckduckgo.py` | **Violated** robots.txt of Google, Yahoo, Startpage, Mojeek, Grokipedia | **Fixed** 2026-10-20: backend pinned to DuckDuckGo |
 | DuckDuckGo HTML results | `web_search_duckduckgo.py` | Grey area: allowed by robots.txt, no search API offered | Kept, last in the `web-search` chain |
 | Open-Meteo | `weather.py`, `weather_forecast.py`, `weather_history.py`, `air_quality.py`, 4 agents | Allowed; **attribution was missing** | **Fixed** 2026-10-20: CC BY 4.0 credit on every result |
@@ -57,7 +57,10 @@ crawlers; for those the API's own terms decide.
   2026-10-21 the four price scripts (`stock_price_history.py`, the two chart
   scripts and `stock_risk.py`) and their 5 agents moved to EODHD and Alpha
   Vantage through `price_source.py`; the screener, `quoteSummary` scripts and the
-  stock web app's quote still call Yahoo.
+  stock web app's quote still call Yahoo. On 2026-10-26 the user asked for Yahoo
+  price history back as a switch: `PRICE_PROVIDER=yahoo` in `.env` sends
+  `stock_data.daily_history()` to `yahoo_finance.daily_history()`. It is off by
+  default, and every result it serves carries a note that Yahoo fails this audit.
 
 ### `ddgs` "auto" backend — fixed
 

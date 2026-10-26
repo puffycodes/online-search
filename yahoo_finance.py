@@ -13,7 +13,8 @@ It is also the Yahoo adapter behind stock_data.py, the only way the stock
 scripts reach Yahoo now: analyst_view(), earnings_view(), holders_view() and
 fundamentals_view() fetch quoteSummary data, top_movers() the screeners and
 quote() the chart endpoint, and each turns the answer into stock_data's
-provider-neutral shape.
+provider-neutral shape. daily_history() serves the price scripts from the
+chart endpoint too, but only when PRICE_PROVIDER=yahoo opts in to it.
 """
 
 import datetime as dt
@@ -989,3 +990,45 @@ def parse_quote(result, symbol):
 def quote(symbol):
     """Fetch ``symbol``'s latest quote and return stock_data's neutral shape."""
     return parse_quote(fetch_history(symbol, build_params(range_=QUOTE_RANGE)), symbol)
+
+
+# Chart endpoint, for daily_history() when PRICE_PROVIDER=yahoo (stock_data.py).
+# Off by default: Yahoo fails the source audit, so the price scripts say so.
+HISTORY_NOTE = ("Prices from Yahoo Finance's unofficial chart endpoint "
+                "(PRICE_PROVIDER=yahoo), which fails this repo's source audit")
+
+
+def parse_daily_history(result, symbol):
+    """stock_data.daily_history()'s shape from a chart ``result``: every bar,
+    dated in exchange-local time, a bar without a close passed on as is."""
+    meta, series = extract_series(result)
+    ticker, exchange, currency = meta_summary(meta, symbol)
+
+    def at(values, i):
+        return values[i] if values and i < len(values) else None
+
+    bars = []
+    for i, ts in enumerate(series["timestamp"]):
+        bars.append({
+            "date": session_datetime(ts, series["gmtoffset"]).strftime("%Y-%m-%d"),
+            "open": at(series["open"], i),
+            "high": at(series["high"], i),
+            "low": at(series["low"], i),
+            "close": at(series["close"], i),
+            "adj_close": at(series["adjclose"], i),
+            "volume": at(series["volume"], i),
+        })
+    return {
+        "source": SOURCE,
+        "notes": [HISTORY_NOTE],
+        "symbol": ticker,
+        "exchange": exchange,
+        "currency": currency,
+        "bars": bars,
+    }
+
+
+def daily_history(symbol, params):
+    """Fetch ``symbol``'s bars over the build_params() window ``params``
+    (Yahoo builds weekly and monthly bars itself) in stock_data's neutral shape."""
+    return parse_daily_history(fetch_history(symbol, params), symbol)
