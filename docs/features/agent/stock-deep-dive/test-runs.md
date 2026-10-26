@@ -20,39 +20,39 @@ For a case where the workflow would ask the user something, add: "If your workfl
 
 ## Cases
 
-The cases were written on Monday 2026-10-26. The digest step was checked by hand that day on AAPL's six outputs (about 8 KB of digest from about 80 KB of JSON); none of the cases has been run through the agent yet.
+The cases were written on Monday 2026-10-26. The digest step was checked by hand that day on AAPL's six outputs (about 8 KB of digest from about 80 KB of JSON). All five cases were first run through the agent the same day.
 
 ### 1. A full US report
 
 - **Rule:** run the fundamentals first, then the other five tools with their defaults, read the results through the digest, and write every section without a buy / sell / hold view.
 - **Request:** `Give me a deep dive on Apple.`
 - **A correct run:** `AAPL`; `stock_fundamental.py` first, then the other five with `--trades-only` for holders and `--range 1y` for prices; all nine report sections; the multiple-based valuation rows not presented as estimates; insider sales not read as a signal; EODHD's one-year note passed on; closes with the caveat and no verdict of its own.
-- **Last checked:** not yet run.
+- **Last checked:** 2026-10-26, passed. All nine sections, the multiple rows called echoes of today's multiples, the dividend model set aside at a 0.31% yield, EODHD's note passed on, no verdict.
 
 ### 2. Singapore listing: no price section
 
 - **Rule:** skip `stock_price_history.py` for `.SI` and `.T`, and say the report has no trend or risk section because the price source doesn't cover them.
 - **Request:** `Do a full stock report on DBS Group.`
 - **A correct run:** `D05.SI`; five tools run, no price fetch; the trend and risk section replaced by a one-line gap; holder trade values in USD and fund values in SGD, kept apart; analyst actions described as unavailable for a non-US listing, not as no activity.
-- **Last checked:** not yet run.
+- **Last checked:** 2026-10-26, passed. Five tools and no price fetch; trades in USD and funds in SGD, labelled; firm actions called no data for a non-US listing; the empty bank DCF (no FCF or EBITDA) listed as a gap.
 
 ### 3. Not a company
 
 - **Rule:** decline an index, currency pair, crypto coin or ETF without running anything, and point to `stock-trend` or `stock-risk`.
 - **Request:** `Deep dive on the S&P 500.`
 - **A correct run:** no commands run; the report says the deep dive covers company stocks only and suggests `stock-trend` / `stock-risk` for the index.
-- **Last checked:** not yet run.
+- **Last checked:** 2026-10-26, passed. No commands run; pointed to `stock-trend` / `stock-risk` with `^GSPC`.
 
 ### 4. Unknown ticker stops early
 
 - **Rule:** when the fundamentals check fails for a ticker the user gave, retry once, then stop without running the other five tools.
 - **Request:** `Deep dive on ticker ZZZQX.`
 - **A correct run:** `stock_fundamental.py ZZZQX` run twice (the ticker came from the user), both exit 1; no other tool run; the report says Yahoo returned no data for that ticker and suggests checking it.
-- **Last checked:** not yet run.
+- **Last checked:** 2026-10-26, passed. Two exit-1 fundamentals runs, nothing else; suggested checking the ticker or its exchange suffix.
 
 ### 5. User assumptions reach the valuation
 
 - **Rule:** pass the user's stated valuation assumptions to `stock_intrinsic_value.py` as fractions, and keep the other tools on their defaults.
 - **Request:** `Full report on Microsoft, valuing it at a 10% discount rate and 7% growth.`
 - **A correct run:** `stock_intrinsic_value.py MSFT --discount-rate 0.10 --growth 0.07 --json`; the valuation section states those assumptions as the user's; the other tools unchanged.
-- **Last checked:** not yet run.
+- **Last checked:** 2026-10-26, passed. Exact command as above, assumptions named as the user's. One slip: it called the $35.30 DCF value "about 14 times below" the $524.51 price (about 15x; its 1,386% figure was right).
