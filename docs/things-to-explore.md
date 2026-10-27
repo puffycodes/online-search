@@ -459,7 +459,10 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   Open-Meteo's daylight-saving error in sun times (fixed in `weather.local_daily()`)
   and a `--since` run cut short by the default `--limit` (fixed in the agent).
   `package-vulnerabilities` got its runs on 2026-10-21 as well; all passed, with no
-  changes needed. Still without runs: `air-quality` (its new `--forecast`) and
-  `url-broken-links`. The fixes to `hn-search`, `trip-weather` and `url-feed` were
+  changes needed. `air-quality` and `url-broken-links` got theirs on 2026-10-27:
+  `air-quality` often added the European AQI outside Europe, or pollen unasked (its
+  reporting rules were fixed the same day; rerun those cases through the real agent
+  in a new session), and a Wayback copy found by `url-broken-links` is untested because
+  archive.org rate-limited the run. The fixes to `hn-search`, `trip-weather` and `url-feed` were
   confirmed by reruns on 2026-10-21, which also added an `--author` case to `hn-search`
   and an ambiguous-place case to `trip-weather`.

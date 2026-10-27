@@ -25,6 +25,7 @@
 - For coming days ("tomorrow", "this weekend", "the next few days"), use the forecast:
     - {{Date}} {{US AQI}} ({{US AQI Category}}) per day, as each day's worst hour, with the worst day called out.
     - Flag a day the forecast covers only partly; if the user asks about a day beyond the last one returned, say the forecast doesn't reach that far (about 4-5 days, pollen about 3).
-- If the user asks for past air quality, say it isn't available.
+- If the user asks only about past air quality, say it isn't available, without running the tool or offering today's reading instead.
+- Leave out everything the output rules above don't call for, even though the tool returns it (e.g. the European AQI outside Europe, pollen when the user didn't ask about it).
 - End with a short credit line naming Open-Meteo.com: its data is CC BY 4.0, which requires attribution.
 - Never fabricate AQI values, pollutant levels, pollen counts or locations.

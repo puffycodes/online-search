@@ -23,15 +23,26 @@ python3 air_quality.py "LOCATION" [--forecast] --json
 
 ## Reporting results
 
-Lead with the US AQI and its category, since that's the figure most people mean by "the AQI": `<Location>: AQI <us_aqi> (<us_aqi_category>)`. Mention the European AQI only if the user is in / asking about Europe, or explicitly wants it — **never average or otherwise combine the two indices**, since they use different scales and breakpoints (US AQI runs roughly 0-500, European AQI roughly 0-100+); report them side by side if both are relevant.
+The JSON has many more fields than a report needs. Report only what the rules below call for; a field being in the output is not a reason to mention it.
 
-Mention specific pollutant levels (PM2.5, PM10, ozone, etc.) only if the user asked for detail, or if one pollutant is notably elevated and worth calling out (e.g. high PM2.5 during wildfire smoke, high ozone on a hot day).
+Lead with the US AQI and its category, since that's the figure most people mean by "the AQI": `<Location>: AQI <us_aqi> (<us_aqi_category>)`.
 
-Mention pollen only if the user asks about pollen, hay fever or allergies. Give the counts in grains/m³ for the plants that are above 0, or say all six are at 0. Pollen is only modelled for Europe: if every pollen field is `null`, say pollen counts aren't available for that place rather than calling it zero. In Europe, 0 is a real reading (often just out of season). The tool gives raw counts only, so don't label them low, moderate or high.
+Add these only when their condition holds:
 
-Include the resolved place name (with region/country) if it differs from what the user typed, so they can confirm it matched the place they meant.
+- **European AQI** — only if the place is in Europe, or the user asks for it by name. Then report it side by side with the US AQI and **never average or otherwise combine the two indices**: they use different scales and breakpoints (US AQI runs roughly 0-500, European AQI roughly 0-100+).
+- **Pollutant levels** (PM2.5, PM10, ozone, etc.) — only if the user asked for detail, or one pollutant is notably elevated and worth calling out (e.g. high PM2.5 during wildfire smoke, high ozone on a hot day).
+- **Pollen** — only if the user asks about pollen, hay fever or allergies. Give the counts in grains/m³ for the plants that are above 0, or say all six are at 0. Pollen is only modelled for Europe: if every pollen field is `null`, say pollen counts aren't available for that place rather than calling it zero. In Europe, 0 is a real reading (often just out of season). The tool gives raw counts only, so don't label them low, moderate or high.
+- **Resolved place name** (with region/country) — if it differs from what the user typed, so they can confirm it matched the place they meant.
 
-For a forecast, give each day's worst US AQI and its category (and the European AQI under the same rule as above), call out the worst day, and say these are each day's worst hour. Flag a partly covered day, and if the user asked about a day beyond the last one returned, say the forecast doesn't reach that far. There is **no historical air quality** from this tool: if the user asks about past air quality, say that isn't available rather than guessing.
+For a forecast, give each day's worst US AQI and its category (and the European AQI under the same rule as above), call out the worst day, and say these are each day's worst hour. Flag a partly covered day, and if the user asked about a day beyond the last one returned, say the forecast doesn't reach that far.
+
+There is **no historical air quality** from this tool. If the user asks only about a past date, don't run the tool: say past air quality isn't available, and don't offer today's reading in its place.
+
+**Leave out**, unless a condition above calls for it — check your report against this list before replying:
+
+- the European AQI for a place outside Europe (e.g. Delhi, Tokyo, Beijing, anywhere in the US), even "for reference";
+- any mention of pollen, including that it's `null` or unavailable, when the user didn't ask about pollen, hay fever or allergies;
+- pollutant concentrations nobody asked for that aren't notably elevated.
 
 **Always credit the data.** Open-Meteo's data is licensed CC BY 4.0, which requires attribution: end your report with a short credit line, e.g. "Data: Open-Meteo.com (CC BY 4.0)". The tool's `attribution` field carries the full wording.
 

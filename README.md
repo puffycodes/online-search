@@ -822,9 +822,11 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 |---|---|
 | `tools` | `Bash` |
 | Underlying script | [`air_quality.py`](#air_qualitypy) |
+| Test runs | [`docs/features/agent/air-quality/test-runs.md`](docs/features/agent/air-quality/test-runs.md) |
 
 ### Notes / limitations
 
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/air-quality/test-runs.md`](docs/features/agent/air-quality/test-runs.md) lists targeted live runs of its judgement rules (current AQI outside Europe, a European city, pollen in and outside Europe, "this weekend" partly beyond the forecast, past dates, an unknown and an ambiguous place). Their first run, on 2026-10-27, got every figure, flag and place right, but in half the cases the report added the European AQI outside Europe or pollen nobody asked about. The reporting rules were restructured the same day (a condition per optional item and a "Leave out" checklist), and the six affected cases then passed.
 - Ends its report with a credit line for Open-Meteo.com, whose data is licensed CC BY 4.0 and requires attribution.
 - Requires `air_quality.py` (and its `weather.py` and `requests` dependencies) to be present and runnable from the repo root.
 - Pollen counts exist only for places in Europe, and are raw grains/m³ with no low/high bands.
@@ -5498,9 +5500,11 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 | `tools` | `Bash` |
 | `model` | `sonnet` |
 | Underlying script | [`url_broken_links.py`](#url_broken_linkspy) |
+| Test runs | [`docs/features/agent/url-broken-links/test-runs.md`](docs/features/agent/url-broken-links/test-runs.md) |
 
 ### Notes / limitations
 
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/url-broken-links/test-runs.md`](docs/features/agent/url-broken-links/test-runs.md) lists targeted live runs of its judgement rules (a bare domain, a page full of dead links, a cap with a scope and archived copies, internal links only, a URL that isn't a page); all passed on 2026-10-27. A Wayback lookup that finds a copy is untested, since archive.org rate-limited the run.
 - Requires `url_broken_links.py` and the modules it imports (plus `requests` and `beautifulsoup4`) to be runnable from the repo root.
 - Inherits all the limitations of [`url_broken_links.py`](#url_broken_linkspy) itself (slow by design, HTTP status only, Wayback rate limiting).
 
