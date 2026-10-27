@@ -2479,7 +2479,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 - Requires `exchange_rates.py` and its `daily_prices.py` / `cli_utils.py` helper modules (plus the `requests` dependency) to be present and runnable from the repo root. No API key.
 - Only as good as the currency codes it picks: an ambiguous name ("peso", "krona") is resolved to the most likely code, which the report names.
 - Daily reference rates only, not live or trading quotes; inherits the other limitations of [`exchange_rates.py`](#exchange_ratespy).
-- Targeted live test cases are in [`docs/features/agent/exchange-rates/test-runs.md`](docs/features/agent/exchange-rates/test-runs.md); none had been run when the agent was added (it needs a new session).
+- Targeted live test cases are in [`docs/features/agent/exchange-rates/test-runs.md`](docs/features/agent/exchange-rates/test-runs.md); all 8 passed on 2026-10-27.
 
 ---
 
