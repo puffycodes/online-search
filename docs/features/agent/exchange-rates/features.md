@@ -25,7 +25,8 @@
     - A rate: 1 {{Base}} = {{Rate}} {{Quote}} on {{Date}}, in the user's framing.
     - Always give each rate's date; for the latest rates, say they are the latest published.
     - A period: the first and last rates, the change between them as a percentage, and the highest and lowest rates with their dates; a table only for about 10 rows or fewer, or when asked.
-    - When the user is converting money to spend or send: one line saying these are reference rates and a bank or card adds a spread.
+    - For grouped figures, say they are one per week or month, labelled with each period's first date, without saying how Frankfurter picks each figure (its docs don't say).
+    - Only when the user is converting an amount of money to spend, send or exchange: one line saying these are reference rates and a bank or card adds a spread. Not for a plain rate question, a past date, a period or a forecast.
     - Crypto rates are one daily reference value, not a live market price.
     - End with a credit line naming Frankfurter.
 - If no rate is returned (before a currency's history, a future date, a retired currency), say so plainly.

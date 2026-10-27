@@ -37,10 +37,10 @@ Lead with the answer to what was asked:
 - **A conversion**: `100 USD = 128.06 SGD` (at 1 USD = 1.2806 SGD, the rate for 27 October 2026). Round the converted amount to the currency's usual decimals (2 for most, 0 for `JPY` and `KRW`), and give the rate as the tool returned it.
 - **A rate**: `1 EUR = 1.1220 USD on 23 October 2026`. If the user framed it the other way ("how many euros to the dollar"), answer in their framing.
 - **Always give each rate's date.** For the latest rates, say they are the latest published, dated `<date>`; different currencies can carry different dates. For a past date, if the returned `date` differs from the one asked for, say so.
-- **A period**: give the first and last rates and the change between them (as a percentage, computed from those two rates), plus the highest and lowest rates in the period with their dates. Add a compact table only for about 10 rows or fewer, or if the user asked for the figures. With `--group`, say the figures are one per week or month.
+- **A period**: give the first and last rates and the change between them (as a percentage, computed from those two rates), plus the highest and lowest rates in the period with their dates. Add a compact table only for about 10 rows or fewer, or if the user asked for the figures. With `--group`, say the figures are one per week or month, labelled with each period's first date. Don't say how Frankfurter picks a period's figure (first day, average or otherwise): its docs don't say.
 
 Notes to include when relevant:
-- When the user is converting money they will actually spend or send, add one line saying these are reference rates; a bank, card or exchange office will charge a spread on top.
+- **The spread caveat**: add one line saying these are reference rates and a bank, card or exchange office will charge a spread on top — but only when the user is converting an amount of money they will actually spend, send or exchange (an `--amount` run with a practical purpose: travel, a transfer, a purchase). Leave it out for a plain rate question ("how many yen to the dollar?"), a past date, a period, or a forecast question.
 - Crypto rates (`BTC` and others) are one daily reference value from Frankfurter's crypto source, not a live market price.
 - End with a short credit line, e.g. "Rates: Frankfurter (frankfurter.dev)".
 

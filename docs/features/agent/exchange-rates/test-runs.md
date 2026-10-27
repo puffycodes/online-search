@@ -29,7 +29,7 @@ The dates below are for today = Tuesday 2026-10-27. Every case ran on Sonnet, th
 - **Rules:** names to codes; "X in Y" is base X; `--amount`; the converted amount in the currency's usual decimals with the rate and its date; the reference-rate caveat when converting money.
 - **Question:** `How much is 250 US dollars in Singapore dollars? I'm sending it to a friend.`
 - **A correct run:** `exchange_rates.py USD SGD --amount 250 --json`, no window flag; the report leads with `250 USD = <n> SGD` to 2 decimals, gives the rate and its date as the latest published, adds one line that a bank or transfer service adds a spread, and ends with the Frankfurter credit.
-- **Last checked:** 2026-10-27, passed: `USD SGD --amount 250`, `250 USD = 319.85 SGD` at 1.2794, "the latest published rate, dated 27 October 2026", the spread caveat ("your friend will likely receive somewhat less") and the credit.
+- **Last checked:** 2026-10-27, passed: `USD SGD --amount 250`, `250 USD = 319.85 SGD` at 1.2794, "the latest published rate, dated 27 October 2026", the spread caveat ("your friend will likely receive somewhat less") and the credit. Rerun after the 2026-10-27 tightening (see below): passed, the same, caveat kept.
 
 ### 2. A dollar settled by context
 
@@ -43,7 +43,7 @@ The dates below are for today = Tuesday 2026-10-27. Every case ran on Sonnet, th
 - **Rules:** "how many Y to the X" means base X; answer in the user's framing.
 - **Question:** `How many yen to the dollar right now?`
 - **A correct run:** `exchange_rates.py USD JPY --json`; the report gives `1 USD = <n> JPY`, not the inverse, with its date.
-- **Last checked:** 2026-10-27, passed: `USD JPY`, `1 USD = 157.27 JPY`, the latest published, dated 27 October 2026. It also added the reference-rate spread line, which the agent asks for only when money is being converted; harmless.
+- **Last checked:** 2026-10-27, passed: `USD JPY`, `1 USD = 157.27 JPY`, the latest published, dated 27 October 2026. It also added the reference-rate spread line, which the agent asks for only when money is being converted; harmless. Rerun after the tightening (see below): passed, no caveat.
 
 ### 4. One past date
 
@@ -57,7 +57,7 @@ The dates below are for today = Tuesday 2026-10-27. Every case ran on Sonnet, th
 - **Rules:** a period becomes `--start` (no `--end` while it is still running); over about 3 months add `--group week`; report the first and last rates, the change as a percentage, and the high and low with their dates; say the figures are weekly; no table for this many rows.
 - **Question:** `How has the pound moved against the euro this year?`
 - **A correct run:** `exchange_rates.py GBP EUR --start 2026-01-01 --group week --json`; the report gives the first and last weekly rates, the % change computed from them, the high and low weeks, says the figures are one per week, and makes no prediction.
-- **Last checked:** 2026-10-27, passed: `GBP EUR --start 2026-01-01 --group week` (43 weekly points), first 1.1471 (1 January) and last 1.1907 (22 October, "not a rate for today"), +3.80%, high 1.1907 on 22 October and low 1.1453 on 26 February, "one figure per week", no table, "not a prediction". It added "each weekly figure is the rate on the date shown", which Frankfurter's docs don't say; a small overstatement.
+- **Last checked:** 2026-10-27, passed: `GBP EUR --start 2026-01-01 --group week` (43 weekly points), first 1.1471 (1 January) and last 1.1907 (22 October, "not a rate for today"), +3.80%, high 1.1907 on 22 October and low 1.1453 on 26 February, "one figure per week", no table, "not a prediction". It added "each weekly figure is the rate on the date shown", which Frankfurter's docs don't say; a small overstatement. Rerun after the tightening (see below): passed, the same figures, "one per week, labelled with each week's first date", with no claim about how each is chosen.
 
 ### 6. A forecast question
 
@@ -79,6 +79,10 @@ The dates below are for today = Tuesday 2026-10-27. Every case ran on Sonnet, th
 - **Question:** `What's the Croatian kuna worth in euros today?`
 - **A correct run:** `exchange_rates.py HRK EUR --json` returns no rates (checked on 2026-10-27: `HRK` has past rates but no current one). The report says there is no current rate, and may say the euro replaced the kuna in 2023 (at the fixed 7.53450 kuna per euro); it gives no made-up current rate.
 - **Last checked:** 2026-10-27, passed: `HRK EUR` returned no rates; it said there is no current rate because the euro replaced the kuna in 2023, and gave no figure (it didn't mention the fixed conversion rate, which the case leaves optional).
+
+## Found on 2026-10-27
+
+The first runs passed, with two slips: case 3 added the reference-rate spread line to a plain rate question, and case 5 said each weekly figure is the rate on its date, which Frankfurter's docs don't say. The agent's reporting rules were tightened the same day: the spread caveat is for an amount of money being spent, sent or exchanged only, with the cases it must be left out of named, and grouped figures are described as labelled with each period's first date, without saying how a figure is chosen. Cases 1, 3 and 5 were rerun after the edit by a general-purpose agent on Sonnet told to read `.claude/agents/exchange-rates.md` and follow it (the edit might not reach the agent itself until a new session), and all three passed.
 
 ## Not covered
 
