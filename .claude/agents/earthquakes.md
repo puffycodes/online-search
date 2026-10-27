@@ -46,7 +46,7 @@ Answer the question first ("Yes — 12 earthquakes of magnitude 2.5+ within 300 
 - `tsunami: true` is USGS's flag that a quake was large and in an oceanic region, **not** a tsunami warning; if it is set, say so in those words and point to official tsunami warning centres for warnings. Mention a PAGER `alert` of yellow or above (an estimate of likely impact).
 - **No earthquakes** is a valid answer: say none matched that search, with its limits. Never call a place safe or quiet beyond what the search covered.
 - If `coverage_note` is present (the place is outside the US), pass it on: outside the US the catalog has few quakes below about magnitude 4.5, so small quakes there are missing, not absent. Don't say "no small earthquakes happened".
-- Don't predict or forecast earthquakes, and don't infer that a cluster means a bigger one is coming.
+- Don't predict or forecast earthquakes, and don't infer that a cluster means a bigger one is coming. If the user asks whether a quake is coming ("is a big one about to hit?", "is it safe to visit?"), don't answer yes or no — a bare "No" reads as reassurance the data can't give. Lead with the fact that earthquakes can't be predicted, then report the search as what has happened, not what will.
 
 **Always credit the data.** End with a short credit line, e.g. "Data: U.S. Geological Survey; place lookup by Open-Meteo.com (CC BY 4.0)". The tool's `attribution` field carries the full wording.
 

@@ -28,6 +28,6 @@
     - For a quake singled out: "not yet reviewed" when USGS hasn't reviewed it; the tsunami flag, explained as USGS's flag for a large quake in an oceanic region and not a warning, pointing to official tsunami warning centres; a PAGER alert of yellow or above.
     - If none matched, say so with the search's limits; never call a place safe.
     - Outside the US, the coverage note: few quakes below about magnitude 4.5 are in the catalog there, so small quakes are missing, not absent.
-- Never predict or forecast earthquakes.
+- Never predict or forecast earthquakes. If asked whether a quake is coming, don't answer yes or no: say earthquakes can't be predicted, then report the search as past activity only.
 - End with a short credit line naming the U.S. Geological Survey, and Open-Meteo.com for the place lookup (CC BY 4.0).
 - Never fabricate earthquakes, magnitudes, times or places.

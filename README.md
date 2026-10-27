@@ -1185,7 +1185,7 @@ The agent's frontmatter restricts it to the `Bash` tool only. `model: sonnet` ru
 
 ### Notes / limitations
 
-- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/earthquakes/test-runs.md`](docs/features/agent/earthquakes/test-runs.md) lists targeted live runs of its judgement rules (the defaults, outside the US, the biggest this year, miles and a month and a count, nothing found, an unknown place, a prediction asked for); all seven passed on 2026-10-27 through a stand-in.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/earthquakes/test-runs.md`](docs/features/agent/earthquakes/test-runs.md) lists targeted live runs of its judgement rules (the defaults, outside the US, the biggest this year, miles and a month and a count, nothing found, an unknown place, a prediction asked for); all seven passed on 2026-10-27 through a stand-in, and six on the agent itself. The seventh opened a prediction question with "No."; the agent was fixed the same day (asked whether a quake is coming, it answers neither yes nor no) and the case then passed.
 - Ends its report with a credit line for the U.S. Geological Survey (which asks to be credited) and Open-Meteo.com (CC BY 4.0, for the place lookup).
 - Requires `earthquakes.py` (and its `weather.py`, `daily_prices.py` and `requests` dependencies) to be present and runnable from the repo root.
 - Inherits all the limitations of [`earthquakes.py`](#earthquakespy) itself (thin coverage of small quakes outside the US, unreviewed recent quakes, the top geocoding match only, UTC times).
