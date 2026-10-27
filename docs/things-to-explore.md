@@ -312,13 +312,51 @@ before the top picks because it's about the repo's existing sources, not new one
   replacement** for: top movers outside the US, analyst upgrade / downgrade
   history, most fund-holder lists, index and adjusted history on free tiers,
   futures (`=F`). At 25 requests a day, a fundamentals lookup (4–5 calls) is a
-  real share of the budget.
+  real share of the budget. (Out of date: on 2026-10-27 the free key's `OVERVIEW`
+  was premium-only; see the comparison below.)
 
   **Decisions needed before building:** whether a free Alpha Vantage key and its
   limits (25 requests a day, 100 daily sessions) are acceptable, or which paid plan
   to take; which uncovered features to drop or which scripts to
   remove; what contact to declare to the SEC, if EDGAR is added. Re-check Finnhub
   and FMP with a real key, since their free tiers couldn't be confirmed.
+
+  **EODHD and Alpha Vantage compared for functions 4–15**, checked on 2026-10-27.
+  EODHD's AAPL fundamentals came from its public `demo` key (a few US tickers
+  only), Alpha Vantage's IBM responses from its public `demo` key, and plans from
+  EODHD's pricing page and insider-transactions docs. Neither is free any more:
+  - **Alpha Vantage:** `OVERVIEW` on the free key answered "This is a premium
+    endpoint" for `IBM`, `TSCO.LON` and `RELIANCE.BSE` (4 of the day's 25 calls;
+    one was rate-limited first). The free-key fundamentals assumed above no longer
+    exist; premium is $49.99 and covers prices too.
+  - **EODHD:** fundamentals are in the Equity analyst plan ($59.99, with insider
+    trades and the earnings calendar, but no prices and no dividends API) and
+    All-in-one ($99.99). The free plan has none. With Historian for prices, that
+    is $79.98 in all. One `/api/fundamentals/` request costs 10 calls.
+
+  | # | Function | EODHD (one fundamentals request) | Alpha Vantage premium |
+  |---|---|---|---|
+  | 4 | `profile` | yes (`General`) | yes (`OVERVIEW`) |
+  | 5 | `fundamentals` | yes (`Highlights`, `Valuation`, `SharesStats`, `Technicals`, `Financials`; current and quick ratios computed from the balance sheet) | yes (`OVERVIEW` plus a call per statement) |
+  | 6 | `growth_estimates` | 1-year only (`Earnings.Trend` periods `0q`, `+1q`, `0y`, `+1y`); no 5-year | EPS and revenue estimates by horizon (`EARNINGS_ESTIMATES`); no growth figures |
+  | 7 | `next_earnings` | yes: the upcoming `Earnings.History` row has the report date, before or after market and the EPS estimate; revenue estimates in `Trend` | yes, from `EARNINGS_CALENDAR` (CSV) and `EARNINGS_ESTIMATES` |
+  | 8 | `earnings_history` | yes, with surprise % | yes (`EARNINGS`), with surprise % and report time |
+  | 9 | `dividends` | next ex-dividend and payment dates (`SplitsDividends`); no amounts on the Equity analyst plan | yes (`DIVIDENDS`): dates and amounts |
+  | 10 | `analyst_targets` | mean target and rating counts only (`AnalystRatings`) | the same (`OVERVIEW`) |
+  | 11 | `recommendation_trend` | no: current counts only | no |
+  | 12 | `analyst_actions` | no endpoint found | no |
+  | 13 | `ownership_summary` | % insiders and institutions | the same, plus the number of institutions (`INSTITUTIONAL_HOLDINGS`) |
+  | 14 | `insider_transactions` | a separate Form 4 endpoint, 10 calls, US issuers only (the fundamentals' own `InsiderTransactions` was empty for AAPL) | yes (`INSIDER_TRANSACTIONS`) |
+  | 15 | `top_holders` | top 20 institutions and top 20 funds, with % held, shares and change | 13F institutions only, no funds |
+
+  So EODHD covers 4–9, 13 and 15 in one request, fund holders included, and is
+  already the price provider (one key, one set of terms). Alpha Vantage is cheaper
+  and has dividend amounts, insider trades and an institution count, but takes
+  several calls per lookup and has no fund holders or growth figures. Neither has
+  11, 12, Yahoo's 5-year growth or a target range (low, median, high); a web search
+  for 12 found only FMP and Eulerpool. Non-US fundamentals are untested on both:
+  EODHD says it covers "major US, UK, EU, and Asian exchanges", but its demo key
+  is US-only, and Alpha Vantage's needs premium.
 
 ## Top picks
 
