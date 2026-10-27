@@ -28,8 +28,8 @@ python3 -m pytest tests/test_valuation.py
 python3 -m pytest tests/test_valuation.py::TestDiscountedCashFlow::test_basic
 python3 -m pytest -k "build_params"
 
-# Quieter / verbose-stop-on-first-failure
-python3 -m pytest -q --no-header
+# No header / verbose-stop-on-first-failure (pytest.ini already adds -q; another -q hides the pass count)
+python3 -m pytest --no-header
 python3 -m pytest -x -vv
 ```
 

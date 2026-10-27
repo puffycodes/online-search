@@ -18,7 +18,7 @@ Useful variants:
 ```bash
 python3 -m pytest tests/test_valuation.py          # one module
 python3 -m pytest -k "build_params"                # one topic across modules
-python3 -m pytest -q --no-header                   # quieter
+python3 -m pytest --no-header                      # no header (pytest.ini already adds -q)
 python3 -m pytest -x -vv                           # stop on first failure, verbose
 ```
 
@@ -213,7 +213,7 @@ exercise `yahoo_finance.extract_series`, `yahoo_finance.parse_quote` and the per
 2. Add a `class Test<Thing>` and a focused method per behavior.
 3. If the code path makes an HTTP call, patch the nearest seam (see
    **Conventions**); reuse `FakeResponse` / `FakeSession` from `helpers`.
-4. Run `python3 -m pytest tests/test_<module>.py -q`.
+4. Run `python3 -m pytest tests/test_<module>.py`.
 
 ## Not covered here (see the repo root README's plan)
 
