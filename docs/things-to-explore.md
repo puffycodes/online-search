@@ -360,12 +360,20 @@ before the top picks because it's about the repo's existing sources, not new one
 
 ## Top picks
 
-Chosen on 2026-10-21, in suggested order (the 2026-10-19 picks, the broken-link
-checker and the `web-search` test runs, are done). Each is described in full in its
-section below; remove it from both places when it's done.
+Chosen on 2026-10-27, in suggested order (the 2026-10-21 picks, trip weather, the
+`url-summary` test runs and the RSS/Atom feed reader, are done). Each is described in
+full in its section below; remove it from both places when it's done. Replacing
+Yahoo Finance (above) is separate: it waits on a provider decision.
 
-All the 2026-10-21 picks are done too (trip weather, the `url-summary` test runs and
-the RSS/Atom feed reader). Choose the next ones from the sections below.
+1. **More use of the risk metrics** (Finance): no new source to vet and no new
+   script; agent edits to `stock-trend` and `stock-rebased-chart` that call
+   `stock_risk.py`, so the work is in the reporting rules and a few test runs.
+2. **Earthquakes near a place** (Weather and environment): one small script that
+   reuses `weather.geocode()`; USGS data is US-government public domain, but its
+   robots.txt and terms still need the usual check first.
+3. **Package stats** (Tech and news): PyPI's JSON API and npm's registry, which
+   pair with the `package-vulnerabilities` agent (latest version and release dates
+   next to the advisories); check both registries' terms and robots.txt first.
 
 ## Combining existing scripts
 
