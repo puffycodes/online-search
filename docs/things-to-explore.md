@@ -461,8 +461,8 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   `package-vulnerabilities` got its runs on 2026-10-21 as well; all passed, with no
   changes needed. `air-quality` and `url-broken-links` got theirs on 2026-10-27:
   `air-quality` often added the European AQI outside Europe, or pollen unasked (its
-  reporting rules were fixed the same day; rerun those cases through the real agent
-  in a new session), and a Wayback copy found by `url-broken-links` is untested because
+  reporting rules were fixed the same day, and all eight cases passed through the
+  real agent in a new session), and a Wayback copy found by `url-broken-links` is untested because
   archive.org rate-limited the run. The fixes to `hn-search`, `trip-weather` and `url-feed` were
   confirmed by reruns on 2026-10-21, which also added an `--author` case to `hn-search`
   and an ambiguous-place case to `trip-weather`.
