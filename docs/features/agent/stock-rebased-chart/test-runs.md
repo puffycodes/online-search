@@ -22,32 +22,32 @@ To check a run before a new session, a general-purpose agent on Sonnet (the agen
 
 ## Cases
 
-The dates below are for today = Tuesday 2026-10-27. Every case ran on 2026-10-27 through a general-purpose stand-in on Sonnet, with `PRICE_PROVIDER=yahoo` set in `.env`, so the prices came from Yahoo; every correlation reported matched the saved output.
+The dates below are for today = Tuesday 2026-10-27. Every case ran on 2026-10-27 through a general-purpose stand-in on Sonnet, with `PRICE_PROVIDER=yahoo` set in `.env`, so the prices came from Yahoo; every correlation reported matched the saved output. All three were rerun the same day on the agent itself in a new session, with `PRICE_PROVIDER` unset, so the prices came from EODHD; every correlation again matched the saved output.
 
 ### 1. No correlation asked
 
 - **Rule:** run `stock_risk.py` only when the user asks how closely the instruments moved together.
 - **Question:** `Compare Apple and Microsoft this year.`
 - **A correct run:** `stock_rebased_chart.py AAPL MSFT --range ytd -o /tmp/rebased_AAPL_MSFT.png` and nothing else; no correlation in the report.
-- **Last checked:** 2026-10-27, passed: only the chart command ran; "the correlation step was skipped because the question didn't ask how closely they moved together".
+- **Last checked:** 2026-10-27, passed: only the chart command ran; "the correlation step was skipped because the question didn't ask how closely they moved together". Rerun on the agent itself in a new session: passed, the same command only (`AAPL MSFT --range ytd -o /tmp/rebased_AAPL_MSFT.png`) and "I did not run `stock_risk.py`, because you didn't ask about correlation".
 
 ### 2. Correlation asked, default window
 
 - **Rules:** run `stock_risk.py` with the same symbols in the same order; with no window on the chart, pass `--range 6mo` (not `stock_risk.py`'s `1y` default); a plain reading of each number; correlation isn't where the lines end up, nor causation.
 - **Question:** `Chart Shell and BP for me. How closely do they move together?`
 - **A correct run:** `stock_rebased_chart.py SHEL.L BP.L -o /tmp/rebased_SHEL_L_BP_L.png`, then `stock_risk.py SHEL.L BP.L --range 6mo --json`; the report gives the correlation with its reading and window after the chart summary.
-- **Last checked:** 2026-10-27, passed: both commands as above; "+0.86, so they moved closely together day to day", over 2026-04-27 to 2026-10-23 (127 shared sessions); "here they track each other but end about 12 points apart"; "correlation does not mean one drives the other".
+- **Last checked:** 2026-10-27, passed: both commands as above; "+0.86, so they moved closely together day to day", over 2026-04-27 to 2026-10-23 (127 shared sessions); "here they track each other but end about 12 points apart"; "correlation does not mean one drives the other". Rerun on the agent itself in a new session: passed, both commands as above; +0.86 "moved closely together day to day", 2026-04-27 to 2026-10-26, 128 shared sessions ("the whole window"); "not where the lines end up, and it does not mean one drives the other".
 
 ### 3. Crypto against an index, a named start
 
 - **Rules:** the chart's `--start` / `--end` passed unchanged; no `--benchmark` when two instruments are compared with each other; mention the shared sessions when far fewer than the window (crypto trades at weekends).
 - **Question:** `Does Bitcoin move with the Nasdaq? Chart them since June.`
 - **A correct run:** `stock_rebased_chart.py BTC-USD ^IXIC --start 2026-06-01 [--end …] -o …`, then `stock_risk.py BTC-USD ^IXIC` with the same window flags and `--json`; the report names the shared sessions against Bitcoin's own count.
-- **Last checked:** 2026-10-27, passed: both with `--start 2026-06-01 --end 2026-10-27`, no benchmark; "+0.44 … 103 shared sessions against 149 BTC sessions, because crypto trades every day and the Nasdaq does not", read as "somewhat together", with the not-where-they-end and not-causation lines.
+- **Last checked:** 2026-10-27, passed: both with `--start 2026-06-01 --end 2026-10-27`, no benchmark; "+0.44 … 103 shared sessions against 149 BTC sessions, because crypto trades every day and the Nasdaq does not", read as "somewhat together", with the not-where-they-end and not-causation lines. Rerun on the agent itself in a new session: passed: `--start 2026-06-01` on both (no `--end`, which the case allows), no benchmark; +0.44 "somewhat together", 103 shared sessions against Bitcoin's 149 "because Bitcoin trades every day and the Nasdaq only on weekdays", with both caveat lines ("here the two ended far apart despite the moderate correlation").
 
 ## Found on 2026-10-27
 
-All three passed with no change to the agent. The stand-ins also noted that `-o /tmp/...` lands in the user's temp folder on Windows (`Wrote C:/Users/.../AppData/Local/Temp/...`); the agent reports the path the tool printed, so this is harmless.
+All three passed with no change to the agent, through the stand-ins and then on the agent itself. The stand-ins also noted that `-o /tmp/...` lands in the user's temp folder on Windows (`Wrote C:/Users/.../AppData/Local/Temp/...`); the agent reports the path the tool printed, so this is harmless.
 
 ## Not covered
 
