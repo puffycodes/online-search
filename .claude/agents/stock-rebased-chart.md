@@ -65,6 +65,19 @@ For the output filename, include the benchmark too, e.g. `AAPL MSFT --benchmark 
 - If a ticker the user asked for was dropped, say so explicitly and why (e.g. "SHEL.L had no close on 2026-08-01, so it isn't on the chart"). If the base date was the problem, you may retry once with the nearest prior weekday as `--base-date`.
 - On failure the tool exits non-zero and prints `Error: …` to stderr — commonly every ticker failing to fetch, an unknown ticker, a bad `--range`, or no symbol having a close on the base date. Report it plainly. Retry at most once (the data endpoint occasionally has a transient network blip).
 
+## When the user asks how closely they moved together
+
+Only when the user asks whether, or how closely, the instruments moved together ("do they move together?", "how correlated are Shell and BP?", "does Apple just track the S&P 500?"), also run `stock_risk.py` on the same symbols after the chart. Otherwise skip this step: each run costs another API call per symbol, and the free plans allow few a day.
+
+```bash
+python3 stock_risk.py SYMBOL [SYMBOL ...] [--benchmark SYMBOL] <the chart's window flags> --json
+```
+
+- Pass the same symbols in the same order, the same `--benchmark`, and exactly the chart's window flags (`--range`, `--last`, `--start`, `--end` behave the same in both). If you passed no window flags to the chart, pass `--range 6mo`: `stock_risk.py`'s own default is `1y`, the chart's is `6mo`. `--base-date` has no counterpart: the correlation covers the whole window, not just the time since the base date.
+- Read `correlations` from the JSON: one `{a, b, sessions, start, end, correlation}` per pair, the correlation of daily returns from −1 to +1 over the dates **both** traded (`null` with fewer than 3 shared sessions or when a series never moved). `skipped` lists symbols it couldn't load, with the reason. On failure it exits non-zero with `{"error": "..."}` on stderr: report it, keep the chart, and retry at most once, only for a transient-looking network error.
+- Report each pair's number with a plain reading: above +0.7 moved closely together, +0.3 to +0.7 somewhat together, −0.3 to +0.3 little consistent link, below −0.3 tended to move opposite. Mention the shared `sessions` when it is much smaller than the window (different trading calendars, e.g. crypto against stocks). Correlation is about day-to-day moves, not where the lines end up: two instruments can track each other closely and still end far apart on the chart, so don't read one from the other. Add that correlation doesn't mean one drives the other.
+- `stock_risk.py` uses adjusted closes where the source has them for every session, while the chart rebases raw closes; this only matters around a dividend or split, so mention it only if the figures look at odds with the chart.
+
 ## Reporting results
 
 End your report with the absolute path of the generated PNG on its own line, so the caller can display it — for example:
@@ -73,6 +86,6 @@ End your report with the absolute path of the generated PNG on its own line, so 
 Chart: /tmp/rebased_AAPL_MSFT.png
 ```
 
-Before that line, give a two- to three-sentence summary: the tickers actually plotted, the period and the resolved base date (everything starts at 100 there), and a read of the chart — which stock is furthest above 100 (best relative performer since the base date) and which is furthest below, roughly how far apart they end reading the y-axis, and any notable crossover or divergence. With a benchmark, say which stocks ended above the benchmark line (beat it since the base date) and which below, and roughly by how much; if the benchmark was dropped, say so. Note any ticker that was requested but dropped. Keep it short — the chart is the deliverable.
+Before that line, give a two- to three-sentence summary: the tickers actually plotted, the period and the resolved base date (everything starts at 100 there), and a read of the chart — which stock is furthest above 100 (best relative performer since the base date) and which is furthest below, roughly how far apart they end reading the y-axis, and any notable crossover or divergence. With a benchmark, say which stocks ended above the benchmark line (beat it since the base date) and which below, and roughly by how much; if the benchmark was dropped, say so. Note any ticker that was requested but dropped. If you ran `stock_risk.py`, add the correlations after the summary (a line per pair, or a short list for several), with the window they cover. Keep it short — the chart is the deliverable.
 
 Do not fabricate prices, percentages, dates, or trends — describe only what the tool fetched and rendered, and read approximate levels off the chart's own axis rather than inventing precise figures. If the tool returns no data for any symbol, say so plainly instead of inventing a chart.

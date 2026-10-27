@@ -362,16 +362,14 @@ before the top picks because it's about the repo's existing sources, not new one
 
 Chosen on 2026-10-27, in suggested order (the 2026-10-21 picks, trip weather, the
 `url-summary` test runs and the RSS/Atom feed reader, are done). Each is described in
-full in its section below; remove it from both places when it's done. Replacing
+full in its section below; remove it from both places when it's done (the first,
+more use of the risk metrics, was done on 2026-10-27). Replacing
 Yahoo Finance (above) is separate: it waits on a provider decision.
 
-1. **More use of the risk metrics** (Finance): no new source to vet and no new
-   script; agent edits to `stock-trend` and `stock-rebased-chart` that call
-   `stock_risk.py`, so the work is in the reporting rules and a few test runs.
-2. **Earthquakes near a place** (Weather and environment): one small script that
+1. **Earthquakes near a place** (Weather and environment): one small script that
    reuses `weather.geocode()`; USGS data is US-government public domain, but its
    robots.txt and terms still need the usual check first.
-3. **Package stats** (Tech and news): PyPI's JSON API and npm's registry, which
+2. **Package stats** (Tech and news): PyPI's JSON API and npm's registry, which
    pair with the `package-vulnerabilities` agent (latest version and release dates
    next to the advisories); check both registries' terms and robots.txt first.
 
@@ -405,13 +403,12 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### Extending existing scripts
 
-- [ ] **More use of the risk metrics**: `stock_risk.py` and the `stock-risk` agent
-  report `indicators.py`'s `volatility`, `max_drawdown` and `correlation`. The
-  `stock-trend` agent could add a line of volatility and worst drawdown alongside
-  its verdict (reusing `stock_risk.periods_per_year()` for crypto), and the
-  `stock-rebased-chart` agent could run `stock_risk.py` on the same symbols when the
-  user asks how closely they moved together. Shading the worst drawdown on the
-  candlestick chart is a further option.
+- [ ] **Shade the worst drawdown on the candlestick chart**: `indicators.max_drawdown()`
+  gives the peak and trough; `stock_candlestick_chart.py` could shade that stretch.
+  (The rest of "more use of the risk metrics" was done on 2026-10-27: the
+  `stock-trend` agent adds a line of volatility and worst fall, and the
+  `stock-rebased-chart` agent runs `stock_risk.py` when asked how closely the
+  instruments moved together.)
 - [ ] **Dividend and split history**: Yahoo's chart endpoint can return dividend and
   split events alongside prices (`events=div,splits`), so this is an extension of
   `yahoo_finance.py`. Unofficial, like the rest of Yahoo.
@@ -526,4 +523,7 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   real agent in a new session), and a Wayback copy found by `url-broken-links` is untested because
   archive.org rate-limited the run. The fixes to `hn-search`, `trip-weather` and `url-feed` were
   confirmed by reruns on 2026-10-21, which also added an `--author` case to `hn-search`
-  and an ambiguous-place case to `trip-weather`.
+  and an ambiguous-place case to `trip-weather`. `stock-trend` and `stock-rebased-chart`
+  got theirs on 2026-10-27, through a stand-in, with the risk line and the correlation
+  step; they found a Windows `/tmp` path bug in `stock-trend` (fixed the same day), and
+  are still to be rerun through the real agents in a new session.

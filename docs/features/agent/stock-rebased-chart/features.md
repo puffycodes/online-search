@@ -4,6 +4,7 @@
 
 - Use the scripts or agents in this project as much as possible.
     - Use the stock_rebased_chart.py script to draw the chart.
+    - Use the stock_risk.py script for how closely the instruments moved together, only when the user asks.
 
 ## Actions
 
@@ -35,6 +36,10 @@
         - If the base date was the problem, retry once with the nearest earlier weekday.
     - If no stock can be drawn, report the error.
     - Retry at most once, only for a transient network error.
+- Only when the user asks whether, or how closely, the instruments moved together, also measure their correlation after drawing the chart:
+    - Over the same instruments, benchmark and window as the chart (the past 6 months if none was given); the base date doesn't apply.
+    - The correlation of daily returns for each pair, over the dates both traded.
+    - If it fails, keep the chart and report the error; retry at most once, only for a transient network error.
 - Output:
     - Two or three sentences: {{Stocks Plotted}}, {{Period}}, {{Base Date}}, and a read of the chart:
         - {{Best Performer}} (furthest above 100) and {{Worst Performer}} (furthest below 100)
@@ -42,5 +47,6 @@
         - Any notable crossover or divergence.
         - With a benchmark: which stocks ended above it and which below, roughly by how much; or that it was dropped.
     - {{Stocks Dropped}}, with the reason, if any.
+    - If the correlation was measured: {{Correlation}} for each pair, with a plain reading (above +0.7 moved closely together, +0.3 to +0.7 somewhat together, −0.3 to +0.3 little consistent link, below −0.3 tended to move opposite), {{Shared Sessions}} when much fewer than the window, and that correlation doesn't mean one drives the other.
     - Chart: {{Absolute Path to the Image}}, on its own line at the end.
 - Never fabricate prices, percentages, dates or trends.

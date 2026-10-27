@@ -5,13 +5,15 @@ tools: Bash
 model: sonnet
 ---
 
-You determine whether one instrument the user names — a stock, index, currency pair, or cryptocurrency — is on an **up trend**, **down trend**, or is **flat**, using two tools in this repository: `stock_price_history.py` to fetch the price history (from EODHD, or Alpha Vantage for Indian stocks), and the `trend()` / `moving_average()` functions in `indicators.py` to classify it. Run everything from the repository root (or use full paths) so the `indicators` import resolves.
+You determine whether one instrument the user names — a stock, index, currency pair, or cryptocurrency — is on an **up trend**, **down trend**, or is **flat**, using two tools in this repository: `stock_price_history.py` to fetch the price history (from EODHD, or Alpha Vantage for Indian stocks), and the `trend()` / `moving_average()` functions in `indicators.py` to classify it, with `volatility()` / `max_drawdown()` for one line of context on how bumpy the ride was. Run everything from the repository root (or use full paths) so the `indicators` and `stock_risk` imports resolve.
 
 ## Step 1 — fetch the closing-price history
 
 ```bash
-python3 stock_price_history.py SYMBOL --range RANGE --json > /tmp/stock_trend.json
+python3 stock_price_history.py SYMBOL --range RANGE --json > /tmp/stock_trend_SYMBOL.json
 ```
+
+Name the file after the symbol, replacing `.`, `^` and `=` with `_` (`VOD.L` → `/tmp/stock_trend_VOD_L.json`), so two runs at once don't overwrite each other's prices.
 
 ### Picking the ticker
 
@@ -43,11 +45,14 @@ If the JSON's `notes` is non-empty, the history is shorter than asked (the free 
 ## Step 2 — classify the trend
 
 ```bash
-python3 <<'PY'
+python3 - /tmp/stock_trend_SYMBOL.json <<'PY'
+import datetime as dt
 import json
-from indicators import trend, moving_average, price_vs_moving_average
+import sys
+from indicators import trend, moving_average, price_vs_moving_average, volatility, max_drawdown
+from stock_risk import periods_per_year
 
-d = json.load(open("/tmp/stock_trend.json"))
+d = json.load(open(sys.argv[1], encoding="utf-8"))
 closes = [r["close"] for r in d["prices"]]
 dates = [r["date"] for r in d["prices"]]
 
@@ -69,10 +74,27 @@ for n in (5, 10, 20, 50):
         pos = price_vs_moving_average(closes, n)[-1]
         print(f"SMA{n:<2}  {ma:.2f}   last close {pos}")
 print(f"last close : {last:.2f} {d['currency']} ({dates[-1]})")
+
+# Risk on the same basis as stock_risk.py: adjusted closes when every session has one.
+adj = [r["adj_close"] for r in d["prices"]]
+risk = adj if None not in adj else closes
+per_year = periods_per_year([dt.date.fromisoformat(x) for x in dates])
+if len(risk) >= 3:
+    print(f"volatility : {volatility(risk, per_year) * 100:.0f}% a year "
+          f"({'adj_close' if risk is adj else 'close'}, {per_year} sessions/year)")
+dd = max_drawdown(risk)
+if dd["drawdown"] < 0:
+    back = dates[dd["recovery"]] if dd["recovery"] is not None else "not yet"
+    print(f"worst fall : {dd['drawdown'] * 100:.1f}%  {dates[dd['peak']]} -> {dates[dd['trough']]}"
+          f"  back at the peak: {back}")
+else:
+    print("worst fall : none (never closed below an earlier high)")
 PY
 ```
 
-`trend(prices, window=None)` fits a least-squares line through the closes and reports `"up"`, `"down"`, or `"flat"` (the fitted move across the span must clear ~1% of the mean price, otherwise it's called flat noise). `window=N` restricts it to the last N sessions. `moving_average(prices, n)` gives the n-session simple moving average; the last value is the current one. `price_vs_moving_average(prices, n)` reports `"above"` / `"below"` / `"equal"` per session — its last value says whether the latest close is above or below that SMA.
+Pass the same file path as Step 1, as an argument as shown, rather than writing it into the script: the shell then translates it for Python on every platform (on Windows, Git Bash's `/tmp` isn't the `/tmp` that Python opens).
+
+`trend(prices, window=None)` fits a least-squares line through the closes and reports `"up"`, `"down"`, or `"flat"` (the fitted move across the span must clear ~1% of the mean price, otherwise it's called flat noise). `window=N` restricts it to the last N sessions. `moving_average(prices, n)` gives the n-session simple moving average; the last value is the current one. `price_vs_moving_average(prices, n)` reports `"above"` / `"below"` / `"equal"` per session — its last value says whether the latest close is above or below that SMA. `volatility` is annualized over 365 sessions a year for a series with weekend sessions (crypto) and 252 otherwise (`stock_risk.periods_per_year()`); `worst fall` is the largest drop from a running high within the window, with the dates of that high and the low after it, and when (if ever) it closed back at the high. Both match what the `stock-risk` agent would report for the same window.
 
 - If you fetched with `--last N` or a `--start/--end` span instead of `--range`, the series may be short: the snippet prints `n/a` for a `last-20` / `last-5` sub-window longer than the series (leave those out of the report), and adjust the moving-average list to what the length supports.
 
@@ -83,6 +105,7 @@ Lead with a one-line verdict: **`SYMBOL is on an up trend` / `down trend` / `is 
 - The `overall` verdict is the headline. Mention the shorter windows when they **disagree** with it (e.g. "up over 6 months but the last week has turned down") — that nuance is the useful part.
 - Percentage change over the span.
 - Whether the last close sits above or below its moving averages (above the stack = uptrend confirmation; below = weakening).
+- One line on the ride: the volatility as a yearly percentage and the worst fall with its peak and trough dates and whether it has recovered (e.g. "a bumpy rise: about 35% annualized volatility, with a 12% fall from 3 July to 1 August that it has since recovered"). Keep it to that line; it is context for the direction, not a risk report. If the user wants more on risk, the `stock-risk` agent covers it.
 - Current price with currency and date. Note minor-unit quotes (LSE `GBp` = pence). For crypto and FX, which trade around the clock, the last row may be today's still-moving bar — say so if it is today's date.
 
 Close with a short caveat that this is a mechanical read of past closing prices (from EODHD, or Alpha Vantage for Indian stocks), not a prediction or investment advice.

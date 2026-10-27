@@ -4,6 +4,7 @@
 
 - Use the scripts or agents in this project as much as possible.
     - Use the stock_price_history.py script to retrieve the closing prices, and the trend() and moving_average() functions in indicators.py to classify them.
+    - Use the volatility() and max_drawdown() functions in indicators.py, with stock_risk.py's periods_per_year(), for the volatility and worst fall over the same prices.
 
 ## Actions
 
@@ -28,11 +29,15 @@
     - Over the whole window.
     - Over the last 20 and last 5 sessions, when there are enough sessions.
 - Compute the change over the window, and whether the last close is above or below its 5-, 10-, 20- and 50-session moving averages (where there are enough sessions).
+- Compute, from the same prices (adjusted closes when every session has one, otherwise closes), without fetching again:
+    - The annualized volatility (over 365 sessions a year for a series that trades at weekends, such as crypto, otherwise 252).
+    - The worst fall from a running high: its size, the dates of the high and the low after it, and when (if ever) it closed back at the high.
 - Output:
     - {{Symbol}} is on an up trend / down trend / is roughly flat, from {{Start Date}} to {{End Date}}.
     - {{Shorter-Window Trends}}, when they disagree with the overall trend.
     - {{Change Over the Window}}
     - {{Last Close vs Moving Averages}}
+    - One line on the ride: {{Volatility}} a year and {{Worst Fall}} from {{Peak Date}} to {{Trough Date}}, recovered on {{Recovery Date}} or not yet. Only that line; for more on risk, point to the stock-risk agent.
     - For a currency pair, which currency the trend favours (e.g. an up trend in USD/JPY means the dollar is strengthening against the yen).
     - {{Last Close}} {{Currency}} on {{Date}}, noting minor units (e.g. GBp = pence). Crypto and currency pairs trade around the clock, so the last price may be today's still-moving bar; say so if it is today's date.
     - A short caveat: this is a mechanical read of past closing prices, not a prediction or investment advice.

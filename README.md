@@ -1374,7 +1374,7 @@ The agent's frontmatter restricts it to the `Bash` tool only, since running the 
 
 ## Claude Code agent: `stock-trend`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-trend.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_price_history.py`](#stock_price_historypy) for the price history and then to the [`indicators.py`](#indicatorspy) functions (`trend`, `moving_average`) to classify it.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-trend.md`. Like the other agents here, it calls no API itself — it shells out via the `Bash` tool to [`stock_price_history.py`](#stock_price_historypy) for the price history and then to the [`indicators.py`](#indicatorspy) functions (`trend`, `moving_average`) to classify it, with `volatility` and `max_drawdown` (annualized through [`stock_risk.py`](#stock_riskpy)'s `periods_per_year()`) for one line on how bumpy the ride was.
 
 ### Purpose
 
@@ -1391,8 +1391,8 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 
 1. Resolves the company to a Yahoo-notation ticker, adding the exchange suffix for non-US listings (`.L`, `.DE`, `.NS`, …), or, for a non-stock, Yahoo's own symbol — an index (`^GSPC`), currency pair (`EURUSD=X`) or crypto coin (`BTC-USD`); Singapore, Tokyo and futures are declined for now; if the ticker is uncertain it says so rather than guessing.
 2. Chooses the window from the user's phrasing — `--range 3mo` for "lately" / "this quarter", `--range ytd` / `1y` for "this year" / "past year", `--last N` for "past N days/weeks", `--start`/`--end` for a named month or span, otherwise `--range 6mo`.
-3. Runs `python3 stock_price_history.py SYMBOL <window flags> --json > /tmp/stock_trend.json` from the repo root, then a `python3` heredoc that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions (`n/a` when the series is shorter than that sub-window), the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages.
-4. Reports a one-line verdict (up trend / down trend / roughly flat over the dates examined) plus a few supporting lines, calling out when the short-window trend disagrees with the overall one, and closes with a caveat that this is not a prediction or investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
+3. Runs `python3 stock_price_history.py SYMBOL <window flags> --json > /tmp/stock_trend_<SYMBOL>.json` from the repo root (one file per symbol, so concurrent runs don't clash), then a `python3 - <that path>` heredoc (the path passed as an argument, so Git Bash translates `/tmp` for Windows Python) that imports `indicators` and prints the overall `trend()` verdict, the `trend()` over the last 20 and last 5 sessions (`n/a` when the series is shorter than that sub-window), the percentage change across the span, and — via `price_vs_moving_average()` — whether the last close is above or below each of its 5 / 10 / 20 / 50-session moving averages. From the same prices, with no second fetch, it also prints the annualized `volatility()` (365 sessions a year for a series with weekend sessions, such as crypto, otherwise 252) and the `max_drawdown()` with its peak, trough and recovery dates, on the same basis as [`stock_risk.py`](#stock_riskpy) (adjusted closes when every session has one).
+4. Reports a one-line verdict (up trend / down trend / roughly flat over the dates examined) plus a few supporting lines, calling out when the short-window trend disagrees with the overall one, plus one line giving the volatility and the worst fall (pointing to the [`stock-risk`](#claude-code-agent-stock-risk) agent for more), and closes with a caveat that this is not a prediction or investment advice. On failure it surfaces the `{"error": "..."}` from stderr and retries at most once.
 
 ### Configuration
 
@@ -1402,13 +1402,15 @@ The agent's frontmatter restricts it to `Bash` (run the script and the analysis 
 |---|---|
 | `tools` | `Bash` |
 | Underlying script | [`stock_price_history.py`](#stock_price_historypy) |
-| Underlying module | [`indicators.py`](#indicatorspy) |
+| Underlying modules | [`indicators.py`](#indicatorspy), [`stock_risk.py`](#stock_riskpy) (`periods_per_year()` only) |
+| Test runs | [`docs/features/agent/stock-trend/test-runs.md`](docs/features/agent/stock-trend/test-runs.md) |
 
 ### Notes / limitations
 
-- Requires `stock_price_history.py` (with its `price_source.py` / `yahoo_finance.py` helpers, the `requests` dependency and the API keys) and `indicators.py` to be present and runnable from the repo root — the analysis step must run with the repo root on `sys.path` so `import indicators` resolves.
+- Requires `stock_price_history.py` (with its `price_source.py` / `yahoo_finance.py` helpers, the `requests` dependency and the API keys) and `indicators.py` and `stock_risk.py` to be present and runnable from the repo root — the analysis step must run with the repo root on `sys.path` so `import indicators` and `from stock_risk import periods_per_year` resolve.
 - Only as good as the ticker it picks — a wrong or ambiguous symbol yields the wrong company's trend or a "symbol may be delisted" error.
 - The verdict is a straight-line fit over past closes (see [`indicators.py`](#indicatorspy) limitations): a mechanical description, not a forecast, and sensitive to the window chosen and to `flat_threshold`.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/stock-trend/test-runs.md`](docs/features/agent/stock-trend/test-runs.md) lists targeted live runs of the risk line (a stock with the default window, crypto "lately"); both passed on 2026-10-27 through a stand-in, and found the Windows `/tmp` path bug fixed the same day.
 - Inherits all the limitations of [`stock_price_history.py`](#stock_price_historypy) itself (free-plan history limits, Yahoo-notation tickers only, end-of-day snapshots, minor-unit prices on some markets).
 
 ---
@@ -1680,7 +1682,7 @@ See [`yahoo_finance.py`](#yahoo_financepy) for `build_params()`, [`stock_data.py
 
 ## Claude Code agent: `stock-rebased-chart`
 
-A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-rebased-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_rebased_chart.py`](#stock_rebased_chartpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered.
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/stock-rebased-chart.md`. Like the other agents here, it calls no API itself — it shells out to [`stock_rebased_chart.py`](#stock_rebased_chartpy) via the `Bash` tool, then `Read`s the generated PNG to confirm it rendered. When the user asks how closely the instruments moved together, it also runs [`stock_risk.py`](#stock_riskpy) on the same symbols for their correlations.
 
 ### Purpose
 
@@ -1700,7 +1702,8 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 3. Chooses the base date: for a "since \<date>" that is also the window start it sets `--start` and lets `--base-date` default to the first date in the first symbol's series; it passes `--base-date` explicitly only when the reference date sits *inside* a longer window, picking a trading day (a symbol with no settled close on that exact date is dropped with a warning).
 4. Passes `--benchmark` when the user compares stocks against a market or index ("vs the S&P 500", "against the market", "did they beat the FTSE?"): the named index, or for "the market" the main index of the stocks' own exchange (`^GSPC` for US stocks, `^FTSE` for London, `^STI` for Singapore, …). When the user simply compares two indices with each other, both stay plain symbols.
 5. Runs `python3 stock_rebased_chart.py SYMBOL [SYMBOL ...] <window flags> [--base-date …] [--benchmark …] -o /tmp/rebased_<TICKERS>.png` from the repo root — always to an explicit temp path (never `--show`, never cluttering the repo).
-6. Reads the PNG to verify it rendered, then reports a two- to three-sentence summary — the tickers plotted, the period and resolved base date, which line ends furthest above 100 (best relative performer) and which furthest below, which stocks ended above or below the benchmark line when there is one, any notable crossover, and any requested ticker that was dropped — ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
+6. Only when the user asks whether, or how closely, the instruments moved together, runs `python3 stock_risk.py SYMBOL [SYMBOL ...] [--benchmark …] <the chart's window flags> --json` (`--range 6mo` when the chart had none, since `stock_risk.py` defaults to `1y`) and reads each pair's correlation of daily returns from `correlations`. It skips this otherwise, as each run costs another API call per symbol.
+7. Reads the PNG to verify it rendered, then reports a two- to three-sentence summary — the tickers plotted, the period and resolved base date, which line ends furthest above 100 (best relative performer) and which furthest below, which stocks ended above or below the benchmark line when there is one, any notable crossover, and any requested ticker that was dropped, then each pair's correlation with a plain reading if it was measured — ending with the absolute path of the chart on its own line so the caller can display it. On failure it surfaces the error from stderr and retries at most once.
 
 ### Configuration
 
@@ -1709,7 +1712,8 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 | Field | Value |
 |---|---|
 | `tools` | `Bash`, `Read` |
-| Underlying script | [`stock_rebased_chart.py`](#stock_rebased_chartpy) |
+| Underlying scripts | [`stock_rebased_chart.py`](#stock_rebased_chartpy); [`stock_risk.py`](#stock_riskpy) when asked how closely the instruments moved together |
+| Test runs | [`docs/features/agent/stock-rebased-chart/test-runs.md`](docs/features/agent/stock-rebased-chart/test-runs.md) |
 
 ### Notes / limitations
 
@@ -1717,6 +1721,8 @@ The agent's frontmatter restricts it to `Bash` (run the script) and `Read` (veri
 - Only as good as the tickers it picks — a wrong or ambiguous symbol yields the wrong company's line or a "symbol may be delisted" warning that silently drops it from the chart.
 - The subagent's own reply isn't shown to the user directly; it returns the PNG path for the calling session to display.
 - Reads approximate levels off the chart axis for its summary — it does not compute exact ending percentages.
+- The correlations cover the whole window, not just the time since `--base-date`, and come from adjusted closes where the source has them, while the chart rebases raw closes.
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/stock-rebased-chart/test-runs.md`](docs/features/agent/stock-rebased-chart/test-runs.md) lists targeted live runs of the correlation step (not asked, asked with the default window, crypto against an index); all three passed on 2026-10-27 through a stand-in.
 - Inherits all the limitations of [`stock_rebased_chart.py`](#stock_rebased_chartpy) itself (free-plan history limits, Yahoo-notation tickers only, an **exact** base-date match required per symbol, raw unadjusted closes, `--show` unavailable).
 
 ---
