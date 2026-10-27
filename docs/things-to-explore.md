@@ -363,13 +363,11 @@ before the top picks because it's about the repo's existing sources, not new one
 Chosen on 2026-10-27, in suggested order (the 2026-10-21 picks, trip weather, the
 `url-summary` test runs and the RSS/Atom feed reader, are done). Each is described in
 full in its section below; remove it from both places when it's done (the first,
-more use of the risk metrics, was done on 2026-10-27). Replacing
+more use of the risk metrics, and the second, earthquakes near a place, were done
+on 2026-10-27). Replacing
 Yahoo Finance (above) is separate: it waits on a provider decision.
 
-1. **Earthquakes near a place** (Weather and environment): one small script that
-   reuses `weather.geocode()`; USGS data is US-government public domain, but its
-   robots.txt and terms still need the usual check first.
-2. **Package stats** (Tech and news): PyPI's JSON API and npm's registry, which
+1. **Package stats** (Tech and news): PyPI's JSON API and npm's registry, which
    pair with the `package-vulnerabilities` agent (latest version and release dates
    next to the advisories); check both registries' terms and robots.txt first.
 
@@ -391,7 +389,7 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 - [ ] **Climate projections and elevation** (Open-Meteo climate and elevation APIs):
   long-range temperature and rainfall projections for a place, and its height above
   sea level.
-- [ ] **Earthquakes near a place** (USGS GeoJSON feed, free): recent quakes filtered by
+- [x] **Earthquakes near a place** (USGS GeoJSON feed, free): recent quakes filtered by
   magnitude and distance from the coordinates `geocode()` returns. **Checked on
   2026-10-27** ([source audit](source-audit.md)): allowed. `earthquake.usgs.gov`
   has no robots.txt (404) and no AI opt-out; no key; the data is US-government
@@ -411,7 +409,9 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   thinner:** a magnitude-3 search around Tokyo returned only 4.5 and above, as the
   catalog relies on regional networks for small quakes and has few outside the
   US; the script and agent should say so rather than imply no small quakes
-  happened.
+  happened. **Built on 2026-10-27** as `earthquakes.py` (defaults: 300 km,
+  magnitude 2.5+, the last 30 days, newest first, 20 at most, each with a flag),
+  with the `earthquakes` agent the same day.
 - [ ] **Space weather and aurora** (NOAA Space Weather Prediction Center JSON
   products): the current and forecast Kp index and aurora outlook, and whether
   aurora might be visible at a place's latitude.

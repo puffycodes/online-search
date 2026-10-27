@@ -33,7 +33,7 @@ crawlers; for those the API's own terms decide.
 | EODHD end-of-day API | `eodhd_price_history.py`, and through `price_source.py` the four price scripts and 5 agents (added 2026-10-21) | Allowed (keyed); personal, non-professional use | None; don't redistribute or display the data to others |
 | Alpha Vantage | `alphavantage_price_history.py`, and through `price_source.py` Indian tickers in the four price scripts (added 2026-10-21) | Allowed (keyed); personal, non-commercial use | None |
 | Frankfurter | `exchange_rates.py` (checked and added 2026-10-27) | Allowed; no key, no quotas; blended rates free to use | Use the blended rates; a single provider's rates follow that provider's terms |
-| USGS earthquake catalog (ComCat) | Nothing yet (checked 2026-10-27 for the planned earthquakes script) | Allowed; no key; US-government public domain | Credit the USGS as the source |
+| USGS earthquake catalog (ComCat) | `earthquakes.py` and the `earthquakes` agent (checked and added 2026-10-27) | Allowed; no key; US-government public domain | Credit the USGS as the source |
 
 ## Violations
 
@@ -200,8 +200,8 @@ its robots.txt only reported on, as with `--warn-robots`.
   servers, so a script using it doesn't fetch from the ECB. Full check in
   [`things-to-explore.md`](things-to-explore.md).
 - **USGS earthquake catalog (ComCat)** ([API docs](https://earthquake.usgs.gov/fdsnws/event/1/)):
-  checked 2026-10-27 before building an earthquakes script. Nothing is built on it
-  yet. `earthquake.usgs.gov/robots.txt` is a 404, so nothing is disallowed and there
+  checked 2026-10-27 before building `earthquakes.py` (built the same day; every
+  result ends with the USGS credit). `earthquake.usgs.gov/robots.txt` is a 404, so nothing is disallowed and there
   is no Content-Signal line (RFC 9309 treats a missing file as allow-all). The API
   is documented and offered for programs ("GeoJSON is intended to be used as a
   programatic interface for applications"), needs no key, and answered a plain

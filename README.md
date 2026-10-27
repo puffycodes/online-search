@@ -22,6 +22,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`.claude/agents/air-quality.md`](#claude-code-agent-air-quality) — Claude Code subagent that calls `air_quality.py` and reports the current air quality / AQI for a named location
 - [`trip_weather.py`](#trip_weatherpy) — weather for a trip (a place and up to 31 days, up to a year ahead): the forecast where there is one, typical weather from the same dates in past years beyond it, UV, sun times, and air quality and pollen where forecast, merged by date from the other weather scripts
 - [`.claude/agents/trip-weather.md`](#claude-code-agent-trip-weather) — Claude Code subagent that calls `trip_weather.py` and reports the weather for a trip, keeping forecast and typical weather clearly apart
+- [`earthquakes.py`](#earthquakespy) — recent earthquakes near a named location (within 300 km, magnitude 2.5+, over the last 30 days by default, each adjustable), from the USGS earthquake catalog
+- [`.claude/agents/earthquakes.md`](#claude-code-agent-earthquakes) — Claude Code subagent that calls `earthquakes.py` and reports the earthquakes near a named place over a period
 
 **[Market & Stock Data](#market--stock-data)**
 - [`market_top_volume.py`](#market_top_volumepy) — top movers (volume, gainers, or losers) on any of ~20 world markets
@@ -994,6 +996,199 @@ Subagent definitions are loaded when a Claude Code session starts, so a newly ad
 - Requires `trip_weather.py` and the weather modules it imports (plus `requests`) to be runnable from the repo root.
 - Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/trip-weather/test-runs.md`](docs/features/agent/trip-weather/test-runs.md) lists targeted live runs of its judgement rules ("next week", forecast plus typical, a stay over 31 days, past dates, packing advice with air quality, °F, an ambiguous place name); all passed on 2026-10-21, and again on Sonnet on 2026-10-22, and the first run found the daylight-saving error in sun times that `weather.local_daily()` now fixes.
 - Inherits all the limitations of [`trip_weather.py`](#trip_weatherpy) itself (typical weather is history, short air-quality forecast, 31-day trips).
+
+---
+
+## earthquakes.py
+
+Lists recent earthquakes near a named location — time, magnitude, depth, distance from the place and the USGS description, newest or largest first — from the [USGS earthquake catalog](https://earthquake.usgs.gov/fdsnws/event/1/) (ComCat), searching a circle around the place [Open-Meteo](https://open-meteo.com/)'s geocoding finds for the name. No API key or authentication required.
+
+Requires `weather.py` to be present in the same directory — it imports `geocode`, `place_fields`, `format_place`, `REQUEST_TIMEOUT` and `ATTRIBUTION` directly from it — and [`daily_prices.py`](#daily_pricespy) for its `--start` / `--end` date window (as [`exchange_rates.py`](#exchange_ratespy) does). It also imports `die`, `positive_int`, `bounded_int` and `use_utf8_output` from [`cli_utils.py`](#cli_utilspy).
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `weather.py`, `daily_prices.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+```bash
+pip install requests
+```
+
+### Usage
+
+```bash
+python3 earthquakes.py LOCATION [--radius KM] [--min-magnitude M] [--days N | --start YYYY-MM-DD [--end YYYY-MM-DD]] [--order {time,magnitude}] [--limit N] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `LOCATION` (positional) | — | Free-text place name, e.g. `"Tokyo"`, `"San Francisco"`, `"Anchorage, Alaska"` |
+| `--radius KM` | `300` | Search radius around the place, in whole km (at most 20000) |
+| `--min-magnitude M` | `2.5` | Smallest magnitude to list (from -2 to 10) |
+| `--days N` | `30` | The last N days, ending today (UTC); `1` is today. Can't be combined with `--start` |
+| `--start` / `--end` | — | An explicit window of UTC dates, inclusive; `--end` defaults to today and needs `--start` |
+| `--order` | `time` | `time` lists newest first, `magnitude` largest first |
+| `--limit N` | `20` | Most earthquakes to list (at most 20000, the API's cap per query) |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report — for calling this script as a tool from an agent or another program |
+
+#### Example output
+
+From a live run on 2026-10-27:
+
+```
+$ python3 earthquakes.py Tokyo --order magnitude --limit 3
+Looking up earthquakes near 'Tokyo'...
+
+Earthquakes within 300 km of Tokyo, Japan
+Magnitude 2.5+, 2026-09-28 to 2026-10-27 (UTC), largest first
+
+Time (UTC)              Mag     Depth      Away  Place
+------------------------------------------------------
+2026-10-01T12:27:11Z    5.3   41.6 km     78 km  0 km NNE of Yōkaichiba, Japan
+2026-10-07T19:13:50Z    4.9     73 km     64 km  3 km WSW of Shibayama, Japan
+2026-09-28T19:45:07Z    4.9   68.5 km     41 km  5 km S of Sakai, Japan
+
+More earthquakes match; showing the first 3 (raise --limit to see more).
+
+Note: Outside the US the USGS catalog lists few earthquakes below about magnitude 4.5, so smaller quakes there are mostly missing, not absent.
+
+Earthquake data courtesy of the U.S. Geological Survey (https://earthquake.usgs.gov/). Place lookup: Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0.
+```
+
+A quake is flagged `[tsunami flag]` (USGS's flag for a large quake in an oceanic region, not a warning), `[PAGER <level>]` (USGS's estimate of likely impact) or `[not yet reviewed]` (an automatic solution whose magnitude and location may change).
+
+#### Tool usage (`--json`)
+
+```bash
+python3 earthquakes.py "San Francisco" --days 7 --limit 1 --json
+```
+
+```json
+{
+  "location": "San Francisco",
+  "admin1": "California",
+  "country": "United States",
+  "latitude": 37.77493,
+  "longitude": -122.41942,
+  "radius_km": 300,
+  "min_magnitude": 2.5,
+  "start": "2026-10-21",
+  "end": "2026-10-27",
+  "order": "time",
+  "limit": 1,
+  "count": 1,
+  "more": true,
+  "earthquakes": [
+    {
+      "time": "2026-10-26T13:10:33Z",
+      "magnitude": 2.5,
+      "magnitude_type": "md",
+      "place": "4 km SE of Aromas, CA",
+      "latitude": 36.8626670837402,
+      "longitude": -121.605003356934,
+      "depth_km": 4.8,
+      "distance_km": 124,
+      "status": "automatic",
+      "tsunami": false,
+      "alert": null,
+      "felt": 6,
+      "url": "https://earthquake.usgs.gov/earthquakes/eventpage/nc75455061"
+    }
+  ],
+  "attribution": "Earthquake data courtesy of the U.S. Geological Survey (https://earthquake.usgs.gov/). Place lookup: Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0."
+}
+```
+
+With `--json`, the leading progress line is suppressed and the result prints as a single JSON object on stdout. `more` is `true` when more quakes matched than `limit`; `coverage_note` is added for a place outside the US. On failure, an exit code of `1` is returned and a JSON object (`{"error": "..."}`) is printed to stderr instead of plain text.
+
+### How it works
+
+1. **Window** — `resolve_window()` turns `--days` (or `--start` / `--end`, through `daily_prices.resolve_window()`) into inclusive UTC dates, before any network call.
+2. **Geocode** — Calls `weather.geocode()` to resolve the free-text `LOCATION` to its top-matching place.
+3. **Query** — `fetch_geojson()` calls `earthquake.usgs.gov/fdsnws/event/1/query?format=geojson` with `latitude`, `longitude`, `maxradiuskm`, `minmagnitude`, `starttime`, `endtime` (the day after the final date, so it is inclusive), `orderby` and `limit` (one more than asked, so `more` can be set).
+4. **Shape and display** — `quake_row()` flattens each GeoJSON feature (epoch-millisecond time to ISO UTC, depth, and the great-circle distance from the place via `distance_km()`), and `format_earthquakes()` prints the table (or the JSON object with `--json`), with the coverage note outside the US and the credit line.
+
+### Configuration
+
+These are set as constants near the top of the file — edit them directly to change behavior:
+
+| Constant | Default | Description |
+|---|---|---|
+| `DEFAULT_RADIUS_KM` | `300` | `--radius` default |
+| `DEFAULT_MIN_MAGNITUDE` | `2.5` | `--min-magnitude` default |
+| `DEFAULT_DAYS` | `30` | `--days` default |
+| `DEFAULT_LIMIT` | `20` | `--limit` default |
+| `MAX_RADIUS_KM` / `MAX_LIMIT` | `20000` / `20000` | The flags' upper bounds (the API's own caps) |
+| `COVERAGE_NOTE` | — | The note added for a place outside the US |
+| `REQUEST_TIMEOUT` | 10 (from `weather.py`) | Per-request timeout in seconds |
+
+### API reference
+
+- `fetch_geojson(params)` — GETs the event query as GeoJSON; returns no events for a 204, and raises `requests.HTTPError` with USGS's own reason for a rejected query (its plain-text "Error 400: Bad Request" body).
+- `resolve_window(days=None, start=None, end=None, today=None)` — The inclusive `(first, final)` UTC dates: `start` / `end` when given, otherwise the last `days` days ending today (`DEFAULT_DAYS` by default). Raises `ValueError` for a bad date, `end` without `start`, or an end before the start.
+- `distance_km(lat1, lon1, lat2, lon2)` — Great-circle (haversine) distance in km.
+- `utc_time(millis)` — Epoch milliseconds as `YYYY-MM-DDTHH:MM:SSZ`, or `None`.
+- `quake_row(feature, latitude, longitude)` — One feature as `{time, magnitude, magnitude_type, place, latitude, longitude, depth_km, distance_km, status, tsunami, alert, felt, url}`.
+- `get_earthquakes(location, radius_km=300, min_magnitude=2.5, first=None, final=None, order="time", limit=20)` — Geocodes and queries; returns the record shown above (without `attribution`), or `None` for an unknown place.
+- `format_earthquakes(row)` — Renders a `get_earthquakes()` record as the human-readable report.
+- `magnitude(value)` — argparse type for a magnitude from -2 to 10.
+- `parse_args(argv=None)` / `main(argv=None)` — The CLI; `main()` resolves the window, fetches, handles not-found and network errors, and prints the report or JSON.
+
+### Error handling
+
+- An unknown place prints `Error: No location found matching '<LOCATION>'.` (or `{"error": ...}` with `--json`) and exits 1.
+- A malformed date or an end before the start exits 1 before any network call; a USGS or network failure exits 1 with the reason (a rejected query keeps USGS's message, e.g. `400: Bad latitude value "99" ...`).
+- Invalid flag values (a radius of 0 or over 20000, a magnitude outside -2 to 10, `--days 0`, `--days` with `--start`, `--end` without `--start`, an unknown `--order`) exit 2 with a usage message, before any network call.
+
+### Notes / limitations
+
+- **Credit the USGS.** USGS data is US-government public domain, and USGS asks to be credited; the place lookup is Open-Meteo's, under CC BY 4.0, which requires attribution. The report ends with both credits, and the JSON carries them as `attribution`.
+- **Coverage outside the US is thin for small quakes.** The catalog has few earthquakes below about magnitude 4.5 outside the US (a magnitude-3 search around Tokyo returned only 4.5 and above), so a quiet result there doesn't mean no small quakes happened; results for such places carry `coverage_note`.
+- Recent quakes are often `automatic` (not yet reviewed by a seismologist); their magnitude and location can change.
+- The search is a circle around the single top geocoding match, as in [`weather.py`](#weatherpy); an ambiguous name may resolve to the wrong place.
+- Times are UTC, and so are the dates of `--days` and `--start` / `--end`.
+- Lists what the catalog holds; it doesn't predict earthquakes.
+
+---
+
+## Claude Code agent: `earthquakes`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/earthquakes.md`. It calls no API itself — it shells out to [`earthquakes.py`](#earthquakespy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "any earthquakes near Tokyo recently?", "were there quakes around San Francisco this week?", "what's the biggest earthquake near Anchorage this year?" or "how many magnitude 4+ quakes hit near Christchurch last month?" from the USGS catalog, instead of guessing or using stale training data.
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for questions about earthquakes, tremors or seismic activity near a place over a period, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "earthquakes"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Keeps the script's defaults (300 km, magnitude 2.5+, the last 30 days, newest first, 20 at most) unless the user's wording calls for another value: a named distance (miles converted to km), a named or "big" magnitude, a period ("today" → `--days 1`, "this week" → `--days 7`, "this year" or a named month → `--start` / `--end`), "the biggest" (`--order magnitude`), or "how many" (a higher `--limit`).
+2. Runs `python3 earthquakes.py "LOCATION" <flags> --json` from the repo root.
+3. Answers first (how many, the largest), then states the search it ran, the largest and most recent quakes with their distance and UTC date, and whether more matched than were listed. It explains the tsunami flag as USGS's flag rather than a warning, mentions a PAGER alert of yellow or above and an unreviewed quake it singles out, passes on the coverage note outside the US, never calls a place safe or predicts quakes, and ends with a USGS and Open-Meteo credit line. A "no location found" result is reported as-is; a network-looking failure is retried at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only. `model: sonnet` runs it on Sonnet, for the bounded judgement of turning distance, magnitude and date wording into flags.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`earthquakes.py`](#earthquakespy) |
+| Test runs | [`docs/features/agent/earthquakes/test-runs.md`](docs/features/agent/earthquakes/test-runs.md) |
+
+### Notes / limitations
+
+- Being a prompt rather than code, the agent isn't covered by the offline test suite. [`docs/features/agent/earthquakes/test-runs.md`](docs/features/agent/earthquakes/test-runs.md) lists targeted live runs of its judgement rules (the defaults, outside the US, the biggest this year, miles and a month and a count, nothing found, an unknown place, a prediction asked for); all seven passed on 2026-10-27 through a stand-in.
+- Ends its report with a credit line for the U.S. Geological Survey (which asks to be credited) and Open-Meteo.com (CC BY 4.0, for the place lookup).
+- Requires `earthquakes.py` (and its `weather.py`, `daily_prices.py` and `requests` dependencies) to be present and runnable from the repo root.
+- Inherits all the limitations of [`earthquakes.py`](#earthquakespy) itself (thin coverage of small quakes outside the US, unreviewed recent quakes, the top geocoding match only, UTC times).
 
 ---
 
