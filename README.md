@@ -41,6 +41,8 @@ Small standalone scripts that pull live data from public web APIs, plus two smal
 - [`eodhd_price_history.py`](#eodhd_price_historypy) — past daily open / high / low / close prices of a stock, index, currency pair or crypto coin from EODHD's end-of-day API (requires a free `EODHD_API_KEY`); the main provider behind `price_source.py`
 - [`alphavantage_price_history.py`](#alphavantage_price_historypy) — past daily open / high / low / close prices of a stock from Alpha Vantage's `TIME_SERIES_DAILY` API (requires a free `ALPHAVANTAGE_API_KEY`; free keys get the latest 100 sessions)
 - [`daily_prices.py`](#daily_pricespy) — shared helper module for the two keyed price scripts: the `--start`/`--end`/`--last` window, the price row and the text table
+- [`exchange_rates.py`](#exchange_ratespy) — exchange rates between currencies (latest, on a date, or daily / weekly / monthly over a range), optionally converting an amount, from Frankfurter's blended central-bank rates (no API key)
+- [`.claude/agents/exchange-rates.md`](#claude-code-agent-exchange-rates) — Claude Code subagent that calls `exchange_rates.py` and converts amounts between currencies or reports a reference exchange rate on a date or over a period
 - [`app/stock_information/`](#appstock_information) — small local web app: enter a ticker and see the company (name, sector, industry, market cap, P/E, dividend yield), price (current, session move, previous close, day and 52-week range bars), fundamental indicators (profitability, growth, valuation multiples, financial health, cash flow, shareholder returns) and intrinsic-value estimates (undervalued / fair value / overvalued counts plus a table), via `yahoo_finance.py`, `stock_fundamental.py` and `stock_intrinsic_value.py`
 
 **[Valuation & Fundamental Analysis](#valuation--fundamental-analysis)**
@@ -2295,7 +2297,7 @@ Set `ALPHAVANTAGE_API_KEY` as an environment variable or in `.env` at the repo r
 
 ## daily_prices.py
 
-Shared helper module for [`eodhd_price_history.py`](#eodhd_price_historypy) and [`alphavantage_price_history.py`](#alphavantage_price_historypy). It holds the `--start`/`--end`/`--last` flags and their resolution to calendar dates, the `{date, open, high, low, close, adj_close, volume}` row (the same row as `stock_price_history.py`), and the text table both scripts print. Each script keeps its own fetch and payload parsing. It doesn't import `yahoo_finance.py`. Not a CLI: it is imported, not run.
+Shared helper module for [`eodhd_price_history.py`](#eodhd_price_historypy) and [`alphavantage_price_history.py`](#alphavantage_price_historypy) (and [`exchange_rates.py`](#exchange_ratespy), for `parse_date()` and `resolve_window()`). It holds the `--start`/`--end`/`--last` flags and their resolution to calendar dates, the `{date, open, high, low, close, adj_close, volume}` row (the same row as `stock_price_history.py`), and the text table both scripts print. Each script keeps its own fetch and payload parsing. It doesn't import `yahoo_finance.py`. Not a CLI: it is imported, not run.
 
 ### Constants
 
@@ -2311,6 +2313,173 @@ Shared helper module for [`eodhd_price_history.py`](#eodhd_price_historypy) and 
 - `price_row(date, open_, high, low, close, adj_close, volume)`: one row, with prices rounded to 4 dp and volume an int. Accepts numeric strings; missing values become `None`.
 - `in_window(rows, first, final)`: the rows dated within the window.
 - `print_table(title, rows, currency="")`: prints the title with a session count, the table (with an `Adj Close` column only when some adjusted close differs), and the most recent session's OHLC.
+
+---
+
+## exchange_rates.py
+
+Prints exchange rates from a base currency into one or more others, using [Frankfurter](https://frankfurter.dev/)'s v2 API (`api.frankfurter.dev/v2/rates`): the latest rates, the rates on one date, or the rates over a date range (daily, or one per week or month), optionally converting an amount. Frankfurter blends the reference rates of about 106 central banks and other official sources (the ECB among them) into one rate per currency pair, for about 228 currencies, back to 1948. It needs no API key and has no quotas.
+
+### Requirements
+
+- Python 3.7+
+- [`requests`](https://pypi.org/project/requests/)
+- the repo's own `daily_prices.py` and `cli_utils.py` modules (no install — run from the repo root so they import)
+
+### Usage
+
+```bash
+python3 exchange_rates.py BASE [QUOTE ...] [--amount N] [--date YYYY-MM-DD | --start YYYY-MM-DD [--end YYYY-MM-DD] [--group week|month]] [--json]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `BASE` (positional) | — | Base currency, an ISO code (`USD`, `EUR`, `SGD`, …; any case) |
+| `QUOTE ...` (positional) | every currency | Currencies to convert into |
+| `--amount N` | 1 | Amount of the base currency to convert (must be above 0) |
+| `--date` | — | Rates on one date |
+| `--start` / `--end` | — | A date range, inclusive (`--end` defaults to today and needs `--start`) |
+| `--group` | — | With `--start`: `week` or `month`, one rate per period instead of per day |
+| `--json` | off | Print machine-readable JSON to stdout instead of a human-readable report |
+
+With neither `--date` nor `--start`, the latest rates are returned.
+
+#### Example output
+
+```
+USD exchange rates - latest
+
+2026-10-27  1 USD = 0.8924 EUR
+2026-10-27  1 USD = 0.7480 GBP
+2026-10-27  1 USD = 157.2700 JPY
+2026-10-27  1 USD = 1.2794 SGD
+
+Source: Frankfurter (frankfurter.dev): blended rates from central banks and official sources
+```
+
+Each line carries its own date: the latest rates of different currencies can come from different days (asking for every currency on 2026-10-27 gave rates dated the 23rd, 26th and 27th). With `--amount`, each line also shows the rate, e.g. `250 USD = 319.3750 SGD  (rate 1.2775)`. A range prints a date-by-currency table:
+
+```
+EUR exchange rates - from 2026-10-19 to 2026-10-23
+
+100 EUR in each currency:
+
+Date                   GBP           USD
+----------------------------------------
+2026-10-19         84.2750      112.3300
+2026-10-20         84.1710      112.2800
+2026-10-21         83.9600      112.3100
+2026-10-22         83.9060      112.3600
+2026-10-23         83.7980      112.2000
+
+Source: Frankfurter (frankfurter.dev): blended rates from central banks and official sources
+```
+
+Amounts are shown to 4 decimal places, or to 4 significant digits below 0.01 (1 USD is about `0.00001227` BTC).
+
+#### Tool usage (`--json`)
+
+```bash
+python3 exchange_rates.py USD SGD --amount 250 --date 2026-10-24 --json
+```
+
+```json
+{
+  "base": "USD",
+  "quotes": ["SGD"],
+  "amount": 250.0,
+  "date": "2026-10-24",
+  "start": null,
+  "end": null,
+  "group": null,
+  "source": "Frankfurter (frankfurter.dev): blended rates from central banks and official sources",
+  "rates": [
+    { "date": "2026-10-24", "quote": "SGD", "rate": 1.2775, "converted": 319.375 }
+  ]
+}
+```
+
+`rates` is sorted by date, then currency code. `rate` is Frankfurter's value as given; `converted` is `amount × rate` to 10 significant digits. `quotes` is empty when every currency was asked for.
+
+### How it works
+
+1. **Parse the window**: `--date` is parsed with `daily_prices.parse_date()`, and `--start`/`--end` with `daily_prices.resolve_window()`, so a bad date, `--end` without `--start` or an end before the start fails before any request. Currency codes are upper-cased.
+2. **Fetch**: `build_params()` sets `base`, `quotes` (comma-joined), and `date`, or `from` / `to` (plus `group`); `fetch_rates()` GETs `/v2/rates` with them. A failed request keeps Frankfurter's own message through `cli_utils.raise_for_status()` (an unknown code is `HTTP 422: invalid currency: ZZZ`), and a body that isn't a JSON list is an error.
+3. **Shape**: `rate_rows()` keeps each `{date, quote, rate}` record, adds `converted`, and sorts by date and code.
+4. **Display**: a single date or the latest rates print one line per currency, in code order; a range prints `print_series()`'s table. `--json` prints the object above. Every report ends with the source line.
+
+### Configuration
+
+No API key. Constants at the top of the file:
+
+| Constant | Default | Description |
+|---|---|---|
+| `RATES_URL` | `https://api.frankfurter.dev/v2/rates` | Rates endpoint |
+| `REQUEST_TIMEOUT` | 15 | Request timeout in seconds |
+| `SOURCE` | `"Frankfurter (frankfurter.dev): blended rates from central banks and official sources"` | The `source` field and the report's last line |
+
+### API reference
+
+- `build_params(base, quotes=None, date=None, start=None, end=None, group=None)`: Frankfurter's query parameters; no `date` or `start` asks for the latest rates, no `quotes` for every currency.
+- `fetch_rates(params)`: returns Frankfurter's list of `{date, base, quote, rate}` records. Raises `requests.HTTPError` with Frankfurter's message, `ValueError` for a non-list body, and `requests.RequestException` for a network failure.
+- `rate_rows(payload, amount=1.0)`: returns `[{date, quote, rate, converted}]`, skipping records without a date, code or rate.
+- `amount_text(value)` / `number_text(value)`: the amount (no decimals when whole) and a converted value (4 dp, or 4 significant digits below 0.01) as text.
+- `print_single(rows, base, amount)` / `print_series(rows)`: the two text layouts.
+- `parse_args(argv=None)` / `main(argv=None)`: the CLI. Errors exit through `cli_utils.die()`.
+
+### Error handling
+
+- An unknown currency code (`HTTP 422: invalid currency: ZZZ`), a failed request or an unexpected body exits with code 1: plain text on stderr, or `{"error": "..."}` with `--json`.
+- A malformed date, `--end` without `--start`, or an end before the start exits with code 1, before any request.
+- An `--amount` of 0 or below or not a number, `--date` with `--start` or `--end`, `--group` without `--start`, or a `--group` other than `week` / `month` is rejected by argument parsing (exit code 2).
+- If Frankfurter has no rates for the date or range (before a currency's history starts, or in the future), it prints `No <BASE> rates found for <QUOTES> <window>.` (or `"rates": []`) and exits normally.
+
+### Notes / limitations
+
+- **Blended rates only.** The script never asks for a single provider's rates (Frankfurter's `providers` parameter): those fall under that provider's own terms, while the blended rates are "free to use". See [`docs/source-audit.md`](docs/source-audit.md).
+- **Reference rates, not trading quotes.** They are daily official rates, not what a bank or exchange office will give.
+- **Weekly and monthly rates** are Frankfurter's downsampling, labelled with the period's first date (`2026-01-01`, `2026-02-01`, …); its docs don't say how a period's rate is chosen.
+- **The ECB's own API is not used**: its robots.txt blocks Claude agents and `python-requests`. Frankfurter collects the ECB's rates on its own servers.
+- No attribution is required, but every result names Frankfurter as its source.
+
+---
+
+## Claude Code agent: `exchange-rates`
+
+A [Claude Code](https://claude.com/claude-code) subagent definition at `.claude/agents/exchange-rates.md`. Like the other agents here, it calls no API itself — it shells out to [`exchange_rates.py`](#exchange_ratespy) via the `Bash` tool and reports the result conversationally.
+
+### Purpose
+
+Lets Claude Code answer questions like "how much is 100 USD in SGD?", "what was the USD/JPY rate on 1 March 2020?" or "how has the pound moved against the euro this year?" from official reference rates, instead of guessing or using stale training data. A currency pair's daily open / high / low / close stays with the [`stock-price-history`](#claude-code-agent-stock-price-history) agent, and its direction with [`stock-trend`](#claude-code-agent-stock-trend).
+
+### How it's invoked
+
+- **Automatically** — Claude Code selects this subagent on its own for currency conversions and "exchange rate between \<currency\> and \<currency\>" questions, based on the `description` field in its frontmatter.
+- **Explicitly** — via the `Agent` tool with `subagent_type: "exchange-rates"`.
+
+Subagent definitions are loaded when a Claude Code session starts, so a newly added or edited agent file only takes effect in sessions started afterward — not the session it was created in.
+
+### What it does
+
+1. Maps currency names to ISO codes (a bare "dollar" is `USD` unless the context names another dollar, and it says when it assumed), and works out which currency is the base from the wording ("X in Y", "X/Y", "how many Y per X").
+2. Chooses the window from today's date and the user's phrasing: the latest rates by default, `--date` for one day, `--start` / `--end` for a period, with `--group week` over about 3 months and `--group month` over about 2 years; `--amount` for a conversion.
+3. Runs `python3 exchange_rates.py BASE QUOTE ... <flags> --json` from the repo root and leads with the conversion or rate, always with its date. For a period it gives the first and last rates, the change as a percentage, and the high and low. It adds a line that these are reference rates when the user is converting money to spend or send, makes no forecasts, and ends with a credit to Frankfurter. On failure it reports the `{"error": "..."}` from stderr and retries at most once.
+
+### Configuration
+
+The agent's frontmatter restricts it to the `Bash` tool only, since running the script and reading its stdout is all it needs. `model: sonnet` runs it on Sonnet, as its judgement (currency names, direction, date wording) is bounded.
+
+| Field | Value |
+|---|---|
+| `tools` | `Bash` |
+| Underlying script | [`exchange_rates.py`](#exchange_ratespy) |
+
+### Notes / limitations
+
+- Requires `exchange_rates.py` and its `daily_prices.py` / `cli_utils.py` helper modules (plus the `requests` dependency) to be present and runnable from the repo root. No API key.
+- Only as good as the currency codes it picks: an ambiguous name ("peso", "krona") is resolved to the most likely code, which the report names.
+- Daily reference rates only, not live or trading quotes; inherits the other limitations of [`exchange_rates.py`](#exchange_ratespy).
+- Targeted live test cases are in [`docs/features/agent/exchange-rates/test-runs.md`](docs/features/agent/exchange-rates/test-runs.md); none had been run when the agent was added (it needs a new session).
 
 ---
 

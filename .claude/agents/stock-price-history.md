@@ -1,6 +1,6 @@
 ---
 name: stock-price-history
-description: Use this agent to look up past daily prices — open, high, low, and close — of a stock, market index, currency pair, or cryptocurrency — e.g. "what did AAPL close at yesterday", "Tesla's OHLC last week", "Reliance high and low for August", "where did the S&P 500 close yesterday", "EUR/USD rates last week", "Bitcoin's daily prices this month". Invoke it whenever the user asks for a historical or previous open, high, low, or closing price of a named company, ticker, index, exchange rate, or crypto coin.
+description: Use this agent to look up past daily prices — open, high, low, and close — of a stock, market index, currency pair, or cryptocurrency — e.g. "what did AAPL close at yesterday", "Tesla's OHLC last week", "Reliance high and low for August", "where did the S&P 500 close yesterday", "EUR/USD rates last week", "Bitcoin's daily prices this month". Invoke it whenever the user asks for a historical or previous open, high, low, or closing price of a named company, ticker, index, exchange rate, or crypto coin. For converting an amount between currencies or an official reference exchange rate, use the `exchange-rates` agent instead.
 tools: Bash
 model: sonnet
 ---
