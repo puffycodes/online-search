@@ -33,6 +33,7 @@ crawlers; for those the API's own terms decide.
 | EODHD end-of-day API | `eodhd_price_history.py`, and through `price_source.py` the four price scripts and 5 agents (added 2026-10-21) | Allowed (keyed); personal, non-professional use | None; don't redistribute or display the data to others |
 | Alpha Vantage | `alphavantage_price_history.py`, and through `price_source.py` Indian tickers in the four price scripts (added 2026-10-21) | Allowed (keyed); personal, non-commercial use | None |
 | Frankfurter | `exchange_rates.py` (checked and added 2026-10-27) | Allowed; no key, no quotas; blended rates free to use | Use the blended rates; a single provider's rates follow that provider's terms |
+| USGS earthquake catalog (ComCat) | Nothing yet (checked 2026-10-27 for the planned earthquakes script) | Allowed; no key; US-government public domain | Credit the USGS as the source |
 
 ## Violations
 
@@ -197,4 +198,23 @@ its robots.txt only reported on, as with `--warn-robots`.
   The ECB data API itself was ruled out on 2026-10-21 (its robots.txt blocks Claude
   agents and `python-requests`); Frankfurter collects the ECB's rates on its own
   servers, so a script using it doesn't fetch from the ECB. Full check in
+  [`things-to-explore.md`](things-to-explore.md).
+- **USGS earthquake catalog (ComCat)** ([API docs](https://earthquake.usgs.gov/fdsnws/event/1/)):
+  checked 2026-10-27 before building an earthquakes script. Nothing is built on it
+  yet. `earthquake.usgs.gov/robots.txt` is a 404, so nothing is disallowed and there
+  is no Content-Signal line (RFC 9309 treats a missing file as allow-all). The API
+  is documented and offered for programs ("GeoJSON is intended to be used as a
+  programatic interface for applications"), needs no key, and answered a plain
+  `python-requests` query (a 300 km circle around Tokyo) with JSON. It documents no
+  rate limit, only a cap of 20,000 events per query (more is a 400). Terms: USGS
+  information is generally public domain and "may be used without restriction";
+  the only request is to credit the USGS ("(Product or data name) courtesy of the
+  U.S. Geological Survey"), with an exception for non-USGS photos and graphics the
+  USGS uses with permission, which the API doesn't serve. This comes from the USGS
+  [crediting page](https://www.usgs.gov/information-policies-and-instructions/crediting-usgs)
+  and [citation FAQ](https://www.usgs.gov/faqs/how-should-i-cite-a-usgs-website)
+  as quoted in search results. `www.usgs.gov`, which holds the policy pages and its
+  own robots.txt, answers automated fetches (curl and WebFetch) with a CloudFront
+  403 or an empty page; a script wouldn't call that host, only `earthquake.usgs.gov`.
+  The API page's "Feed Life Cycle Policy" link is a 404. Full check in
   [`things-to-explore.md`](things-to-explore.md).

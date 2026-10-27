@@ -392,7 +392,26 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
   long-range temperature and rainfall projections for a place, and its height above
   sea level.
 - [ ] **Earthquakes near a place** (USGS GeoJSON feed, free): recent quakes filtered by
-  magnitude and distance from the coordinates `geocode()` returns.
+  magnitude and distance from the coordinates `geocode()` returns. **Checked on
+  2026-10-27** ([source audit](source-audit.md)): allowed. `earthquake.usgs.gov`
+  has no robots.txt (404) and no AI opt-out; no key; the data is US-government
+  public domain, with a request to credit the USGS ("courtesy of the U.S. Geological
+  Survey"). Use the FDSN event API rather than the fixed feeds:
+  `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson` with
+  `latitude`, `longitude` and `maxradiuskm` (a circle around the geocoded place),
+  `starttime` / `endtime` (default the last 30 days), `minmagnitude`,
+  `orderby=time` or `magnitude`, and `limit` (at most 20,000 events per query;
+  `/count` gives the number first). The fixed summary feeds (past hour, day, week or
+  month) are worldwide, so they would need filtering in the script. Each event has
+  `mag`, `place` (e.g. "54 km E of Tomioka, Japan"), `time` in epoch milliseconds,
+  `status` (`automatic` or `reviewed`), `net`, `tsunami`, `alert` (PAGER), `felt`
+  and `url`, with `[longitude, latitude, depth km]` coordinates. A bad parameter is
+  a plain-text 400 that names the problem (`Bad latitude value "99"`), which
+  `fetch_json()`-style error handling can pass on. **Coverage outside the US is
+  thinner:** a magnitude-3 search around Tokyo returned only 4.5 and above, as the
+  catalog relies on regional networks for small quakes and has few outside the
+  US; the script and agent should say so rather than imply no small quakes
+  happened.
 - [ ] **Space weather and aurora** (NOAA Space Weather Prediction Center JSON
   products): the current and forecast Kp index and aurora outlook, and whether
   aurora might be visible at a place's latitude.
