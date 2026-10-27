@@ -32,6 +32,7 @@ crawlers; for those the API's own terms decide.
 | Perplexity API | `web_search_perplexity.py` | Allowed (keyed) | None |
 | EODHD end-of-day API | `eodhd_price_history.py`, and through `price_source.py` the four price scripts and 5 agents (added 2026-10-21) | Allowed (keyed); personal, non-professional use | None; don't redistribute or display the data to others |
 | Alpha Vantage | `alphavantage_price_history.py`, and through `price_source.py` Indian tickers in the four price scripts (added 2026-10-21) | Allowed (keyed); personal, non-commercial use | None |
+| Frankfurter | nothing yet (checked 2026-10-27, before building an exchange-rate script) | Allowed; no key, no quotas; blended rates free to use | Use the blended rates; a single provider's rates follow that provider's terms |
 
 ## Violations
 
@@ -182,4 +183,18 @@ its robots.txt only reported on, as with `--warn-robots`.
   checked 2026-10-20 and 2026-10-21 before building `alphavantage_price_history.py`.
   Free use is "personal, non-commercial"; nothing against AI, and its docs promote
   use with LLMs and agents. No robots.txt (404). Full check in
+  [`things-to-explore.md`](things-to-explore.md).
+- **Frankfurter** ([docs](https://frankfurter.dev/)): checked 2026-10-27 before
+  building an exchange-rate script; not used yet. `api.frankfurter.dev/robots.txt`
+  and `frankfurter.dev/robots.txt` are both `User-agent: *` / `Allow: /`, with no
+  Content-Signal lines, and the site publishes an `llms.txt` for AI clients. No key:
+  "There are no quotas. Requests are rate-limited to prevent abuse, but there are
+  no monthly or daily caps." There is no terms page (`/terms` is 404); the docs say
+  "Blended rates are Frankfurter's own calculation and free to use" and "Direct
+  queries to individual provider endpoints remain subject to each provider's
+  terms" (`/v2/providers` lists each source with a `terms_url`, often `null`). No
+  attribution is required. The code is MIT-licensed and self-hostable with Docker.
+  The ECB data API itself was ruled out on 2026-10-21 (its robots.txt blocks Claude
+  agents and `python-requests`); Frankfurter collects the ECB's rates on its own
+  servers, so a script using it doesn't fetch from the ECB. Full check in
   [`things-to-explore.md`](things-to-explore.md).

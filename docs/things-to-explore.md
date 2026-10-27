@@ -410,8 +410,21 @@ All Open-Meteo endpoints are free and keyless. They can reuse `weather.geocode()
 
 ### New sources
 
-- [ ] **FX rates from Frankfurter** (ECB reference rates, no key): an official
-  alternative to Yahoo for currency conversion.
+- [ ] **FX rates from Frankfurter** (no key): an official alternative to Yahoo for
+  currency conversion. **Checked on 2026-10-27** ([source audit](source-audit.md)):
+  allowed (robots.txt `Allow: /` on both hosts, no AI opt-out, no quotas). It is
+  no longer just the ECB: 228 currencies from 106 central banks and official
+  sources (crypto from the Swiss Federal Tax Administration), daily, back to 1948.
+  Use the v2 API at `https://api.frankfurter.dev` (v1 is deprecated but kept):
+  `/v2/rates` (latest; `?date=` for one day, `?from=&to=` for a range, `group=month`
+  to group a range by month), `/v2/rate/<base>/<quote>` for one pair,
+  `/v2/currencies`, and `/v2/providers` (each source's dates, cadence and
+  `terms_url`). A live `/v1/latest?base=USD&symbols=EUR,SGD,JPY` answered with no
+  key, dated 2026-10-26. Keep to the blended rates (Frankfurter's own, "free to
+  use"); a query to one provider's rates falls under that provider's terms. No
+  attribution is required, though naming Frankfurter in the output would match the
+  other scripts. Only `requests` is needed. MIT-licensed and self-hostable with
+  Docker if the public instance goes away.
 - [ ] **SEC EDGAR filings** (free; requires a descriptive User-Agent header): recent
   10-K / 10-Q / 8-K filings for US companies.
 - [ ] **Macro data**: World Bank API (no key) or FRED (free key) for GDP, inflation,
