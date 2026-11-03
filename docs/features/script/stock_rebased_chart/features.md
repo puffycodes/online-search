@@ -3,8 +3,9 @@
 ## Requirement
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
-- Use Yahoo Finance's chart endpoint (unofficial; no API key).
-- Use yahoo_finance.py's add_window_args(), build_params(), fetch_history(), extract_series(), session_datetime() and parse_date().
+- Get the data through stock_data.py's daily_history() (never from a provider directly), served by price_source.py: EODHD (EODHD_API_KEY), or Alpha Vantage (ALPHAVANTAGE_API_KEY) for Indian tickers, chosen from the Yahoo-notation ticker. Until 2026-10-21 this used Yahoo Finance's chart endpoint, which fails the source audit.
+- Show any notes price_source returns (e.g. a free plan returning less history than asked).
+- Use yahoo_finance.py's add_window_args() and build_params() for the window, and parse_date() for --base-date.
 - Use indicators.py's rebase().
 - Use matplotlib to draw the chart.
 
@@ -12,11 +13,11 @@
 
 - Run as python3 stock_rebased_chart.py from the repo root.
 - Take:
-    - {{Symbols}}: one or more tickers in Yahoo notation, e.g. AAPL MSFT VOD.L.
+    - {{Symbols}}: one or more tickers in Yahoo notation, e.g. AAPL MSFT VOD.L. Singapore (.SI), Tokyo (.T) and futures (=F) aren't supported for now and fail before any request.
     - The time window, one of:
         - A range: 5d, 1mo, 3mo, 6mo, ytd, 1y, 2y, 5y, 10y or max (default: 6mo).
         - The last N sessions (cannot be combined with a range).
-        - A start date, and optionally an end date (default: today). This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
+        - A start date, and optionally an end date (default: today), both inclusive, so the same date twice is one day. This replaces a range; combined with the last N sessions, the window starts at the start date and only the final N sessions in it are kept.
     - The base date, where every series reads 100 (default: the first date of the first symbol's series, or of the first symbol that fetched if that one failed).
     - Optionally a {{Benchmark}} symbol (e.g. ^GSPC) to compare the others against.
         - It never sets the default base date.

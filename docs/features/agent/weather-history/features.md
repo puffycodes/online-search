@@ -31,4 +31,5 @@
         - A table of the days ({{Date}} {{Condition}} {{Temperature High}} {{Temperature Low}} {{Precipitation}}) for up to about 14 days; otherwise, the notable days only.
     - {{Resolved Place Name}} {{Region}} {{Country}}, if it differs from what the user typed.
     - A note that the figures come from a gridded reanalysis model, not a weather station, and that the latest days are provisional; today's figures are incomplete.
+- End with a short credit line naming Open-Meteo.com: its data is CC BY 4.0, which requires attribution.
 - Never fabricate conditions, temperatures or dates.

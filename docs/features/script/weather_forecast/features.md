@@ -4,6 +4,7 @@
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
 - Use the Open-Meteo forecast API (no API key).
+- Offer the fetch with a start and end date inside the 16-day horizon, and the one-day record builder, for trip_weather.py to reuse.
 - Use weather.py's geocode(), place_fields(), weather_description(), daily_value(), sun_fields(), format_sun() and format_daylight().
 
 ## Actions
@@ -23,6 +24,7 @@
     - {{Date}} {{Condition}} {{Temperature High}} {{Temperature Low}} {{Precipitation}} {{Chance of Rain}} {{Max Wind Speed}}
     - Then a second table: {{Date}} {{UV Index}} {{UV Category}} {{Sunrise}} {{Sunset}} {{Daylight}}
     - With --json: {location, admin1, country, latitude, longitude, unit, days: [{date, weather_code, condition, temp_max, temp_min, precipitation_sum, precipitation_probability_max, windspeed_max, uv_index_max, uv_category, sunrise, sunset, daylight_hours, polar}]}.
+- Always end the result with the credit "Data by Open-Meteo.com (https://open-meteo.com/), licensed under CC BY 4.0." (Open-Meteo's data is CC BY 4.0, which requires attribution): the last line of the report, or the `attribution` field with --json.
 - Support a --json option:
     - With it, skip any progress line and print the result as a single JSON value on stdout.
     - Without it, print a human-readable report.

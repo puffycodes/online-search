@@ -28,4 +28,5 @@
     - For a sunrise, sunset or daylight question: {{Sunrise}} {{Sunset}} {{Daylight Hours}}, in the place's local time; say when it is polar night or midnight sun.
     - {{Resolved Place Name}} {{Region}} {{Country}}, if it differs from what the user typed.
 - Report daily summaries only. If the user wants the weather right now, use the weather agent instead; for a past date, use the weather-history agent.
+- End with a short credit line naming Open-Meteo.com: its data is CC BY 4.0, which requires attribution.
 - Never fabricate conditions, temperatures or dates.

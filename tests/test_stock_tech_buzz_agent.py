@@ -27,27 +27,27 @@ class TestStockMentionsInTitle:
         assert agent.stock_mentions_in_title({"symbol": "NVDA"}, "NVDA earnings beat") is True
 
     def test_symbol_match_is_case_sensitive(self):
-        quote = {"symbol": "NVDA", "shortName": "NVIDIA"}
+        quote = {"symbol": "NVDA", "name": "NVIDIA"}
         assert agent.stock_mentions_in_title(quote, "the nvda rumor") is False
 
     def test_ambiguous_symbol_not_matched(self):
-        assert agent.stock_mentions_in_title({"symbol": "AI", "shortName": "C3.ai"},
+        assert agent.stock_mentions_in_title({"symbol": "AI", "name": "C3.ai"},
                                              "AI is everywhere") is False
 
     def test_company_name_match_case_insensitive(self):
-        quote = {"symbol": "NVDA", "shortName": "NVIDIA Corporation"}
+        quote = {"symbol": "NVDA", "name": "NVIDIA Corporation"}
         assert agent.stock_mentions_in_title(quote, "Why nvidia keeps winning") is True
 
     def test_no_substring_false_positive(self):
-        quote = {"symbol": "XOM", "shortName": "Exxon"}
+        quote = {"symbol": "XOM", "name": "Exxon"}
         assert agent.stock_mentions_in_title(quote, "Exxonmobil posts profit") is False
 
     def test_short_name_below_three_chars_skipped(self):
-        assert agent.stock_mentions_in_title({"symbol": "GO", "shortName": "GO"},
+        assert agent.stock_mentions_in_title({"symbol": "GO", "name": "GO"},
                                              "GO GO GO") is False
 
     def test_no_match(self):
-        assert agent.stock_mentions_in_title({"symbol": "TSLA", "shortName": "Tesla"},
+        assert agent.stock_mentions_in_title({"symbol": "TSLA", "name": "Tesla"},
                                              "Apple ships new laptop") is False
 
 
@@ -57,9 +57,12 @@ class TestGetTopVolumeStocks:
             "nyse": [{"symbol": "AAA"}, {"symbol": "BBB"}],
             "nasdaq": [{"symbol": "AAA"}, {"symbol": "CCC"}],
         }
-        monkeypatch.setattr(agent.market, "get_movers",
-                            lambda ex, metric, limit: list(by_exchange[ex]))
+        seen = []
+        monkeypatch.setattr(agent.stock_data, "top_movers",
+                            lambda ex, metric, limit: seen.append((ex, metric, limit))
+                            or {"source": "Test", "notes": [], "movers": list(by_exchange[ex])})
         stocks = agent.get_top_volume_stocks(limit_per_exchange=5)
+        assert seen == [("nyse", "volume", 5), ("nasdaq", "volume", 5)]
         assert [s["symbol"] for s in stocks] == ["AAA", "BBB", "CCC"]
         assert stocks[0]["_exchange"] == "nyse"
         assert stocks[2]["_exchange"] == "nasdaq"
@@ -69,7 +72,7 @@ class TestFindStockBuzz:
     def test_matches_stock_to_discussion(self, monkeypatch):
         monkeypatch.setattr(agent, "get_top_volume_stocks",
                             lambda limit_per_exchange: [
-                                {"symbol": "NVDA", "shortName": "NVIDIA", "_exchange": "nasdaq"}])
+                                {"symbol": "NVDA", "name": "NVIDIA", "_exchange": "nasdaq"}])
         monkeypatch.setattr(agent.hn, "get_hottest_tech_discussions",
                             lambda limit: [{"title": "NVDA soars on earnings", "score": 100},
                                            {"title": "Rust 2.0 released", "score": 90}])
@@ -81,7 +84,7 @@ class TestFindStockBuzz:
     def test_no_overlap(self, monkeypatch):
         monkeypatch.setattr(agent, "get_top_volume_stocks",
                             lambda limit_per_exchange: [
-                                {"symbol": "TSLA", "shortName": "Tesla", "_exchange": "nasdaq"}])
+                                {"symbol": "TSLA", "name": "Tesla", "_exchange": "nasdaq"}])
         monkeypatch.setattr(agent.hn, "get_hottest_tech_discussions",
                             lambda limit: [{"title": "Apple ships laptop", "score": 10}])
         results, _, _ = agent.find_stock_buzz()
@@ -91,15 +94,24 @@ class TestFindStockBuzz:
 class TestResultToDict:
     def test_shape(self):
         result = {
-            "stock": {"symbol": "NVDA", "shortName": "NVIDIA", "_exchange": "nasdaq",
-                      "regularMarketVolume": 5, "regularMarketPrice": 1.0,
-                      "regularMarketChangePercent": 2.0},
+            "stock": {"symbol": "NVDA", "name": "NVIDIA", "exchange": "NasdaqGS",
+                      "volume": 5, "price": 1.0, "change_percent": 2.0, "currency": "USD",
+                      "_exchange": "nasdaq"},
             "discussions": [{"title": "T", "score": 3, "descendants": 4, "id": 9}],
         }
         row = agent.result_to_dict(result)
-        assert row["symbol"] == "NVDA"
-        assert row["exchange"] == "NASDAQ"
+        assert (row["symbol"], row["name"]) == ("NVDA", "NVIDIA")
+        assert row["exchange"] == "NASDAQ"  # the market asked for, not the listing
+        assert (row["volume"], row["price"], row["change_percent"]) == (5, 1.0, 2.0)
         assert row["discussions"][0]["discussion_url"] == "https://news.ycombinator.com/item?id=9"
+
+
+    def test_missing_values_default(self):
+        stock = {"symbol": None, "name": None, "exchange": None, "volume": None,
+                 "price": None, "change_percent": None, "currency": None, "_exchange": "nyse"}
+        row = agent.result_to_dict({"stock": stock, "discussions": []})
+        assert (row["symbol"], row["name"], row["volume"], row["price"],
+                row["change_percent"]) == ("?", "(unknown)", 0, 0, 0)
 
 
 class TestMain:
@@ -128,9 +140,9 @@ class TestMain:
         assert "error" in json.loads(capsys.readouterr().err)
 
     def test_text_shows_price_change_and_comments(self, monkeypatch, capsys):
-        stock = {"symbol": "NVDA", "shortName": "NVIDIA Corporation", "_exchange": "nasdaq",
-                 "regularMarketVolume": 1234567, "regularMarketPrice": 120.5,
-                 "regularMarketChangePercent": -2.25}
+        stock = {"symbol": "NVDA", "name": "NVIDIA Corporation", "exchange": "NasdaqGS",
+                 "volume": 1234567, "price": 120.5, "change_percent": -2.25,
+                 "currency": "USD", "_exchange": "nasdaq"}
         story = {"id": 1, "title": "NVDA ships a chip", "score": 300, "descendants": 45}
         monkeypatch.setattr(
             agent, "find_stock_buzz",

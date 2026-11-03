@@ -33,7 +33,7 @@ import re
 
 import requests
 
-from cli_utils import die, positive_int, use_utf8_output
+from cli_utils import die, non_negative_int, positive_int, use_utf8_output
 from hn import TEXT_CHARS, clean_text, discussion_url, fetch_json, parse_item_id, posted_at
 
 SEARCH_URL = "https://hn.algolia.com/api/v1/search"
@@ -247,16 +247,6 @@ def _limit(value):
     return number
 
 
-def _non_negative_int(value):
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}")
-    if number < 0:
-        raise argparse.ArgumentTypeError(f"must be 0 or greater, got {number}")
-    return number
-
-
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Search past Hacker News stories and comments."
@@ -277,7 +267,7 @@ def parse_args(argv=None):
     parser.add_argument("--until", type=_date, help="Only items posted on or before this UTC date, YYYY-MM-DD")
     parser.add_argument(
         "--min-points",
-        type=_non_negative_int,
+        type=non_negative_int,
         help="Only stories with at least this score (not for --type comment)",
     )
     parser.add_argument("--author", help="Only items posted by this HN username")
@@ -301,7 +291,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--max-chars",
-        type=_non_negative_int,
+        type=non_negative_int,
         default=TEXT_CHARS,
         help=f"Cut comment / self-post text to this many characters, 0 for no limit (default: {TEXT_CHARS})",
     )

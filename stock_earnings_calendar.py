@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Retrieve a stock's earnings calendar from Yahoo Finance's public
-``quoteSummary`` endpoint. No API key or authentication required (a cookie +
-crumb are fetched automatically, via yahoo_finance.fetch_quote_summary()).
+Retrieve a stock's earnings calendar through stock_data.earnings_view(),
+which serves it from Yahoo Finance's public ``quoteSummary`` endpoint today.
+No API key or authentication required (yahoo_finance.py fetches a cookie +
+crumb automatically).
 
 Give it a ticker in Yahoo's notation (AAPL, VOD.L, D05.SI, SAP.DE, ...). The
 script reports:
@@ -26,153 +27,58 @@ import json
 
 import requests
 
-import yahoo_finance as yf
+import stock_data
 from cli_utils import die, use_utf8_output
 from stock_intrinsic_value import _fmt_big, _fmt_money
 
-MODULES = [
-    "price",
-    "financialData",
-    "defaultKeyStatistics",
-    "calendarEvents",
-    "earningsHistory",
-    "earnings",
-]
-# Quote currencies in a minor unit (pence, agorot, cents).
-MINOR_UNIT_CURRENCIES = {"GBp", "GBX", "ILA", "ZAc"}
-
 
 # --------------------------------------------------------------------------- #
-# Parse                                                                        #
+# Shape                                                                        #
 # --------------------------------------------------------------------------- #
-def _utc(timestamp):
-    return dt.datetime.fromtimestamp(timestamp, dt.timezone.utc)
-
-
-def _date(timestamp):
-    return None if timestamp is None else _utc(timestamp).strftime("%Y-%m-%d")
-
-
 def _status(date_str, today):
     if date_str is None:
         return None
     return "upcoming" if date_str >= today.isoformat() else "past"
 
 
-def _estimate(earnings, prefix):
-    values = {
-        "low": yf.summary_num(earnings, f"{prefix}Low"),
-        "average": yf.summary_num(earnings, f"{prefix}Average"),
-        "high": yf.summary_num(earnings, f"{prefix}High"),
-    }
-    return values if any(v is not None for v in values.values()) else None
+def extract_calendar(view, today=None):
+    """Turn stock_data.earnings_view()'s ``view`` into the JSON-shaped calendar dict.
 
-
-def next_earnings(modules, today):
-    """The next (or latest-known) earnings event from ``calendarEvents``, or None.
-
-    When Yahoo has no confirmed date it gives a window of two timestamps;
-    ``date`` is the start and ``date_end`` the end of that window.
+    Each date gains an "upcoming" / "past" status against ``today`` (a
+    ``date``; default today in UTC), and the reporting currency falls back to
+    the trading currency.
     """
-    earnings = (modules.get("calendarEvents") or {}).get("earnings") or {}
-    stamps = sorted(
-        yf.summary_num({"t": t}, "t") for t in earnings.get("earningsDate") or []
-    )
-    stamps = [int(t) for t in stamps if t is not None]
-    if not stamps:
-        return None
-    date = _date(stamps[0])
-    return {
-        "date": date,
-        "date_end": _date(stamps[-1]),
-        "datetime_utc": _utc(stamps[0]).strftime("%Y-%m-%dT%H:%MZ"),
-        "is_estimate": bool(earnings.get("isEarningsDateEstimate")) or len(stamps) > 1,
-        "status": _status(date, today),
-        "eps_estimate": _estimate(earnings, "earnings"),
-        "revenue_estimate": _estimate(earnings, "revenue"),
-    }
-
-
-def dividend_dates(modules, today, currency):
-    """Ex-dividend / payment dates and the last dividend paid, or None if Yahoo has none.
-
-    ``amount_currency`` is None for minor-unit listings (LSE ``GBp``, ...):
-    Yahoo returns their dividend in pounds or the declared currency, not the
-    quote's minor unit, and does not say which.
-    """
-    calendar = modules.get("calendarEvents") or {}
-    ex_date = _date(yf.summary_num(calendar, "exDividendDate"))
-    pay_date = _date(yf.summary_num(calendar, "dividendDate"))
-    last_amount = yf.summary_num(modules, "defaultKeyStatistics", "lastDividendValue")
-    if ex_date is None and pay_date is None and last_amount is None:
-        return None
-    return {
-        "ex_dividend_date": ex_date,
-        "ex_dividend_status": _status(ex_date, today),
-        "payment_date": pay_date,
-        "payment_status": _status(pay_date, today),
-        "last_amount": last_amount,
-        "last_amount_date": _date(
-            yf.summary_num(modules, "defaultKeyStatistics", "lastDividendDate")
-        ),
-        "amount_currency": None if currency in MINOR_UNIT_CURRENCIES else currency or None,
-    }
-
-
-def earnings_history(modules):
-    """The last quarters' EPS from ``earningsHistory``, oldest first.
-
-    The report date and fiscal-quarter label come from the ``earnings``
-    module's chart, matched on the quarter-end date.
-    """
-    chart = ((modules.get("earnings") or {}).get("earningsChart") or {}).get("quarterly") or []
-    by_end = {}
-    for entry in chart:
-        end = yf.summary_num(entry, "periodEndDate")
-        if end is not None:
-            by_end[_date(end)] = entry
-
-    rows = []
-    for entry in (modules.get("earningsHistory") or {}).get("history") or []:
-        quarter_end = _date(yf.summary_num(entry, "quarter"))
-        actual = yf.summary_num(entry, "epsActual")
-        estimate = yf.summary_num(entry, "epsEstimate")
-        if quarter_end is None or (actual is None and estimate is None):
-            continue
-        match = by_end.get(quarter_end, {})
-        rows.append({
-            "quarter_end": quarter_end,
-            "fiscal_quarter": yf.summary_text(match, "fiscalQuarter"),
-            "reported_date": _date(yf.summary_num(match, "reportedDate")),
-            "eps_estimate": estimate,
-            "eps_actual": actual,
-            "surprise_pct": yf.summary_num(entry, "surprisePercent"),
-            "currency": yf.summary_text(entry, "currency"),
-        })
-    rows.sort(key=lambda r: r["quarter_end"])
-    return rows
-
-
-def extract_calendar(modules, today=None):
-    """Flatten the raw modules into the JSON-shaped calendar dict."""
     today = today or dt.datetime.now(dt.timezone.utc).date()
-    history = earnings_history(modules)
-    # EPS and revenue estimates are in the reporting currency, which can differ
-    # from the trading currency (VOD.L trades in GBp but reports in EUR).
-    reporting = (
-        yf.summary_text(modules, "financialData", "financialCurrency")
-        or next((r["currency"] for r in reversed(history) if r["currency"]), None)
-    )
-    currency = yf.summary_text(modules, "price", "currency") or ""
+    nxt = view["next_earnings"]
+    if nxt is not None:
+        nxt = {
+            "date": nxt["date"],
+            "date_end": nxt["date_end"],
+            "datetime_utc": nxt["datetime_utc"],
+            "is_estimate": nxt["is_estimate"],
+            "status": _status(nxt["date"], today),
+            "eps_estimate": nxt["eps_estimate"],
+            "revenue_estimate": nxt["revenue_estimate"],
+        }
+    div = view["dividend"]
+    if div is not None:
+        div = {
+            "ex_dividend_date": div["ex_dividend_date"],
+            "ex_dividend_status": _status(div["ex_dividend_date"], today),
+            "payment_date": div["payment_date"],
+            "payment_status": _status(div["payment_date"], today),
+            "last_amount": div["last_amount"],
+            "last_amount_date": div["last_amount_date"],
+            "amount_currency": div["amount_currency"],
+        }
     return {
-        "name": yf.summary_text(modules, "price", "longName")
-        or yf.summary_text(modules, "price", "shortName"),
-        "exchange": yf.summary_text(modules, "price", "exchangeName"),
-        "currency": currency,
-        "reporting_currency": reporting or currency,
-        "next_earnings": next_earnings(modules, today),
-        "dividend": dividend_dates(modules, today, currency),
-        "earnings_history": history,
+        "name": view["name"],
+        "exchange": view["exchange"],
+        "currency": view["currency"],
+        "reporting_currency": view["reporting_currency"] or view["currency"],
+        "next_earnings": nxt,
+        "dividend": div,
+        "earnings_history": view["earnings_history"],
     }
 
 
@@ -288,11 +194,11 @@ def main(argv=None):
     args = parse_args(argv)
 
     try:
-        modules = yf.fetch_quote_summary(args.symbol, MODULES)
+        view = stock_data.earnings_view(args.symbol)
     except (requests.RequestException, ValueError, KeyError) as exc:
         die(f"failed to fetch earnings calendar for {args.symbol!r}: {exc}", args.json)
 
-    calendar = extract_calendar(modules)
+    calendar = extract_calendar(view)
     if calendar["next_earnings"] is None and not calendar["earnings_history"]:
         die(
             f"no earnings data for {args.symbol!r} (only company stocks have earnings)",

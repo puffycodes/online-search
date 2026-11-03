@@ -1,6 +1,6 @@
 """Tests for cli_utils: dotenv loading, result formatting/printing, the
-die() error-exit helper, require_env, URL-scheme validation, response_text() decoding, the
-positive_int argparse type, and UTF-8 output."""
+die() error-exit helper, require_env, redact() and the HTTP-error helpers, URL-scheme validation, response_text() decoding, the
+positive_int / non_negative_int / bounded_int argparse types, and UTF-8 output."""
 
 import argparse
 import io
@@ -9,18 +9,80 @@ import os
 import sys
 
 import pytest
+import requests
 
 from cli_utils import (
+    bounded_int,
     die,
     format_result,
+    http_error_detail,
     load_dotenv,
+    non_negative_int,
     positive_int,
     print_results,
+    raise_for_status,
+    redact,
     require_env,
     response_text,
     use_utf8_output,
     validate_url_scheme,
 )
+from helpers import FakeResponse
+
+
+class TestRedact:
+    def test_replaces_every_occurrence(self):
+        assert redact("a=KEY&b=KEY", "KEY") == "a=<redacted>&b=<redacted>"
+
+    @pytest.mark.parametrize("secret", ["", None])
+    def test_no_secret_leaves_message(self, secret):
+        assert redact("message", secret) == "message"
+
+
+class TestHttpErrorDetail:
+    @pytest.mark.parametrize("body, expected", [
+        ({"error": {"code": "SUBSCRIPTION_TOKEN_INVALID",
+                    "detail": "The provided subscription token is invalid.", "status": 422}},
+         "SUBSCRIPTION_TOKEN_INVALID: The provided subscription token is invalid."),
+        ({"error": "Invalid API key."}, "Invalid API key."),
+        ({"message": "Unauthorized"}, "Unauthorized"),
+        ({"detail": {"error": "Rate limit"}}, None),
+        ({"detail": "Too many requests"}, "Too many requests"),
+        ({"detail": [{"msg": "field required"}, {"msg": "bad value"}]}, "field required; bad value"),
+        ({"error": {"code": "X", "message": "X"}}, "X"),
+        ({"results": []}, None),
+    ])
+    def test_json_bodies(self, body, expected):
+        response = FakeResponse(json_data=body, text="")
+        assert http_error_detail(response) == expected
+
+    def test_plain_text_body(self):
+        assert http_error_detail(FakeResponse(text="quota exceeded")) == "quota exceeded"
+
+    def test_html_body_ignored(self):
+        assert http_error_detail(FakeResponse(text="<html>error</html>")) is None
+
+
+class TestRaiseForStatus:
+    def test_ok_response_passes(self):
+        raise_for_status(FakeResponse(json_data={}))
+
+    def test_reason_added(self):
+        response = FakeResponse(
+            status_code=422, json_data={"error": {"code": "TOKEN_INVALID", "detail": "Bad token."}},
+            raise_for_status=requests.HTTPError("422 Client Error:  for url: https://x"),
+        )
+        with pytest.raises(requests.HTTPError) as exc:
+            raise_for_status(response)
+        assert str(exc.value) == "HTTP 422: TOKEN_INVALID: Bad token."
+        assert exc.value.response is response
+
+    def test_no_reason_keeps_original_error(self):
+        original = requests.HTTPError("500 Server Error")
+        response = FakeResponse(status_code=500, raise_for_status=original)
+        with pytest.raises(requests.HTTPError) as exc:
+            raise_for_status(response)
+        assert exc.value is original
 
 
 class TestLoadDotenv:
@@ -92,6 +154,36 @@ class TestPositiveInt:
         with pytest.raises(argparse.ArgumentTypeError, match="expected an integer"):
             positive_int(raw)
 
+
+
+class TestNonNegativeInt:
+    @pytest.mark.parametrize("raw,expected", [("0", 0), ("1", 1), ("600", 600)])
+    def test_accepts(self, raw, expected):
+        assert non_negative_int(raw) == expected
+
+    def test_rejects_negative(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="0 or greater"):
+            non_negative_int("-1")
+
+    @pytest.mark.parametrize("raw", ["abc", "1.5", ""])
+    def test_rejects_non_integer(self, raw):
+        with pytest.raises(argparse.ArgumentTypeError, match="expected an integer"):
+            non_negative_int(raw)
+
+
+class TestBoundedInt:
+    @pytest.mark.parametrize("raw,expected", [("1", 1), ("10", 10)])
+    def test_accepts_within_range(self, raw, expected):
+        assert bounded_int(10)(raw) == expected
+
+    def test_rejects_above_maximum(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="at most 10, got 11"):
+            bounded_int(10)("11")
+
+    @pytest.mark.parametrize("raw,match", [("0", "positive integer"), ("x", "expected an integer")])
+    def test_rejects_like_positive_int(self, raw, match):
+        with pytest.raises(argparse.ArgumentTypeError, match=match):
+            bounded_int(10)(raw)
 
 class TestRequireEnv:
     def test_returns_value_when_set(self, monkeypatch):

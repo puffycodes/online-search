@@ -1,6 +1,9 @@
 """Tests for yahoo_finance: parse_date, window args, session dates, crumb handshake,
 fetch_quote_summary, summary_num/summary_text, build_params, meta_summary, extract_series,
-fetch_history."""
+fetch_history, and the stock_data adapter (parse_analyst_view, analyst_view,
+parse_earnings_view, earnings_view, parse_holders_view, holders_view and its
+transaction helpers, parse_fundamentals_view, fundamentals_view, the screeners behind
+top_movers, parse_quote / quote, and parse_daily_history / daily_history)."""
 
 import argparse
 import datetime as dt
@@ -135,6 +138,55 @@ class TestFetchQuoteSummary:
         with pytest.raises(requests.RequestException, match="no fundamentals in response"):
             yf.fetch_quote_summary("AAA", ["price"])
 
+    def test_cookie_then_crumb_then_quote_summary(self, monkeypatch):
+        session = FakeSession(get_responses=[
+            FakeResponse(text="cookie"),
+            FakeResponse(text="crumb123"),
+            FakeResponse(json_data={"quoteSummary": {"result": [{"ok": 1}]}}),
+        ])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        yf.fetch_quote_summary("AAA", ["price"])
+        urls = [call[0] for call in session.get_calls]
+        assert urls[:2] == [yf.COOKIE_URLS[0], yf.CRUMB_URL]
+        assert session.headers == yf.HEADERS
+
+    def test_error_on_first_host_falls_through_to_next(self, monkeypatch):
+        session = FakeSession(get_responses=[
+            FakeResponse(text="cookie"),
+            FakeResponse(text="crumb123"),
+            FakeResponse(json_data={"quoteSummary": {"error": {"description": "busy"}}}),
+            FakeResponse(json_data={"quoteSummary": {"result": [{"ok": 1}]}}),
+        ])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        assert yf.fetch_quote_summary("AAA", ["price"]) == {"ok": 1}
+        assert session.get_calls[3][0] == yf.QUOTE_SUMMARY_HOSTS[1].format(symbol="AAA")
+
+    def test_html_crumb_is_ignored_and_crumbless_attempts_used(self, monkeypatch):
+        session = FakeSession(get_responses=[
+            FakeResponse(text="cookie"),
+            FakeResponse(text="<html>consent</html>"),
+            FakeResponse(json_data={"quoteSummary": {"result": [{"ok": 1}]}}),
+        ])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        assert yf.fetch_quote_summary("AAA", ["price"]) == {"ok": 1}
+        assert "crumb" not in session.get_calls[2][1]["params"]
+
+    def test_all_attempts_fail_raises_last_error(self, monkeypatch):
+        not_found = {"quoteSummary": {"error": {"description": "Quote not found for symbol: ZZZ"}}}
+        session = FakeSession(get_responses=[FakeResponse(text="cookie"), FakeResponse(text="crumb123")]
+                              + [FakeResponse(json_data=not_found) for _ in range(4)])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.fetch_quote_summary("ZZZ", ["price"])
+        assert len(session.get_calls) == 6  # cookie, crumb, 2 hosts x (with, without crumb)
+
+    def test_non_json_response_reports_status(self, monkeypatch):
+        session = FakeSession(get_responses=[FakeResponse(text="cookie"), FakeResponse(text="")]
+                              + [FakeResponse(json_data=None, status_code=429) for _ in range(2)])
+        monkeypatch.setattr(yf.requests, "Session", lambda: session)
+        with pytest.raises(requests.RequestException, match=r"non-JSON response \(HTTP 429\)"):
+            yf.fetch_quote_summary("AAA", ["price"])
+
 
 class TestSummaryNumText:
     @pytest.mark.parametrize("node,expected", [
@@ -142,7 +194,9 @@ class TestSummaryNumText:
         ({"a": {"b": {"raw": 1.5, "fmt": "1.50"}}}, 1.5),
         ({"a": {"b": True}}, None),
         ({"a": {"b": "7"}}, None),
+        ({"a": {"b": {"fmt": "1M"}}}, None),
         ({"a": None}, None),
+        ({}, None),
     ])
     def test_num(self, node, expected):
         assert yf.summary_num(node, "a", "b") == expected
@@ -186,13 +240,15 @@ class TestBuildParams:
         with pytest.raises(ValueError, match="--end requires --start"):
             yf.build_params(end="2024-01-01")
 
-    def test_end_not_after_start_raises(self):
-        with pytest.raises(ValueError, match="must be after"):
+    def test_end_before_start_raises(self):
+        with pytest.raises(ValueError, match="must not be before"):
             yf.build_params(start="2024-02-01", end="2024-01-01")
 
-    def test_equal_start_end_raises(self):
-        with pytest.raises(ValueError, match="must be after"):
-            yf.build_params(start="2024-01-01", end="2024-01-01")
+    def test_equal_start_end_is_one_day(self):
+        params = yf.build_params(start="2024-01-01", end="2024-01-01")
+        start_ts = int(dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc).timestamp())
+        assert params["period1"] == start_ts
+        assert params["period2"] == start_ts + yf.SECONDS_PER_DAY
 
     def test_last_daily_lookback_window(self):
         params = yf.build_params(last=5)
@@ -316,3 +372,917 @@ class TestFetchHistory:
         self._patch_get(monkeypatch, FakeResponse(json_data=None))
         with pytest.raises(ValueError):
             yf.fetch_history("AAA", {})
+
+
+# --------------------------------------------------------------------------- #
+# stock_data adapter                                                           #
+# --------------------------------------------------------------------------- #
+DAY = 86400
+NOW = 1_790_000_000  # 2026-09-21 14:13 UTC
+
+
+def _trend(period, strong_buy, buy, hold, sell, strong_sell):
+    return {"period": period, "strongBuy": strong_buy, "buy": buy, "hold": hold,
+            "sell": sell, "strongSell": strong_sell}
+
+
+def _grade(days_ago, firm, action, from_grade, to_grade, target_action="", target=0.0,
+           prior=0.0):
+    return {"epochGradeDate": int(NOW - days_ago * DAY), "firm": firm, "action": action,
+            "fromGrade": from_grade, "toGrade": to_grade,
+            "priceTargetAction": target_action, "currentPriceTarget": target,
+            "priorPriceTarget": prior}
+
+
+def _history():
+    """``upgradeDowngradeHistory`` out of date order, one entry outside 90 days."""
+    return {"history": [
+        _grade(10, "Beta Bank", "down", "Buy", "Hold", "Lowers", 120.0, 140.0),
+        _grade(2, "Alpha Capital", "up", "Hold", "Buy", "Raises", 150.0, 130.0),
+        _grade(200, "Old Firm", "init", "", "Buy", "Announces", 90.0, 0.0),
+        _grade(30, "Gamma Research", "reit", "Neutral", "Neutral", "", 0.0, 0.0),
+        _grade(45, "Delta Partners", "main", "Outperform", "Outperform", "Maintains",
+               115.0, 115.0),
+    ]}
+
+
+def _analyst_modules(price=100.0):
+    """quoteSummary ``modules`` with every field parse_analyst_view() reads."""
+    return {
+        "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST",
+                  "regularMarketPrice": {"raw": price}},
+        "financialData": {
+            "currentPrice": {"raw": price},
+            "targetLowPrice": {"raw": 80.0}, "targetMedianPrice": {"raw": 110.0},
+            "targetMeanPrice": {"raw": 105.0}, "targetHighPrice": {"raw": 150.0},
+            "numberOfAnalystOpinions": {"raw": 20},
+            "recommendationKey": "buy", "recommendationMean": {"raw": 2.2},
+        },
+        "recommendationTrend": {"trend": [
+            # Out of order on purpose: the parser sorts newest first.
+            _trend("-1m", 5, 9, 5, 1, 0),
+            _trend("0m", 6, 10, 4, 1, 1),
+        ]},
+        "upgradeDowngradeHistory": _history(),
+    }
+
+
+class TestParseAnalystView:
+    def test_profile_price_targets_consensus(self):
+        view = yf.parse_analyst_view(_analyst_modules(), 90, now=NOW)
+        assert (view["source"], view["notes"]) == ("Yahoo Finance", [])
+        assert (view["name"], view["exchange"], view["currency"]) == ("Triple A Inc.", "TST", "USD")
+        assert view["price"] == 100.0
+        assert view["targets"] == {"low": 80.0, "median": 110.0, "mean": 105.0, "high": 150.0}
+        assert view["analysts"] == 20
+        assert view["recommendation"] == {"key": "buy", "mean": 2.2}
+
+    def test_short_name_and_missing_currency(self):
+        view = yf.parse_analyst_view({"price": {"shortName": "AAA"}}, 90, now=NOW)
+        assert (view["name"], view["exchange"], view["currency"]) == ("AAA", None, "")
+
+    def test_price_falls_back_to_regular_market_price(self):
+        modules = _analyst_modules(price=42.0)
+        del modules["financialData"]["currentPrice"]
+        assert yf.parse_analyst_view(modules, 90, now=NOW)["price"] == 42.0
+
+    def test_no_price(self):
+        modules = _analyst_modules()
+        del modules["financialData"]["currentPrice"]
+        del modules["price"]["regularMarketPrice"]
+        assert yf.parse_analyst_view(modules, 90, now=NOW)["price"] is None
+
+    def test_recommendation_key_none_is_dropped(self):
+        modules = _analyst_modules()
+        modules["financialData"]["recommendationKey"] = "none"
+        assert yf.parse_analyst_view(modules, 90, now=NOW)["recommendation"]["key"] is None
+
+    def test_trend_sorted_newest_first_without_totals(self):
+        rows = yf.parse_analyst_view(_analyst_modules(), 90, now=NOW)["trend"]
+        assert [r["period"] for r in rows] == ["0m", "-1m"]
+        assert rows[0] == {"period": "0m", "strong_buy": 6, "buy": 10, "hold": 4,
+                           "sell": 1, "strong_sell": 1}
+
+    def test_empty_trend_rows_dropped(self):
+        modules = {"recommendationTrend": {"trend": [{"period": "0m"}]}}
+        assert yf.parse_analyst_view(modules, 90, now=NOW)["trend"] == []
+
+    def test_no_coverage_is_all_empty(self):
+        view = yf.parse_analyst_view({"price": {"currency": "USD"}}, 90, now=NOW)
+        assert set(view["targets"].values()) == {None}
+        assert (view["analysts"], view["trend"], view["actions"]) == (None, [], [])
+
+
+class TestAnalystActions:
+    def _actions(self, days, history=None):
+        modules = {"upgradeDowngradeHistory": history or _history()}
+        return yf.parse_analyst_view(modules, days, now=NOW)["actions"]
+
+    def test_window_and_newest_first(self):
+        assert [r["firm"] for r in self._actions(90)] == [
+            "Alpha Capital", "Beta Bank", "Gamma Research", "Delta Partners"]
+
+    def test_fields_and_mapping(self):
+        rows = self._actions(90)
+        assert rows[0] == {
+            "date": "2026-09-19", "firm": "Alpha Capital", "action": "upgrade",
+            "from_grade": "Hold", "to_grade": "Buy", "target_action": "raised",
+            "target": 150.0, "prior_target": 130.0,
+        }
+        assert (rows[1]["action"], rows[1]["target_action"]) == ("downgrade", "lowered")
+        assert (rows[3]["action"], rows[3]["target_action"]) == ("maintain", "maintained")
+
+    def test_zero_targets_and_blank_text_become_none(self):
+        gamma = self._actions(90)[2]
+        assert gamma["action"] == "reiterate"
+        assert (gamma["target_action"], gamma["target"], gamma["prior_target"]) == (None, None, None)
+        old = self._actions(365)[-1]
+        assert (old["action"], old["from_grade"], old["prior_target"]) == ("initiate", None, None)
+
+    def test_days_narrows_window(self):
+        assert [r["firm"] for r in self._actions(7)] == ["Alpha Capital"]
+
+    def test_unknown_codes_pass_through_and_undated_skipped(self):
+        history = {"history": [
+            _grade(1, "X", "xyz", "A", "B", "Rethinks", 1.0),
+            {"firm": "No Date", "action": "up"},
+        ]}
+        rows = self._actions(90, history)
+        assert [(r["action"], r["target_action"]) for r in rows] == [("xyz", "rethinks")]
+
+    def test_missing_module(self):
+        assert yf.parse_analyst_view({"price": {}}, 90, now=NOW)["actions"] == []
+
+
+class TestAnalystView:
+    def test_fetches_analyst_modules(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "fetch_quote_summary",
+                            lambda s, m: seen.append((s, m)) or _analyst_modules())
+        view = yf.analyst_view("AAA", 90)
+        assert seen == [("AAA", yf.ANALYST_MODULES)]
+        assert view["targets"]["high"] == 150.0
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, modules):
+            raise requests.RequestException("Quote not found")
+
+        monkeypatch.setattr(yf, "fetch_quote_summary", boom)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.analyst_view("ZZZ", 90)
+
+
+def _ts(text):
+    """'YYYY-MM-DD[ HH:MM]' (UTC) -> epoch seconds."""
+    fmt = "%Y-%m-%d %H:%M" if " " in text else "%Y-%m-%d"
+    return int(dt.datetime.strptime(text, fmt).replace(tzinfo=dt.timezone.utc).timestamp())
+
+
+def _history_entry(quarter, estimate, actual, surprise):
+    return {"quarter": {"raw": _ts(quarter), "fmt": quarter},
+            "epsEstimate": {"raw": estimate}, "epsActual": {"raw": actual},
+            "surprisePercent": {"raw": surprise}, "currency": "USD"}
+
+
+def _earnings_modules():
+    """quoteSummary ``modules`` with every field parse_earnings_view() reads."""
+    return {
+        "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST"},
+        "financialData": {"financialCurrency": "USD"},
+        "defaultKeyStatistics": {"lastDividendValue": {"raw": 0.27},
+                                 "lastDividendDate": {"raw": _ts("2026-08-10")}},
+        "calendarEvents": {
+            "earnings": {
+                "earningsDate": [_ts("2026-11-02 20:00")],
+                "isEarningsDateEstimate": False,
+                "earningsLow": 1.93, "earningsAverage": 1.98, "earningsHigh": 2.07,
+                "revenueLow": 112e9, "revenueAverage": 113.6e9, "revenueHigh": 117e9,
+            },
+            "exDividendDate": _ts("2026-08-10"),
+            "dividendDate": _ts("2026-10-20"),
+        },
+        "earningsHistory": {"history": [
+            # Out of order on purpose: the parser sorts oldest first.
+            _history_entry("2026-06-30", 1.89, 2.02, 0.0674),
+            _history_entry("2026-03-31", 1.94, 2.01, 0.0346),
+        ]},
+        "earnings": {"earningsChart": {"quarterly": [
+            {"fiscalQuarter": "2Q2026", "periodEndDate": _ts("2026-03-31"),
+             "reportedDate": _ts("2026-04-30 20:30")},
+            {"fiscalQuarter": "3Q2026", "periodEndDate": _ts("2026-06-30"),
+             "reportedDate": _ts("2026-07-30 20:30")},
+        ]}},
+    }
+
+
+class TestParseEarningsView:
+    def test_profile_and_reporting_currency(self):
+        view = yf.parse_earnings_view(_earnings_modules())
+        assert (view["source"], view["notes"]) == ("Yahoo Finance", [])
+        assert (view["name"], view["exchange"], view["currency"]) == ("Triple A Inc.", "TST", "USD")
+        assert view["reporting_currency"] == "USD"
+
+    def test_reporting_currency_falls_back_to_history_then_none(self):
+        modules = _earnings_modules()
+        del modules["financialData"]
+        modules["earningsHistory"]["history"][0]["currency"] = "EUR"
+        assert yf.parse_earnings_view(modules)["reporting_currency"] == "EUR"
+        modules["earningsHistory"] = {}
+        assert yf.parse_earnings_view(modules)["reporting_currency"] is None
+
+    def test_no_earnings_data(self):
+        view = yf.parse_earnings_view({"price": {"currency": "USD"}})
+        assert (view["next_earnings"], view["dividend"], view["earnings_history"]) == (None, None, [])
+
+
+class TestNextEarnings:
+    def test_confirmed_date(self):
+        nxt = yf.parse_earnings_view(_earnings_modules())["next_earnings"]
+        assert nxt["date"] == nxt["date_end"] == "2026-11-02"
+        assert nxt["datetime_utc"] == "2026-11-02T20:00Z"
+        assert nxt["is_estimate"] is False
+        assert "status" not in nxt  # the script adds it against today
+        assert nxt["eps_estimate"] == {"low": 1.93, "average": 1.98, "high": 2.07}
+        assert nxt["revenue_estimate"]["average"] == 113.6e9
+
+    def test_two_timestamps_are_an_estimated_window(self):
+        modules = _earnings_modules()
+        modules["calendarEvents"]["earnings"]["earningsDate"] = [
+            _ts("2026-11-09"), _ts("2026-11-02")]
+        nxt = yf.parse_earnings_view(modules)["next_earnings"]
+        assert (nxt["date"], nxt["date_end"]) == ("2026-11-02", "2026-11-09")
+        assert nxt["is_estimate"] is True
+
+    def test_no_estimates_gives_none(self):
+        modules = _earnings_modules()
+        modules["calendarEvents"]["earnings"] = {"earningsDate": [_ts("2026-11-02")]}
+        nxt = yf.parse_earnings_view(modules)["next_earnings"]
+        assert nxt["eps_estimate"] is None and nxt["revenue_estimate"] is None
+
+    @pytest.mark.parametrize("calendar", [{}, {"earnings": {}}, {"earnings": {"earningsDate": []}}])
+    def test_no_date_returns_none(self, calendar):
+        assert yf.parse_earnings_view({"calendarEvents": calendar})["next_earnings"] is None
+
+
+class TestDividend:
+    def test_dates_and_amount(self):
+        div = yf.parse_earnings_view(_earnings_modules())["dividend"]
+        assert div == {
+            "ex_dividend_date": "2026-08-10", "payment_date": "2026-10-20",
+            "last_amount": 0.27, "last_amount_date": "2026-08-10", "amount_currency": "USD",
+        }
+
+    @pytest.mark.parametrize("currency", ["GBp", "GBX", "ILA", "ZAc"])
+    def test_minor_unit_listing_has_no_amount_currency(self, currency):
+        modules = _earnings_modules()
+        modules["price"]["currency"] = currency
+        assert yf.parse_earnings_view(modules)["dividend"]["amount_currency"] is None
+
+    def test_no_dividend_returns_none(self):
+        assert yf.parse_earnings_view({"calendarEvents": {"earnings": {}}})["dividend"] is None
+
+
+class TestEarningsHistory:
+    def test_sorted_and_matched_to_chart(self):
+        rows = yf.parse_earnings_view(_earnings_modules())["earnings_history"]
+        assert [r["quarter_end"] for r in rows] == ["2026-03-31", "2026-06-30"]
+        assert rows[1] == {
+            "quarter_end": "2026-06-30", "fiscal_quarter": "3Q2026",
+            "reported_date": "2026-07-30", "eps_estimate": 1.89, "eps_actual": 2.02,
+            "surprise_pct": 0.0674, "currency": "USD",
+        }
+
+    def test_unmatched_quarter_has_no_report_date(self):
+        modules = _earnings_modules()
+        modules["earnings"] = {}
+        row = yf.parse_earnings_view(modules)["earnings_history"][0]
+        assert row["fiscal_quarter"] is None and row["reported_date"] is None
+
+    def test_rows_without_eps_dropped(self):
+        modules = _earnings_modules()
+        modules["earningsHistory"]["history"].append({"quarter": {"raw": _ts("2026-09-30")}})
+        assert len(yf.parse_earnings_view(modules)["earnings_history"]) == 2
+
+
+class TestEarningsView:
+    def test_fetches_earnings_modules(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "fetch_quote_summary",
+                            lambda s, m: seen.append((s, m)) or _earnings_modules())
+        view = yf.earnings_view("AAA")
+        assert seen == [("AAA", yf.EARNINGS_MODULES)]
+        assert view["next_earnings"]["date"] == "2026-11-02"
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, modules):
+            raise requests.RequestException("Quote not found")
+
+        monkeypatch.setattr(yf, "fetch_quote_summary", boom)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.earnings_view("ZZZ")
+
+
+def _tx(days_ago, name, relation, text, shares=1000, value=0, ownership="D"):
+    return {"startDate": {"raw": int(NOW - days_ago * DAY)}, "filerName": name,
+            "filerRelation": relation, "transactionText": text,
+            "shares": {"raw": shares}, "value": {"raw": value}, "ownership": ownership}
+
+
+def _holder(name, pct, shares, change, report=NOW - 60 * DAY):
+    return {"organization": name, "pctHeld": {"raw": pct}, "position": {"raw": shares},
+            "value": {"raw": shares * 10}, "pctChange": {"raw": change},
+            "reportDate": {"raw": int(report)}}
+
+
+def _holders_modules():
+    """quoteSummary ``modules`` with every field parse_holders_view() reads."""
+    return {
+        "price": {"longName": "Triple A Inc.", "shortName": "Triple A Inc", "currency": "USD",
+                  "exchangeName": "TST"},
+        "majorHoldersBreakdown": {"insidersPercentHeld": 0.02, "institutionsPercentHeld": 0.6,
+                                  "institutionsFloatPercentHeld": 0.61, "institutionsCount": 900},
+        "insiderTransactions": {"transactions": [
+            # Out of order on purpose; one outside 180 days.
+            _tx(30, "DOE JANE", "Director", "Sale at price 10.00 - 12.00 per share.", 2000, 22000),
+            _tx(5, "ROE RICHARD", "Chief Executive Officer", "Sale at price 11.50 per share.",
+                1000, 11500, "I"),
+            _tx(10, "DOE JANE", "Director", "Purchase at price 9.00 per share.", 500, 4500),
+            _tx(12, "ROE RICHARD", "Chief Executive Officer",
+                "Stock Award(Grant) at price 0.00 per share.", 3000),
+            _tx(15, "POE PAT", "Officer", "", 400),
+            _tx(400, "OLD OLIVER", "Director", "Sale at price 5.00 per share.", 10, 50),
+        ]},
+        "fundOwnership": {"ownershipList": [_holder("Index Fund", 0.03, 3_000_000, 0.01)]},
+        "institutionOwnership": {"ownershipList": [_holder("Big Asset Co", 0.08, 8_000_000, -0.02)]},
+    }
+
+
+class TestClassifyTransaction:
+    @pytest.mark.parametrize("text, kind", [
+        ("Sale at price 222.19 - 223.75 per share.", "sale"),
+        ("Sold at price 1.70 per share.", "sale"),
+        ("Purchase at price 9.00 per share.", "purchase"),
+        ("Bought at price 1.58 per share.", "purchase"),
+        ("Buy Back at price 1.20 per share.", "buyback"),
+        ("Conversion of Exercise of derivative security at price 0.00 per share.", "option_exercise"),
+        ("Stock Award(Grant) at price 0.00 per share.", "award"),
+        ("Stock Gift at price 0.00 per share.", "gift"),
+        ("Other at price 44.41 per share.", "other"),
+        ("Decrease", "other"),
+    ])
+    def test_by_description(self, text, kind):
+        assert yf.classify_transaction(text, "SOMEONE", "Director", ["Acme Corp"]) == kind
+
+    def test_description_wins_without_a_role(self):
+        # Vodafone's directors' trades come with no role filled in.
+        assert yf.classify_transaction("Bought at price 1.58 per share.", "Carter (Stephen A.)",
+                                       None, ["Vodafone Group Public Limited Company"]) == "purchase"
+
+    def test_blank_from_the_company_is_a_buyback(self):
+        names = ["Vodafone Group Public Limited Company", "VODAFONE GROUP PLC ORD USD0.20"]
+        assert yf.classify_transaction("", "Vodafone Group Plc", None, names) == "buyback"
+        assert yf.classify_transaction(None, "Toyota Motor Corp", None,
+                                       ["Toyota Motor Corporation"]) == "buyback"
+
+    def test_blank_without_role_is_a_holder_disclosure(self):
+        assert yf.classify_transaction("", "Societe Generale S.A", None,
+                                       ["Vodafone Group Plc"]) == "holder_disclosure"
+
+    def test_blank_with_role_is_unspecified(self):
+        assert yf.classify_transaction("", "COOK TIMOTHY D", "Officer and Director",
+                                       ["Apple Inc."]) == "unspecified"
+
+
+class TestHoldersHelpers:
+    @pytest.mark.parametrize("symbol, us", [
+        ("AAPL", True), ("BRK-B", True), ("VOD.L", False), ("7203.T", False), ("D05.SI", False),
+    ])
+    def test_us_listing(self, symbol, us):
+        assert yf.is_us_listing(symbol) is us
+
+    @pytest.mark.parametrize("text, expected", [
+        ("Sale at price 222.19 - 223.75 per share.", (222.19, 223.75)),
+        ("Sale at price 1,234.50 per share.", (1234.5, 1234.5)),
+        ("Stock Gift at price 0.00 per share.", (None, None)),
+        ("", (None, None)),
+        (None, (None, None)),
+    ])
+    def test_price_range(self, text, expected):
+        assert yf._price_range(text) == expected
+
+
+class TestParseHoldersView:
+    def test_us_listing(self):
+        view = yf.parse_holders_view("AAA", _holders_modules(), 180, now=NOW)
+        assert (view["source"], view["notes"]) == ("Yahoo Finance", [])
+        assert view["name"] == "Triple A Inc."
+        assert view["us_listing"] is True
+        assert view["ownership"] == {"insiders_pct": 0.02, "institutions_pct": 0.6,
+                                     "institutions_float_pct": 0.61, "institutions_count": 900}
+        assert view["top_funds"] == [{"name": "Index Fund", "pct_held": 0.03, "shares": 3_000_000,
+                                      "value": 30_000_000.0, "pct_change": 0.01,
+                                      "report_date": "2026-07-23"}]
+        assert view["top_institutions"][0]["name"] == "Big Asset Co"
+
+    def test_non_us_listing_hides_institutions(self):
+        view = yf.parse_holders_view("AAA.L", _holders_modules(), 180, now=NOW)
+        assert view["us_listing"] is False
+        assert view["top_institutions"] is None
+        assert view["top_funds"]
+
+    def test_transaction_currency(self):
+        assert yf.parse_holders_view("AAA", _holders_modules(), 180, now=NOW)["transaction_currency"] == "USD"
+        modules = _holders_modules()
+        modules["price"]["currency"] = "GBp"
+        assert yf.parse_holders_view("AAA.L", modules, 180, now=NOW)["transaction_currency"] == "USD"
+        modules["price"]["currency"] = "CAD"  # a US-listed stock quoted in another currency
+        assert yf.parse_holders_view("AAA", modules, 180, now=NOW)["transaction_currency"] == "CAD"
+        assert yf.parse_holders_view("AAA", {}, 180, now=NOW)["transaction_currency"] is None
+
+    def test_no_data(self):
+        view = yf.parse_holders_view("SPY", {"price": {"currency": "USD"}}, 180, now=NOW)
+        assert set(view["ownership"].values()) == {None}
+        assert (view["transactions"], view["top_funds"], view["top_institutions"]) == ([], [], [])
+
+
+class TestInsiderTransactions:
+    def _rows(self, days, modules=None, symbol="AAA"):
+        return yf.parse_holders_view(symbol, modules or _holders_modules(), days, now=NOW)["transactions"]
+
+    def test_window_and_newest_first(self):
+        rows = self._rows(180)
+        assert [r["date"] for r in rows] == [
+            "2026-09-16", "2026-09-11", "2026-09-09", "2026-09-06", "2026-08-22"]
+        assert "OLD OLIVER" not in [r["name"] for r in rows]
+
+    def test_fields(self):
+        rows = self._rows(180)
+        assert rows[0] == {
+            "date": "2026-09-16", "name": "ROE RICHARD", "relation": "Chief Executive Officer",
+            "kind": "sale", "text": "Sale at price 11.50 per share.", "shares": 1000,
+            "value": 11500.0, "price_low": 11.5, "price_high": 11.5, "ownership": "indirect",
+        }
+        award = next(r for r in rows if r["kind"] == "award")
+        assert (award["value"], award["price_low"]) == (None, None)  # Yahoo's 0 placeholders
+        assert next(r for r in rows if r["name"] == "POE PAT")["kind"] == "unspecified"
+
+    def test_company_names_come_from_the_price_module(self):
+        modules = {"price": {"longName": "Acme Corp Holdings"},
+                   "insiderTransactions": {"transactions": [_tx(3, "Acme Corp", None, "")]}}
+        assert self._rows(180, modules, "ACME.L")[0]["kind"] == "buyback"
+
+    def test_days_narrows_window(self):
+        assert [r["name"] for r in self._rows(7)] == ["ROE RICHARD"]
+
+    def test_undated_entries_skipped(self):
+        assert self._rows(180, {"insiderTransactions": {"transactions": [{"filerName": "X"}]}}) == []
+
+    def test_missing_module(self):
+        assert self._rows(180, {"price": {}}) == []
+
+
+class TestHoldersView:
+    def test_fetches_holders_modules(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "fetch_quote_summary",
+                            lambda s, m: seen.append((s, m)) or _holders_modules())
+        view = yf.holders_view("AAA", 180)
+        assert seen == [("AAA", yf.HOLDERS_MODULES)]
+        assert view["top_funds"][0]["name"] == "Index Fund"
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, modules):
+            raise requests.RequestException("Quote not found")
+
+        monkeypatch.setattr(yf, "fetch_quote_summary", boom)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.holders_view("ZZZ", 180)
+
+
+def _fundamentals_modules(price=100.0):
+    """quoteSummary ``modules`` with every field parse_fundamentals_view() reads."""
+    return {
+        "price": {"longName": "Triple A Inc.", "currency": "USD", "exchangeName": "TST",
+                  "regularMarketPrice": {"raw": price}, "marketCap": {"raw": 100e9}},
+        "financialData": {
+            "currentPrice": {"raw": price}, "freeCashflow": {"raw": 5e9},
+            "operatingCashflow": {"raw": 7e9}, "ebitda": {"raw": 8e9},
+            "totalDebt": {"raw": 2e9}, "totalCash": {"raw": 1e9}, "totalRevenue": {"raw": 40e9},
+            "grossMargins": {"raw": 0.45}, "operatingMargins": {"raw": 0.3},
+            "profitMargins": {"raw": 0.25}, "returnOnEquity": {"raw": 1.5},
+            "returnOnAssets": {"raw": 0.2}, "revenueGrowth": {"raw": 0.08},
+            "earningsGrowth": {"raw": -0.02}, "debtToEquity": {"raw": 150.0},
+            "currentRatio": {"raw": 0.9}, "quickRatio": {"raw": 0.8},
+        },
+        "defaultKeyStatistics": {
+            "sharesOutstanding": {"raw": 1e9}, "trailingEps": {"raw": 5.0},
+            "forwardEps": {"raw": 6.0}, "bookValue": {"raw": 20.0}, "beta": {"raw": 1.2},
+            "enterpriseValue": {"raw": 101e9}, "enterpriseToEbitda": {"raw": 12.0},
+            "priceToBook": {"raw": 40.0}, "netIncomeToCommon": {"raw": 4e9},
+        },
+        "summaryDetail": {"trailingPE": {"raw": 20.0}, "forwardPE": {"raw": 16.0},
+                          "priceToSalesTrailing12Months": {"raw": 2.5},
+                          "dividendYield": {"raw": 0.02}, "payoutRatio": {"raw": 0.4}},
+        "summaryProfile": {"sector": "Technology", "industry": "Consumer Electronics"},
+        "earningsTrend": {"trend": [{"period": "+1y", "growth": {"raw": 0.07}},
+                                    {"period": "+5y", "growth": {"raw": 0.10}}]},
+    }
+
+
+class TestParseFundamentalsView:
+    def test_reads_every_field(self):
+        view = yf.parse_fundamentals_view(_fundamentals_modules())
+        assert view == {
+            "source": "Yahoo Finance", "notes": [],
+            "name": "Triple A Inc.", "exchange": "TST", "currency": "USD",
+            "sector": "Technology", "industry": "Consumer Electronics",
+            "price": 100.0, "market_cap": 100e9, "shares_outstanding": 1e9,
+            "free_cash_flow": 5e9, "operating_cash_flow": 7e9, "ebitda": 8e9,
+            "revenue": 40e9, "net_income": 4e9, "total_debt": 2e9, "total_cash": 1e9,
+            "eps_ttm": 5.0, "eps_forward": 6.0, "book_value_per_share": 20.0, "beta": 1.2,
+            "trailing_pe": 20.0, "forward_pe": 16.0, "price_to_sales": 2.5,
+            "price_to_book": 40.0, "enterprise_value": 101e9, "ev_to_ebitda": 12.0,
+            "gross_margin": 0.45, "operating_margin": 0.3, "net_margin": 0.25,
+            "return_on_equity": 1.5, "return_on_assets": 0.2,
+            "revenue_growth": 0.08, "earnings_growth": -0.02,
+            "debt_to_equity": 1.5,  # Yahoo's 150 (percent) -> 1.5x
+            "current_ratio": 0.9, "quick_ratio": 0.8,
+            "dividend_per_share": pytest.approx(2.0),  # 2% yield x 100.0
+            "payout_ratio": 0.4,
+            "analyst_growth_1y": 0.07, "analyst_growth_5y": 0.10,
+        }
+
+    @pytest.mark.parametrize("current", [None, 0.0])
+    def test_price_falls_back_to_regular_market_price(self, current):
+        modules = _fundamentals_modules()
+        modules["financialData"]["currentPrice"] = None if current is None else {"raw": current}
+        modules["price"]["regularMarketPrice"] = {"raw": 90.0}
+        assert yf.parse_fundamentals_view(modules)["price"] == 90.0
+
+    def test_no_price(self):
+        modules = _fundamentals_modules()
+        del modules["financialData"]["currentPrice"]
+        del modules["price"]["regularMarketPrice"]
+        view = yf.parse_fundamentals_view(modules)
+        assert (view["price"], view["dividend_per_share"]) == (None, None)
+
+    def test_beta_falls_back_to_summary_detail(self):
+        modules = _fundamentals_modules()
+        del modules["defaultKeyStatistics"]["beta"]
+        modules["summaryDetail"]["beta"] = {"raw": 0.8}
+        assert yf.parse_fundamentals_view(modules)["beta"] == 0.8
+
+    def test_dividend_in_minor_units_like_the_price(self):
+        modules = _fundamentals_modules(price=614.2)  # an LSE quote in GBp
+        modules["price"]["currency"] = "GBp"
+        modules["summaryDetail"]["dividendYield"] = {"raw": 0.0411}
+        # Ignores dividendRate / trailingAnnualDividendRate, which Yahoo gives in pounds.
+        modules["summaryDetail"]["dividendRate"] = {"raw": 0.336}
+        modules["summaryDetail"]["trailingAnnualDividendRate"] = {"raw": 0.336}
+        assert yf.parse_fundamentals_view(modules)["dividend_per_share"] == pytest.approx(
+            25.244, abs=1e-3)
+
+    @pytest.mark.parametrize("dividend_yield", [0.0, None])
+    def test_zero_or_missing_yield_is_no_dividend(self, dividend_yield):
+        modules = _fundamentals_modules()
+        modules["summaryDetail"]["dividendYield"] = (
+            None if dividend_yield is None else {"raw": dividend_yield})
+        assert yf.parse_fundamentals_view(modules)["dividend_per_share"] is None
+
+    def test_zero_gross_margin_is_none(self):
+        # Yahoo's placeholder for banks (no cost of goods sold), not a real 0% margin.
+        modules = _fundamentals_modules()
+        modules["financialData"]["grossMargins"] = {"raw": 0.0}
+        assert yf.parse_fundamentals_view(modules)["gross_margin"] is None
+
+    def test_name_falls_back_to_short_name(self):
+        modules = _fundamentals_modules()
+        modules["price"]["longName"] = None
+        modules["price"]["shortName"] = "AAA Co"
+        assert yf.parse_fundamentals_view(modules)["name"] == "AAA Co"
+
+    def test_analyst_growth_by_period(self):
+        modules = _fundamentals_modules()
+        modules["earningsTrend"] = {"trend": [{"period": "+2y", "growth": {"raw": 0.2}}]}
+        view = yf.parse_fundamentals_view(modules)
+        assert (view["analyst_growth_1y"], view["analyst_growth_5y"]) == (None, None)
+
+    def test_empty_modules_are_all_none(self):
+        view = yf.parse_fundamentals_view({})
+        assert view["currency"] == ""
+        assert all(v is None for k, v in view.items()
+                   if k not in ("source", "notes", "currency"))
+
+
+class TestFundamentalsView:
+    def test_fetches_fundamentals_modules(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "fetch_quote_summary",
+                            lambda s, m: seen.append((s, m)) or _fundamentals_modules())
+        view = yf.fundamentals_view("AAA")
+        assert seen == [("AAA", yf.FUNDAMENTALS_MODULES)]
+        assert view["price"] == 100.0
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, modules):
+            raise requests.RequestException("Quote not found")
+
+        monkeypatch.setattr(yf, "fetch_quote_summary", boom)
+        with pytest.raises(requests.RequestException, match="Quote not found"):
+            yf.fundamentals_view("ZZZ")
+
+
+class TestScreenerTables:
+    def test_metrics_have_required_keys(self):
+        for name, spec in yf.SCREENER_METRICS.items():
+            assert {"scr_id", "sort_field", "sort_type", "key", "reverse"} <= set(spec), name
+
+    def test_metrics_match_stock_data(self):
+        import stock_data
+        assert set(yf.SCREENER_METRICS) == set(stock_data.MOVER_METRICS)
+
+    def test_markets_have_required_keys(self):
+        for name, cfg in yf.SCREENER_MARKETS.items():
+            assert {"region", "exchanges", "predefined"} <= set(cfg), name
+            assert isinstance(cfg["predefined"], bool)
+
+    def test_mover_markets_lists_every_market(self):
+        assert yf.mover_markets() == list(yf.SCREENER_MARKETS)
+
+
+class TestScreenerQuotes:
+    @pytest.fixture(autouse=True)
+    def _no_session(self, monkeypatch):
+        monkeypatch.setattr(yf, "_screener_session", lambda: object())
+
+    def test_predefined_sorted_and_limited(self, monkeypatch):
+        quotes = [
+            {"symbol": "A", "regularMarketVolume": 100, "regularMarketChangePercent": 1},
+            {"symbol": "B", "regularMarketVolume": 300, "regularMarketChangePercent": 2},
+            {"symbol": "C", "regularMarketVolume": 200, "regularMarketChangePercent": 3},
+        ]
+        monkeypatch.setattr(yf, "fetch_predefined_quotes", lambda s, scr: list(quotes))
+        out = yf.screener_quotes("us", "volume", 2)
+        assert [q["symbol"] for q in out] == ["B", "C"]
+
+    def test_exchange_filter_applied(self, monkeypatch):
+        quotes = [
+            {"symbol": "A", "exchange": "NYQ", "regularMarketVolume": 100},
+            {"symbol": "B", "exchange": "NMS", "regularMarketVolume": 300},
+        ]
+        monkeypatch.setattr(yf, "fetch_predefined_quotes", lambda s, scr: list(quotes))
+        assert [q["symbol"] for q in yf.screener_quotes("nyse", "volume", 10)] == ["A"]
+
+    def test_mover_volume_floor_filters(self, monkeypatch):
+        quotes = [
+            {"symbol": "A", "exchange": "NYQ", "regularMarketVolume": 10,
+             "regularMarketChangePercent": 9},
+            {"symbol": "B", "exchange": "NYQ", "regularMarketVolume": 1_000_000,
+             "regularMarketChangePercent": 4},
+        ]
+        monkeypatch.setattr(yf, "fetch_predefined_quotes", lambda s, scr: list(quotes))
+        assert [q["symbol"] for q in yf.screener_quotes("nyse", "gainers", 10)] == ["B"]
+
+    def test_losers_sorted_ascending(self, monkeypatch):
+        quotes = [
+            {"symbol": "A", "regularMarketVolume": 1e6, "regularMarketChangePercent": -1},
+            {"symbol": "B", "regularMarketVolume": 1e6, "regularMarketChangePercent": -9},
+        ]
+        monkeypatch.setattr(yf, "fetch_predefined_quotes", lambda s, scr: list(quotes))
+        assert [q["symbol"] for q in yf.screener_quotes("us", "losers", 10)] == ["B", "A"]
+
+    def test_region_screener_used_for_non_us(self, monkeypatch):
+        seen = {}
+
+        def fake_region(session, region, sort_field, sort_type, min_volume=None):
+            seen.update(region=region, sort_type=sort_type, min_volume=min_volume)
+            return [{"symbol": "X", "exchange": "LSE", "regularMarketVolume": 5_000_000,
+                     "regularMarketChangePercent": -3}]
+
+        monkeypatch.setattr(yf, "fetch_region_quotes", fake_region)
+        yf.screener_quotes("uk", "losers", 5)
+        assert seen["region"] == "gb"
+        assert seen["sort_type"] == "ASC"
+        assert seen["min_volume"] == yf.MIN_MOVER_VOLUME
+
+    def test_region_screener_volume_metric_no_min(self, monkeypatch):
+        seen = {}
+
+        def fake_region(session, region, sort_field, sort_type, min_volume=None):
+            seen["min_volume"] = min_volume
+            return []
+
+        monkeypatch.setattr(yf, "fetch_region_quotes", fake_region)
+        yf.screener_quotes("uk", "volume", 5)
+        assert seen["min_volume"] is None
+
+
+class TestFetchRegionQuotes:
+    def test_html_crumb_raises(self):
+        session = FakeSession(get_responses=[
+            FakeResponse(json_data={}),                # cookie
+            FakeResponse(text="<html>nope</html>"),    # crumb
+        ])
+        with pytest.raises(requests.RequestException, match="crumb"):
+            yf.fetch_region_quotes(session, "gb", "dayvolume", "DESC")
+
+    def test_empty_crumb_raises(self):
+        session = FakeSession(get_responses=[
+            FakeResponse(json_data={}),
+            FakeResponse(text="   "),
+        ])
+        with pytest.raises(requests.RequestException, match="crumb"):
+            yf.fetch_region_quotes(session, "gb", "dayvolume", "DESC")
+
+    def test_finance_error_raises(self):
+        session = FakeSession(
+            get_responses=[FakeResponse(json_data={}), FakeResponse(text="crumb123")],
+            post_responses=[FakeResponse(json_data={"finance": {"error": "bad request"}})],
+        )
+        with pytest.raises(requests.RequestException, match="bad request"):
+            yf.fetch_region_quotes(session, "gb", "dayvolume", "DESC")
+
+    def test_returns_quotes_and_sends_min_volume_operand(self):
+        payload = {"finance": {"result": [{"quotes": [{"symbol": "X"}]}]}}
+        session = FakeSession(
+            get_responses=[FakeResponse(json_data={}), FakeResponse(text="crumb123")],
+            post_responses=[FakeResponse(json_data=payload)],
+        )
+        out = yf.fetch_region_quotes(session, "gb", "dayvolume", "DESC", min_volume=50_000)
+        assert out == [{"symbol": "X"}]
+        posted_body = session.post_calls[0][1]["json"]
+        operand_fields = [o["operands"][0] for o in posted_body["query"]["operands"]]
+        assert "dayvolume" in operand_fields
+        assert session.post_calls[0][1]["params"] == {"crumb": "crumb123"}
+
+
+class TestFetchPredefinedQuotes:
+    def test_requests_the_screener_and_returns_quotes(self):
+        payload = {"finance": {"result": [{"quotes": [{"symbol": "X"}]}]}}
+        session = FakeSession(get_responses=[FakeResponse(json_data=payload)])
+        assert yf.fetch_predefined_quotes(session, "most_actives") == [{"symbol": "X"}]
+        url, kwargs = session.get_calls[0]
+        assert url == yf.PREDEFINED_SCREENER_URL
+        assert kwargs["params"]["scrIds"] == "most_actives"
+
+
+class TestTopMovers:
+    def test_row_fields_and_order_kept(self):
+        quotes = [
+            {"symbol": "A", "shortName": "Alpha", "longName": "Alpha Inc.", "exchange": "NYQ",
+             "fullExchangeName": "NYSE", "regularMarketVolume": 300, "regularMarketPrice": 10.5,
+             "regularMarketChangePercent": 7.7948, "currency": "USD"},
+            {"symbol": "B", "longName": "Beta Corp", "exchange": "NMS"},
+        ]
+        out = yf.parse_top_movers(quotes)
+        assert (out["source"], out["notes"]) == ("Yahoo Finance", [])
+        assert out["movers"] == [
+            {"symbol": "A", "name": "Alpha", "exchange": "NYSE", "volume": 300, "price": 10.5,
+             "change_percent": 7.7948, "currency": "USD"},
+            {"symbol": "B", "name": "Beta Corp", "exchange": "NMS", "volume": None,
+             "price": None, "change_percent": None, "currency": None},
+        ]
+
+    def test_top_movers_parses_screener_quotes(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(yf, "screener_quotes",
+                            lambda m, k, n: seen.append((m, k, n)) or [{"symbol": "A"}])
+        assert yf.top_movers("uk", "losers", 3)["movers"][0]["symbol"] == "A"
+        assert seen == [("uk", "losers", 3)]
+
+
+class TestParseQuote:
+    def test_uses_meta_fields_when_present(self, chart_result):
+        chart_result["meta"].update({
+            "longName": "Triple A Inc.",
+            "regularMarketPrice": 12.34,
+            "regularMarketTime": 1704283200,  # 2024-01-03 12:00 UTC
+            "regularMarketDayHigh": 13.0,
+            "regularMarketDayLow": 12.0,
+            "fiftyTwoWeekLow": 9.5,
+            "fiftyTwoWeekHigh": 15.25,
+            "timezone": "UTC",
+        })
+        assert yf.parse_quote(chart_result, "AAA") == {
+            "source": "Yahoo Finance", "notes": [],
+            "name": "Triple A Inc.", "symbol": "AAA", "exchange": "TestExchange",
+            "currency": "USD", "price": 12.34, "price_time": "2024-01-03 12:00 UTC",
+            "session_date": "2024-01-03", "session_high": 13.0, "session_low": 12.0,
+            "previous_close": 11.2, "week52_low": 9.5, "week52_high": 15.25,
+        }
+
+    def test_session_date_honours_gmtoffset(self, chart_result):
+        chart_result["meta"].update({
+            "gmtoffset": 8 * 3600,
+            "regularMarketPrice": 1.0,
+            "regularMarketTime": 1704283200 + 12 * 3600,  # 2024-01-04 00:00 UTC
+            "regularMarketDayHigh": 2.0,
+            "regularMarketDayLow": 0.5,
+        })
+        quote = yf.parse_quote(chart_result, "AAA")
+        assert quote["session_date"] == "2024-01-04"
+        assert quote["price_time"] == "2024-01-04 08:00"
+
+    def test_falls_back_to_latest_bar(self, chart_result):
+        chart_result["meta"]["shortName"] = "Triple A"
+        quote = yf.parse_quote(chart_result, "AAA")
+        assert quote["name"] == "Triple A"
+        assert (quote["price"], quote["price_time"]) == (12.2, None)
+        assert quote["session_date"] == "2024-01-03"
+        assert (quote["session_high"], quote["session_low"]) == (12.5, 11.5)
+        assert quote["previous_close"] == 11.2
+        assert (quote["week52_low"], quote["week52_high"]) == (None, None)
+
+    def test_previous_close_ignores_in_progress_bar_that_has_a_close(self, chart_result):
+        # The latest session's own bar (2024-01-03) already carries a close;
+        # the previous close must be 2024-01-02's, not that bar's.
+        chart_result["meta"].update({
+            "regularMarketPrice": 12.2,
+            "regularMarketTime": 1704283200,
+            "regularMarketDayHigh": 12.5,
+            "regularMarketDayLow": 11.5,
+        })
+        assert yf.parse_quote(chart_result, "AAA")["previous_close"] == 11.2
+
+    def test_no_earlier_bar_has_no_previous_close(self, chart_result):
+        chart_result["timestamp"] = chart_result["timestamp"][-1:]
+        quote = chart_result["indicators"]["quote"][0]
+        for key in quote:
+            quote[key] = quote[key][-1:]
+        assert yf.parse_quote(chart_result, "AAA")["previous_close"] is None
+
+    def test_bars_rounded_and_unsettled_skipped(self, chart_result):
+        bars = chart_result["indicators"]["quote"][0]
+        bars["close"] = [10.123456, None, 12.2]
+        bars["high"] = [10.777777, 11.5, 12.5]
+        quote = yf.parse_quote(chart_result, "AAA")
+        assert quote["previous_close"] == 10.1235  # 2024-01-02 has no close
+
+    def test_name_falls_back_to_symbol(self, chart_result):
+        assert yf.parse_quote(chart_result, "AAA")["name"] == "AAA"
+
+    def test_no_price_is_none(self, chart_result):
+        chart_result["indicators"]["quote"][0]["close"] = [None, None, None]
+        quote = yf.parse_quote(chart_result, "AAA")
+        assert (quote["price"], quote["session_date"], quote["previous_close"]) == (None, None, None)
+
+
+class TestQuote:
+    def test_fetches_a_short_daily_window(self, monkeypatch, chart_result):
+        calls = []
+        monkeypatch.setattr(yf, "fetch_history",
+                            lambda s, p: calls.append((s, p)) or chart_result)
+        assert yf.quote("AAA")["symbol"] == "AAA"
+        assert calls[0][0] == "AAA"
+        assert calls[0][1]["range"] == yf.QUOTE_RANGE
+        assert calls[0][1]["interval"] == "1d"
+
+
+class TestParseDailyHistory:
+    def test_neutral_shape(self, chart_result):
+        history = yf.parse_daily_history(chart_result, "AAA")
+        assert history["source"] == yf.SOURCE
+        assert history["notes"] == [yf.HISTORY_NOTE]
+        assert (history["symbol"], history["exchange"], history["currency"]) ==             ("AAA", "TestExchange", "USD")
+        assert history["bars"][0] == {"date": "2024-01-01", "open": 10.0, "high": 10.5,
+                                      "low": 9.5, "close": 10.2, "adj_close": 10.1,
+                                      "volume": 1000}
+        assert [b["date"] for b in history["bars"]] == ["2024-01-01", "2024-01-02",
+                                                        "2024-01-03"]
+
+    def test_unsettled_bar_is_passed_on(self, chart_result):
+        chart_result["indicators"]["quote"][0]["close"][-1] = None
+        bars = yf.parse_daily_history(chart_result, "AAA")["bars"]
+        assert len(bars) == 3 and bars[-1]["close"] is None
+
+    def test_dates_are_exchange_local(self, chart_result):
+        chart_result["meta"]["gmtoffset"] = -5 * 3600  # 2024-01-01 00:00 UTC is 31 Dec
+        assert yf.parse_daily_history(chart_result, "AAA")["bars"][0]["date"] == "2023-12-31"
+
+    def test_missing_adjclose_and_short_lists_are_none(self, chart_result):
+        del chart_result["indicators"]["adjclose"]
+        chart_result["indicators"]["quote"][0]["volume"] = [1000]
+        bars = yf.parse_daily_history(chart_result, "AAA")["bars"]
+        assert all(b["adj_close"] is None for b in bars)
+        assert [b["volume"] for b in bars] == [1000, None, None]
+
+    def test_symbol_falls_back(self, chart_result):
+        del chart_result["meta"]["symbol"]
+        assert yf.parse_daily_history(chart_result, "BBB")["symbol"] == "BBB"
+
+
+class TestDailyHistory:
+    def test_passes_the_window_through(self, monkeypatch, chart_result):
+        calls = []
+        monkeypatch.setattr(yf, "fetch_history",
+                            lambda s, p: calls.append((s, p)) or chart_result)
+        params = yf.build_params(interval="1wk", range_="6mo")
+        assert yf.daily_history("AAA", params)["bars"]
+        assert calls == [("AAA", params)]
+
+    def test_fetch_error_propagates(self, monkeypatch):
+        def boom(symbol, params):
+            raise requests.RequestException("No data found, symbol may be delisted")
+        monkeypatch.setattr(yf, "fetch_history", boom)
+        with pytest.raises(requests.RequestException, match="delisted"):
+            yf.daily_history("ZZZ", yf.build_params(range_="1mo"))

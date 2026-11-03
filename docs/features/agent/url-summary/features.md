@@ -10,11 +10,12 @@
 - Take one or more URLs given by the user.
     - If a URL has no http:// or https://, add https://.
 - For each URL:
-    - Retrieve the page as readable text, up to 6,000 characters (more only if the user needs a long page's later sections).
+    - Retrieve the page as readable text, up to 6,000 characters (more only if the user needs a long page's later sections), noting what the site's robots.txt asks (the noting mode, not the refusing check).
     - If it fails, retry at most once for a transient network error; otherwise keep it in the report as failed, with the reason.
 - Output:
     - For each URL, in the order given:
         - {{Page Title}} and {{URL}} as the label; the URL alone when the page has no title. Never make up a title.
+        - If the page's site opts out of AI input, or its robots.txt asks automated tools not to fetch the page (the softer note), one plain line saying so under the label (e.g. "Note: example.com asks AI tools not to use its content (its robots.txt says `Content-Signal: ai-input=no`)."); the summary still follows in full.
         - {{Summary}} of the main points of what the page actually says.
         - Note if the content was cut off, and offer to fetch more.
     - For several URLs, a short combined take, only if the pages are genuinely related.

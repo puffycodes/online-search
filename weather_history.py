@@ -29,12 +29,14 @@ import requests
 
 from cli_utils import die, positive_int, use_utf8_output
 from weather import (
+    ATTRIBUTION,
     daily_value,
     fetch_json,
     format_daylight,
     format_place,
     format_sun,
     geocode,
+    local_daily,
     place_fields,
     sun_fields,
     weather_description,
@@ -74,8 +76,7 @@ def fetch_daily_history(latitude, longitude, start, end, unit="celsius"):
         "timezone": "auto",
         "temperature_unit": unit,
     }
-    data = fetch_json(ARCHIVE_URL, params)
-    return data.get("daily") or {}
+    return local_daily(fetch_json(ARCHIVE_URL, params))
 
 
 def build_day(daily, i):
@@ -310,11 +311,13 @@ def main(argv=None):
     if row is None:
         die(f"No location found matching '{args.location}'.", args.json)
 
+    row["attribution"] = ATTRIBUTION
     if args.json:
         print(json.dumps(row, indent=2))
         return
 
     print(format_history(row))
+    print(f"\n{ATTRIBUTION}")
 
 
 if __name__ == "__main__":

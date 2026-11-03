@@ -3,7 +3,7 @@
 ## Requirement
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
-- Use market_top_volume.py's get_movers() and hottest_tech_discussions.py's get_hottest_tech_discussions(), imported directly (not run as separate processes).
+- Use stock_data.py's top_movers() (the same top-volume rows market_top_volume.py reports) and hottest_tech_discussions.py's get_hottest_tech_discussions(), imported directly (not run as separate processes).
 
 ## Actions
 

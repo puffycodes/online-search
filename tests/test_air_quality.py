@@ -1,4 +1,4 @@
-"""Tests for air_quality: us_aqi_category, air quality assembly, formatting, and main()."""
+"""Tests for air_quality: us_aqi_category, air quality assembly, pollen and report formatting, and main()."""
 
 import json
 
@@ -59,6 +59,8 @@ class TestGetAirQuality:
             "nitrogen_dioxide": 10.5,
             "sulphur_dioxide": 2.3,
             "ozone": 60.0,
+            "birch_pollen": 12.5,
+            "grass_pollen": 0.0,
             "time": "2026-01-01T00:00",
         }
         monkeypatch.setattr(aq, "fetch_current_air_quality", lambda *a, **k: current)
@@ -68,7 +70,14 @@ class TestGetAirQuality:
         assert row["us_aqi_category"] == "Good"
         assert row["european_aqi"] == 20
         assert row["pm2_5"] == 8.1
+        assert row["birch_pollen"] == 12.5
+        assert row["grass_pollen"] == 0.0
+        assert row["alder_pollen"] is None
         assert row["time"] == "2026-01-01T00:00"
+
+    def test_requests_every_pollen_field(self):
+        for field in aq.POLLEN_FIELDS:
+            assert field in aq.CURRENT_FIELDS.split(",")
 
     def test_missing_us_aqi_gives_no_category(self, monkeypatch):
         monkeypatch.setattr(
@@ -78,6 +87,27 @@ class TestGetAirQuality:
         row = aq.get_air_quality("X")
         assert row["us_aqi"] is None
         assert row["us_aqi_category"] is None
+
+
+class TestFormatPollen:
+    def test_all_none_is_not_available(self):
+        row = {field: None for field in aq.POLLEN_FIELDS}
+        assert aq.format_pollen(row) == "Pollen: not available (Europe only)"
+
+    def test_missing_fields_count_as_none(self):
+        assert aq.format_pollen({}) == "Pollen: not available (Europe only)"
+
+    def test_lists_every_plant_in_order(self):
+        row = {field: 0.0 for field in aq.POLLEN_FIELDS}
+        row["birch_pollen"] = 12.5
+        assert aq.format_pollen(row) == (
+            "Pollen (grains/m³): alder 0.0, birch 12.5, grass 0.0, "
+            "mugwort 0.0, olive 0.0, ragweed 0.0"
+        )
+
+    def test_zero_counts_are_available(self):
+        row = {field: 0.0 for field in aq.POLLEN_FIELDS}
+        assert "not available" not in aq.format_pollen(row)
 
 
 class TestFormatAirQuality:
@@ -101,6 +131,7 @@ class TestFormatAirQuality:
         assert out.splitlines()[0] == "Air quality for X"
         assert "US AQI: 42 (Good)" in out
         assert "European AQI: 20" in out
+        assert "Pollen: not available (Europe only)" in out
         assert "2026-01-01T00:00" in out
 
 
@@ -113,6 +144,10 @@ class TestParseArgs:
     def test_json_flag(self):
         args = aq.parse_args(["Tokyo", "--json"])
         assert args.json is True
+
+    def test_forecast_flag(self):
+        assert aq.parse_args(["Tokyo"]).forecast is False
+        assert aq.parse_args(["Tokyo", "--forecast"]).forecast is True
 
 
 class TestMain:
@@ -135,7 +170,9 @@ class TestMain:
         record = {"location": "X", "us_aqi": 42}
         monkeypatch.setattr(aq, "get_air_quality", lambda *a, **k: record)
         aq.main(["X", "--json"])
-        assert json.loads(capsys.readouterr().out) == record
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["us_aqi"] == 42
+        assert payload["attribution"] == aq.ATTRIBUTION
 
     def test_text_output(self, monkeypatch, capsys):
         record = {
@@ -158,3 +195,123 @@ class TestMain:
         out = capsys.readouterr().out
         assert "Looking up air quality for 'X'" in out
         assert "Air quality for X" in out
+        assert out.rstrip().endswith(aq.ATTRIBUTION)
+
+
+class TestFetchHourlyAirQuality:
+    def test_params(self, monkeypatch):
+        import datetime as dt
+        calls = []
+        monkeypatch.setattr(aq, "fetch_json", lambda url, params: calls.append((url, params)) or {"hourly": {"time": []}})
+        assert aq.fetch_hourly_air_quality(1, 2, dt.date(2026, 10, 22), dt.date(2026, 10, 24)) == {"time": []}
+        url, params = calls[0]
+        assert url == aq.AIR_QUALITY_URL and params["hourly"] == aq.HOURLY_FIELDS
+        assert (params["start_date"], params["end_date"], params["timezone"]) == ("2026-10-22", "2026-10-24", "auto")
+        assert "forecast_days" not in params
+
+    def test_default_is_every_forecast_day(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(aq, "fetch_json", lambda url, params: calls.append(params) or {})
+        assert aq.fetch_hourly_air_quality(1, 2) == {}
+        assert calls[0]["forecast_days"] == aq.MAX_FORECAST_DAYS and "start_date" not in calls[0]
+
+
+class TestDailyMaxima:
+    def test_worst_hour_per_day_and_partial_days(self):
+        hourly = {
+            "time": ["2026-10-22T00:00", "2026-10-22T01:00", "2026-10-23T00:00", "2026-10-24T00:00"],
+            "us_aqi": [40, 120, 30, None],
+            "european_aqi": [20, 35, None, None],
+            "birch_pollen": [0.5, 2.0, None, None],
+        }
+        days = aq.daily_maxima(hourly)
+        assert set(days) == {"2026-10-22", "2026-10-23"}
+        first = days["2026-10-22"]
+        assert (first["us_aqi"], first["european_aqi"], first["birch_pollen"]) == (120, 35, 2.0)
+        assert first["us_aqi_category"] == "Unhealthy for Sensitive Groups" and first["hours"] == 2
+        assert first["grass_pollen"] is None
+        assert days["2026-10-23"]["european_aqi"] is None and days["2026-10-23"]["hours"] == 1
+
+    def test_empty(self):
+        assert aq.daily_maxima({}) == {}
+
+
+def _hourly(days):
+    """An hourly block: ``days`` maps date -> (hours of data, us_aqi, birch pollen)."""
+    times, us, eu, birch = [], [], [], []
+    for date, (hours, aqi, pollen) in days.items():
+        for h in range(24):
+            times.append(f"{date}T{h:02d}:00")
+            us.append(aqi if h < hours else None)
+            eu.append(aqi // 2 if h < hours else None)
+            birch.append(pollen if h < hours else None)
+    return {"time": times, "us_aqi": us, "european_aqi": eu, "birch_pollen": birch}
+
+
+class TestGetAirQualityForecast:
+    def test_not_found(self, monkeypatch):
+        monkeypatch.setattr(aq, "geocode", lambda loc: None)
+        assert aq.get_air_quality_forecast("zzz") is None
+
+    def test_days_sorted_with_note(self, monkeypatch):
+        monkeypatch.setattr(aq, "geocode", lambda loc: {"name": "X", "latitude": 1, "longitude": 2})
+        monkeypatch.setattr(aq, "fetch_hourly_air_quality", lambda lat, lon: _hourly({
+            "2026-10-22": (24, 60, 1.5), "2026-10-23": (10, 160, None), "2026-10-24": (0, 0, None),
+        }))
+        row = aq.get_air_quality_forecast("X")
+        assert row["location"] == "X" and row["note"] == aq.FORECAST_NOTE
+        assert [d["date"] for d in row["days"]] == ["2026-10-22", "2026-10-23"]
+        first, second = row["days"]
+        assert (first["us_aqi"], first["us_aqi_category"], first["hours"]) == (60, "Moderate", 24)
+        assert (second["us_aqi_category"], second["hours"], second["birch_pollen"]) == ("Unhealthy", 10, None)
+
+
+class TestFormatDayPollen:
+    def test_matrix(self):
+        assert aq.format_day_pollen({f: None for f in aq.POLLEN_FIELDS}) == "-"
+        assert aq.format_day_pollen({f: 0.0 for f in aq.POLLEN_FIELDS}) == "none"
+        air = {f: 0.0 for f in aq.POLLEN_FIELDS}
+        air["birch_pollen"], air["grass_pollen"] = 3.2, 1.0
+        assert aq.format_day_pollen(air) == "birch 3.2, grass 1"
+
+
+class TestFormatForecast:
+    ROW = {"location": "Delhi", "admin1": "Delhi", "country": "India", "note": aq.FORECAST_NOTE,
+           "days": [{"date": "2026-10-22", "us_aqi": 180, "us_aqi_category": "Unhealthy",
+                     "european_aqi": 90, "hours": 24, **{f: None for f in aq.POLLEN_FIELDS}},
+                    {"date": "2026-10-23", "us_aqi": 150, "us_aqi_category": "Unhealthy for Sensitive Groups",
+                     "european_aqi": None, "hours": 7, **{f: None for f in aq.POLLEN_FIELDS}}]}
+
+    def test_table(self):
+        out = aq.format_forecast(self.ROW)
+        assert out.startswith("Air quality forecast for Delhi, India (each day's worst hour)")
+        assert "2026-10-22       180  Unhealthy" in out
+        assert out.splitlines()[-3].endswith("-  [7 h of forecast]")
+        assert out.endswith(f"Note: {aq.FORECAST_NOTE}")
+
+    def test_no_days(self):
+        out = aq.format_forecast(dict(self.ROW, days=[]))
+        assert "No forecast values returned." in out
+
+
+class TestMainForecast:
+    def test_json(self, monkeypatch, capsys):
+        monkeypatch.setattr(aq, "get_air_quality_forecast", lambda loc: dict(TestFormatForecast.ROW))
+        monkeypatch.setattr(aq, "get_air_quality", lambda loc: pytest.fail("current lookup used"))
+        aq.main(["Delhi", "--forecast", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert len(payload["days"]) == 2 and payload["attribution"] == aq.ATTRIBUTION
+
+    def test_text(self, monkeypatch, capsys):
+        monkeypatch.setattr(aq, "get_air_quality_forecast", lambda loc: dict(TestFormatForecast.ROW))
+        aq.main(["Delhi", "--forecast"])
+        out = capsys.readouterr().out
+        assert out.startswith("Looking up the air quality forecast for 'Delhi'")
+        assert out.rstrip().endswith(aq.ATTRIBUTION)
+
+    def test_not_found(self, monkeypatch, capsys):
+        monkeypatch.setattr(aq, "get_air_quality_forecast", lambda loc: None)
+        with pytest.raises(SystemExit) as exc:
+            aq.main(["zzz", "--forecast", "--json"])
+        assert exc.value.code == 1
+        assert "No location found" in json.loads(capsys.readouterr().err)["error"]

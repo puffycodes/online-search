@@ -190,6 +190,22 @@ class TestMain:
         assert exc.value.code == 1
         assert json.loads(capsys.readouterr().err) == {"error": "network down"}
 
+    def test_key_redacted_from_error(self, monkeypatch, capsys):
+        # SerpApi takes its key as a query parameter, so a connection error's
+        # message carries the whole URL, key included (seen on 2026-10-21).
+        monkeypatch.setattr(wss, "load_dotenv", lambda: None)
+        monkeypatch.setenv("SERPAPI_API_KEY", "secret-key")
+
+        def boom(*a, **k):
+            raise requests.ConnectionError(
+                "Max retries exceeded with url: /search.json?q=x&api_key=secret-key")
+
+        monkeypatch.setattr(wss, "fetch_results", boom)
+        with pytest.raises(SystemExit):
+            wss.main(["python", "--json"])
+        error = json.loads(capsys.readouterr().err)["error"]
+        assert "secret-key" not in error and "api_key=<redacted>" in error
+
     def test_json_output(self, monkeypatch, capsys):
         monkeypatch.setattr(wss, "load_dotenv", lambda: None)
         monkeypatch.setenv("SERPAPI_API_KEY", "key")

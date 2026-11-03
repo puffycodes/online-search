@@ -5,7 +5,7 @@ someone who knows a little about stocks but not the underlying maths.
 
 | File | Covers | Module |
 |---|---|---|
-| [indicators.md](indicators.md) | Price indicators: moving averages, price-vs-average, moving-average crossovers and their "flips", rebasing a series to a chosen day, and the up/down/flat trend classifier | [`../indicators.py`](../indicators.py) |
+| [indicators.md](indicators.md) | Price indicators: moving averages, price-vs-average, moving-average crossovers and their "flips", rebasing a series to a chosen day, the up/down/flat trend classifier, and the risk metrics: daily returns, volatility, maximum drawdown and correlation | [`../indicators.py`](../indicators.py) |
 | [valuations.md](valuations.md) | Intrinsic-value methods: discounted cash flow, reverse DCF, the Gordon growth / dividend model, and price & enterprise multiples | [`../valuation.py`](../valuation.py) |
 
 The project [`README.md`](../README.md) has the precise, function-by-function API
@@ -22,6 +22,12 @@ moves a lot when the assumptions move. Nothing here is investment advice.
 [`things-to-explore.md`](things-to-explore.md) lists data sources and features that
 could be added on top of the existing scripts. They are ideas only, not implemented yet.
 
+## Source audit
+
+[`source-audit.md`](source-audit.md) records the robots.txt-and-terms check of every
+outside service the scripts call (last run 2026-10-20): what each one allows, what
+the repo does to comply, and what is still open.
+
 ## Agent feature specs
 
 [`features/agent/`](features/agent/) holds one `features.md` per Claude Code subagent
@@ -30,7 +36,10 @@ in [`../.claude/agents/`](../.claude/agents/), in a folder named after the agent
 for `.claude/agents/weather.md`). Each spec states which script(s) the agent must
 use and what it does, in the same Requirement / Actions format as the web apps'
 specs in `app/*/docs/features.md`. They live here rather than in `.claude/agents/`
-because Claude Code loads every `.md` file in that folder as an agent.
+because Claude Code loads every `.md` file in that folder as an agent. The
+`hottest-tech-discussion-summary` folder also has a
+[`test-runs.md`](features/agent/hottest-tech-discussion-summary/test-runs.md): targeted
+live runs for checking that agent's edge-case rules after an edit.
 
 ## Script feature specs
 
@@ -39,6 +48,6 @@ the repo root, in a folder named after the script without `.py` (e.g.
 [`features/script/weather/features.md`](features/script/weather/features.md) for
 `weather.py`). Each spec states which data source and shared modules the script uses,
 its inputs and defaults, what it outputs (including the `--json` shape), and how it
-fails. The five helper modules with no command line (`cli_utils.py`, `hn.py`,
-`indicators.py`, `valuation.py`, `yahoo_finance.py`) have no spec here; `indicators.py` and
+fails. The six helper modules with no command line (`cli_utils.py`, `hn.py`,
+`indicators.py`, `robots.py`, `valuation.py`, `yahoo_finance.py`) have no spec here; `indicators.py` and
 `valuation.py` are explained in the pages above.

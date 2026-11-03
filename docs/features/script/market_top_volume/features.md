@@ -3,10 +3,8 @@
 ## Requirement
 
 - Reuse the shared modules in this project (rather than copying their logic) as much as possible.
-- Use Yahoo Finance's screener endpoints (unofficial; no API key).
-    - US markets use the keyless predefined screeners; other markets use the generic screener, which needs a cookie and crumb.
-- Use yahoo_finance.py's HEADERS, REQUEST_TIMEOUT and fetch_crumb().
-- Keep get_movers() importable, for stock_tech_buzz_agent.py.
+- Get the movers through stock_data.py's top_movers(), never from a provider directly, so the script reads only stock_data's neutral rows; offer the markets stock_data.mover_markets() lists and the metrics in stock_data.MOVER_METRICS.
+    - It is served by yahoo_finance.py's top_movers() today: Yahoo Finance's screener endpoints (unofficial; no API key). US markets use the keyless predefined screeners; other markets use the generic screener, which needs a cookie and crumb.
 
 ## Actions
 

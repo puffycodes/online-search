@@ -3,7 +3,7 @@
 ## Requirement
 
 - Use the scripts or agents in this project as much as possible.
-    - Use the air_quality.py script to retrieve the current air quality.
+    - Use the air_quality.py script to retrieve the current air quality, and its --forecast option for coming days.
 
 ## Actions
 
@@ -18,6 +18,14 @@
     - {{European AQI}}, only if the location is in Europe or the user asks for it.
         - Report it side by side with the US AQI. Never average or combine the two; they use different scales.
     - {{PM2.5}} {{PM10}} {{Ozone}} {{Nitrogen Dioxide}} {{Sulphur Dioxide}} {{Carbon Monoxide}}, only if the user asks for detail or one is notably high.
+    - {{Alder Pollen}} {{Birch Pollen}} {{Grass Pollen}} {{Mugwort Pollen}} {{Olive Pollen}} {{Ragweed Pollen}}, in grains/m³, only if the user asks about pollen, hay fever or allergies.
+        - If every pollen value is missing, say pollen counts aren't available for that place (they are only modelled for Europe). Don't report them as zero.
+        - Report raw counts only; don't label them low, moderate or high.
     - {{Resolved Place Name}} {{Region}} {{Country}}, if it differs from what the user typed.
-- Report current conditions only. If the user asks for a forecast or past air quality, say it isn't available.
-- Never fabricate AQI values, pollutant levels or locations.
+- For coming days ("tomorrow", "this weekend", "the next few days"), use the forecast:
+    - {{Date}} {{US AQI}} ({{US AQI Category}}) per day, as each day's worst hour, with the worst day called out.
+    - Flag a day the forecast covers only partly; if the user asks about a day beyond the last one returned, say the forecast doesn't reach that far (about 4-5 days, pollen about 3).
+- If the user asks only about past air quality, say it isn't available, without running the tool or offering today's reading instead.
+- Leave out everything the output rules above don't call for, even though the tool returns it (e.g. the European AQI outside Europe, pollen when the user didn't ask about it).
+- End with a short credit line naming Open-Meteo.com: its data is CC BY 4.0, which requires attribution.
+- Never fabricate AQI values, pollutant levels, pollen counts or locations.

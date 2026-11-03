@@ -4,21 +4,22 @@
 
 - Use the scripts or agents in this project as much as possible.
     - Use the stock_rebased_chart.py script to draw the chart.
+    - Use the stock_risk.py script for how closely the instruments moved together, only when the user asks.
 
 ## Actions
 
-- Take one or more stocks, market indices, currency pairs, cryptocurrencies or futures contracts / commodities named by the user.
-    - For a stock, resolve the company to its Yahoo Finance ticker, adding the exchange suffix for non-US listings (e.g. .L, .SI, .DE, .PA, .TO, .AX, .NS, .HK, .T).
+- Take one or more stocks, market indices, currency pairs, or cryptocurrencies named by the user.
+    - For a stock, resolve the company to its Yahoo-notation ticker, adding the exchange suffix for non-US listings (e.g. .L, .DE, .PA, .TO, .AX, .NS, .HK); the tool gets the data from EODHD, or Alpha Vantage for Indian stocks.
+    - Singapore (.SI) and Tokyo (.T) listings and futures (=F) aren't supported for now: say so instead of running the tool.
     - For anything else, use Yahoo's own symbol:
-        - Index: ^ prefix (e.g. ^GSPC S&P 500, ^FTSE FTSE 100, ^N225 Nikkei 225).
+        - Index: ^ prefix (e.g. ^GSPC S&P 500, ^IXIC Nasdaq Composite, ^HSI Hang Seng); ^FTSE returns no data, so report an index with no data as unavailable.
         - Currency pair: BASEQUOTE=X (e.g. EURUSD=X); for USD-based pairs the base is dropped (JPY=X is USD/JPY). The price is the quote currency per one unit of the base.
         - Cryptocurrency: COIN-CURRENCY (e.g. BTC-USD).
-        - Futures / commodity: =F suffix, a continuous front-month series (e.g. GC=F gold, CL=F crude oil).
     - If unsure of a ticker, say so rather than guess.
     - Instruments from different exchanges, currencies and asset classes can be mixed.
     - Put the stock the user treats as the anchor first.
 - When the user compares stocks against a market or index ("vs the S&P 500", "did they beat the market?"), draw that index as the benchmark rather than as another stock.
-    - "The market" with no index named → the main index of the stocks' own exchange (e.g. ^GSPC US, ^FTSE London, ^STI Singapore).
+    - "The market" with no index named → the main index of the stocks' own exchange (e.g. ^GSPC US, ^HSI Hong Kong); ^FTSE returns no data, so for London say so and offer ^GSPC.
     - Indices compared with each other, or no market mentioned → no benchmark.
 - Pick the time window from what the user asked:
     - "last N days/weeks" → the last N sessions.
@@ -35,6 +36,10 @@
         - If the base date was the problem, retry once with the nearest earlier weekday.
     - If no stock can be drawn, report the error.
     - Retry at most once, only for a transient network error.
+- Only when the user asks whether, or how closely, the instruments moved together, also measure their correlation after drawing the chart:
+    - Over the same instruments, benchmark and window as the chart (the past 6 months if none was given); the base date doesn't apply.
+    - The correlation of daily returns for each pair, over the dates both traded.
+    - If it fails, keep the chart and report the error; retry at most once, only for a transient network error.
 - Output:
     - Two or three sentences: {{Stocks Plotted}}, {{Period}}, {{Base Date}}, and a read of the chart:
         - {{Best Performer}} (furthest above 100) and {{Worst Performer}} (furthest below 100)
@@ -42,5 +47,6 @@
         - Any notable crossover or divergence.
         - With a benchmark: which stocks ended above it and which below, roughly by how much; or that it was dropped.
     - {{Stocks Dropped}}, with the reason, if any.
+    - If the correlation was measured: {{Correlation}} for each pair, with a plain reading (above +0.7 moved closely together, +0.3 to +0.7 somewhat together, −0.3 to +0.3 little consistent link, below −0.3 tended to move opposite), {{Shared Sessions}} when much fewer than the window, and that correlation doesn't mean one drives the other.
     - Chart: {{Absolute Path to the Image}}, on its own line at the end.
 - Never fabricate prices, percentages, dates or trends.

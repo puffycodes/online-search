@@ -100,6 +100,19 @@ class TestFetchResults:
         with pytest.raises(requests.HTTPError):
             wsb.fetch_results("q", 1, "key")
 
+    def test_invalid_key_reason_kept(self, monkeypatch):
+        # What Brave answers for a wrong key (seen on 2026-10-21).
+        response = FakeResponse(
+            status_code=422,
+            json_data={"error": {"code": "SUBSCRIPTION_TOKEN_INVALID",
+                                 "detail": "The provided subscription token is invalid.",
+                                 "status": 422}, "type": "ErrorResponse"},
+            raise_for_status=requests.HTTPError("422 Client Error:  for url: https://api.search.brave.com/"),
+        )
+        monkeypatch.setattr(wsb.requests, "get", lambda url, **kw: response)
+        with pytest.raises(requests.HTTPError, match="SUBSCRIPTION_TOKEN_INVALID"):
+            wsb.fetch_results("q", 1, "key")
+
 
 class TestResultToDict:
     def test_strips_markup_and_joins_snippet_lines(self):

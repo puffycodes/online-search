@@ -160,6 +160,18 @@ class TestFetchLinks:
         ul.fetch_links("https://example.com", timeout=3)
         assert captured["timeout"] == 3
 
+    def test_user_agent(self, monkeypatch):
+        captured = []
+
+        def fake_get(url, **kwargs):
+            captured.append(kwargs["headers"]["User-Agent"])
+            return self._response(text="<a href='/x'>X</a>")
+
+        monkeypatch.setattr(ul.requests, "get", fake_get)
+        ul.fetch_links("https://example.com")
+        ul.fetch_links("https://example.com", user_agent="custom/1.0")
+        assert captured == [ul.USER_AGENT, "custom/1.0"]
+
     def test_no_links_found(self, monkeypatch):
         response = self._response(text="<p>Nothing</p>")
         monkeypatch.setattr(ul.requests, "get", lambda url, **kwargs: response)

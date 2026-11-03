@@ -32,16 +32,17 @@ USER_AGENT = "Mozilla/5.0 (compatible; online-search-url-availability/1.0)"
 WAYBACK_API_URL = "https://archive.org/wayback/available"
 
 
-def check_url(url, timeout=TIMEOUT_SECONDS):
+def check_url(url, timeout=TIMEOUT_SECONDS, user_agent=USER_AGENT):
     """GET `url` and report whether it's available.
 
     Returns a dict with url, available, status_code, reason, final_url
     (after redirects), and elapsed_ms. HTTP-level errors (4xx/5xx) are
     reported as available=False rather than raised; only connection-level
     failures (DNS, timeout, refused connection, ...) propagate as
-    requests.RequestException for the caller to handle.
+    requests.RequestException for the caller to handle. `user_agent` is the
+    User-Agent header sent (url_broken_links.py passes its own).
     """
-    headers = {"User-Agent": USER_AGENT}
+    headers = {"User-Agent": user_agent}
     start = time.monotonic()
     response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
     elapsed_ms = round((time.monotonic() - start) * 1000)

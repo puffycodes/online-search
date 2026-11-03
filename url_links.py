@@ -51,7 +51,7 @@ def extract_links(html, base_url):
     return links
 
 
-def fetch_links(url, timeout=TIMEOUT_SECONDS):
+def fetch_links(url, timeout=TIMEOUT_SECONDS, user_agent=USER_AGENT):
     """GET `url` and return the links found in its HTML content.
 
     Returns a dict with url, final_url (after redirects), status_code,
@@ -62,9 +62,10 @@ def fetch_links(url, timeout=TIMEOUT_SECONDS):
     response's Content-Type isn't HTML, `ImportError` if
     `beautifulsoup4` isn't installed, and lets connection-level failures
     (DNS, timeout, refused connection, ...) propagate as
-    requests.RequestException for the caller to handle.
+    requests.RequestException for the caller to handle. `user_agent` is the
+    User-Agent header sent (url_broken_links.py passes its own).
     """
-    headers = {"User-Agent": USER_AGENT}
+    headers = {"User-Agent": user_agent}
     response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
     response.raise_for_status()
 

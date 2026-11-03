@@ -30,7 +30,16 @@ import argparse
 
 import requests
 
-from cli_utils import die, load_dotenv, positive_int, print_results, require_env, use_utf8_output
+from cli_utils import (
+    die,
+    load_dotenv,
+    positive_int,
+    print_results,
+    raise_for_status,
+    redact,
+    require_env,
+    use_utf8_output,
+)
 
 SEARCH_URL = "https://api.tavily.com/search"
 REQUEST_TIMEOUT = 10
@@ -49,7 +58,7 @@ def fetch_results(query, limit, api_key):
         "max_results": min(limit, MAX_RESULTS_PER_REQUEST),
     }
     response = requests.post(SEARCH_URL, json=payload, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
+    raise_for_status(response)
     data = response.json()
     return data.get("results", [])[:limit]
 
@@ -97,7 +106,7 @@ def main(argv=None):
     try:
         items = fetch_results(args.query, args.limit, api_key)
     except requests.RequestException as exc:
-        die(str(exc), args.json)
+        die(redact(str(exc), api_key), args.json)
 
     rows = [result_to_dict(rank, item) for rank, item in enumerate(items, start=1)]
     print_results(rows, args.json)

@@ -20,4 +20,5 @@
     - {{Wind Speed}} {{Wind Direction}}, only if notable or asked for.
     - {{Observation Time}}, if the user cares about how fresh the reading is.
 - Report current conditions only. A forecast, UV index or sunrise / sunset belongs to the weather-forecast agent, and past weather to the weather-history agent.
+- End with a short credit line naming Open-Meteo.com: its data is CC BY 4.0, which requires attribution.
 - Never fabricate conditions, temperatures or locations.

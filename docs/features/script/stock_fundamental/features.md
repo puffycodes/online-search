@@ -3,7 +3,7 @@
 ## Requirement
 
 - Reuse the shared modules and scripts in this project (rather than copying their logic) as much as possible.
-    - Use stock_intrinsic_value.py's fetch_fundamentals() and collect_inputs() to retrieve and parse Yahoo Finance's quoteSummary data.
+    - Get the data through stock_data.py's fundamentals_view(), never from a provider directly, and shape it with stock_intrinsic_value.py's collect_inputs(), so both scripts read the same figures. It is served by yahoo_finance.py's fundamentals_view() (Yahoo Finance's quoteSummary) today.
 - Keep extract_indicators() importable, for the stock information web app.
 
 ## Actions

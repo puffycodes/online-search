@@ -23,6 +23,7 @@ import requests
 
 from cli_utils import die, use_utf8_output
 from weather import (
+    ATTRIBUTION,
     FORECAST_URL,
     daily_value,
     fetch_json,
@@ -30,6 +31,7 @@ from weather import (
     format_place,
     format_sun,
     geocode,
+    local_daily,
     place_fields,
     sun_fields,
     weather_description,
@@ -70,19 +72,43 @@ def uv_category(uv):
     return next(label for bound, label in UV_CATEGORIES if value >= bound)
 
 
-def fetch_daily_forecast(latitude, longitude, days=DEFAULT_FORECAST_DAYS, unit="celsius"):
+def fetch_daily_forecast(latitude, longitude, days=DEFAULT_FORECAST_DAYS, unit="celsius",
+                         start=None, end=None):
+    """The ``daily`` block of the forecast: ``days`` days from today, or,
+    given ``start`` and ``end`` (dates, inclusive, within the 16-day
+    horizon), just that window (trip_weather.py uses it)."""
     params = {
         "latitude": latitude,
         "longitude": longitude,
         "daily": DAILY_FIELDS,
-        "forecast_days": days,
         # "auto" resolves each location's own local timezone, so daily
         # buckets line up with its calendar days rather than UTC's.
         "timezone": "auto",
         "temperature_unit": unit,
     }
-    data = fetch_json(FORECAST_URL, params)
-    return data.get("daily") or {}
+    if start is not None and end is not None:
+        params["start_date"] = start.isoformat()
+        params["end_date"] = end.isoformat()
+    else:
+        params["forecast_days"] = days
+    return local_daily(fetch_json(FORECAST_URL, params))
+
+
+def forecast_day(daily, i):
+    """Day ``i`` of a fetch_daily_forecast() block as a day record."""
+    return {
+        "date": daily["time"][i],
+        "weather_code": daily["weathercode"][i],
+        "condition": weather_description(daily["weathercode"][i]),
+        "temp_max": daily["temperature_2m_max"][i],
+        "temp_min": daily["temperature_2m_min"][i],
+        "precipitation_sum": daily["precipitation_sum"][i],
+        "precipitation_probability_max": daily["precipitation_probability_max"][i],
+        "windspeed_max": daily["windspeed_10m_max"][i],
+        "uv_index_max": daily_value(daily, "uv_index_max", i),
+        "uv_category": uv_category(daily_value(daily, "uv_index_max", i)),
+        **sun_fields(daily, i),
+    }
 
 
 def get_forecast(location, days=DEFAULT_FORECAST_DAYS, unit="celsius"):
@@ -93,24 +119,7 @@ def get_forecast(location, days=DEFAULT_FORECAST_DAYS, unit="celsius"):
         return None
 
     daily = fetch_daily_forecast(place["latitude"], place["longitude"], days=days, unit=unit)
-    dates = daily.get("time", [])
-
-    forecast_days = [
-        {
-            "date": date,
-            "weather_code": daily["weathercode"][i],
-            "condition": weather_description(daily["weathercode"][i]),
-            "temp_max": daily["temperature_2m_max"][i],
-            "temp_min": daily["temperature_2m_min"][i],
-            "precipitation_sum": daily["precipitation_sum"][i],
-            "precipitation_probability_max": daily["precipitation_probability_max"][i],
-            "windspeed_max": daily["windspeed_10m_max"][i],
-            "uv_index_max": daily_value(daily, "uv_index_max", i),
-            "uv_category": uv_category(daily_value(daily, "uv_index_max", i)),
-            **sun_fields(daily, i),
-        }
-        for i, date in enumerate(dates)
-    ]
+    forecast_days = [forecast_day(daily, i) for i in range(len(daily.get("time", [])))]
 
     return {
         **place_fields(place),
@@ -208,11 +217,13 @@ def main(argv=None):
     if row is None:
         die(f"No location found matching '{args.location}'.", args.json)
 
+    row["attribution"] = ATTRIBUTION
     if args.json:
         print(json.dumps(row, indent=2))
         return
 
     print(format_forecast(row))
+    print(f"\n{ATTRIBUTION}")
 
 
 if __name__ == "__main__":

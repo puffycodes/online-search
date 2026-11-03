@@ -26,6 +26,7 @@
     - With it, skip any progress line and print the result as a single JSON value on stdout.
     - Without it, print a human-readable report.
 - Write stdout and stderr as UTF-8 on every platform, so non-ASCII text (°, accents, CJK, emoji) neither garbles nor crashes the script when output is piped on Windows.
+- On an HTTP error, report the provider's own reason when it gives one (cli_utils.raise_for_status()), and never show the API key: replace it with <redacted> in any error message (cli_utils.redact()).
 - On failure:
     - A runtime or data failure exits with code 1, with the error on stderr: {"error": "..."} with --json, or "Error: ..." without.
     - An invalid option value exits with code 2, before any network call.

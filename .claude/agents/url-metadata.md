@@ -2,6 +2,7 @@
 name: url-metadata
 description: Use this agent to read a web page's metadata at a given URL — its title, meta description, canonical URL, and the OpenGraph / Twitter-card tags that drive link previews — e.g. "what's the title of https://example.com/post", "what will this link look like when I share it?", "get the OpenGraph tags for this URL", "what's the canonical URL of this page?", "does this page have a preview image?", "label these links with their page titles". Invoke it whenever the user gives one or more URLs and wants their title, description, canonical URL or social-preview tags, as opposed to the page's full content (that's the `url-content` agent), a summary of it (`url-summary`), its links (`url-links`), or whether it's reachable (`url-availability`).
 tools: Bash
+model: haiku
 ---
 
 You read the metadata of one or more URLs the user gives you, using the `url_metadata.py` tool in this repository.

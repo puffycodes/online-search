@@ -3,7 +3,8 @@
 Shared helpers for the command-line entry-point scripts in this repo:
 uniform error exits, URL-scheme validation and charset-aware decoding of
 fetched pages, the ``positive_int`` argparse
-``type``, ``.env`` loading and API-key lookup, and the result-list
+``type``, ``.env`` loading and API-key lookup, HTTP errors that keep the
+provider's reason and messages with API keys redacted, and the result-list
 formatting/printing shared by the ``web_search_*.py`` scripts that
 return a flat list of results.
 
@@ -119,6 +120,64 @@ def require_env(name, script, as_json=False):
     return value
 
 
+def redact(message, secret):
+    """``message`` with every occurrence of ``secret`` replaced by ``<redacted>``.
+
+    For API keys that can end up in an error message - in a request URL
+    (SerpApi sends its key as a query parameter) or echoed by a provider.
+    """
+    return message.replace(secret, "<redacted>") if secret else message
+
+
+def http_error_detail(response):
+    """The provider's own reason for a failed request, or None.
+
+    Reads a JSON body's ``error`` / ``message`` / ``detail`` field (a string,
+    a ``{code, detail, message}`` object as Brave sends, or a list of
+    validation errors), else a short non-HTML text body.
+    """
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        for key in ("error", "message", "detail"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                parts = [str(value[k]) for k in ("code", "type", "detail", "message") if value.get(k)]
+                if parts:
+                    return ": ".join(dict.fromkeys(parts))
+            elif isinstance(value, list) and value:
+                return "; ".join(
+                    str(item.get("msg", item)) if isinstance(item, dict) else str(item)
+                    for item in value[:3]
+                )
+            elif value:
+                return str(value)
+    text = (getattr(response, "text", "") or "").strip()
+    if text and not text.startswith("<"):
+        return text[:200]
+    return None
+
+
+def raise_for_status(response):
+    """``response.raise_for_status()``, but keeping the provider's reason.
+
+    requests' own message is just "422 Client Error: ... for url: ...", which
+    drops what the API said ("SUBSCRIPTION_TOKEN_INVALID: The provided
+    subscription token is invalid.", a rate-limit notice, ...). When the body
+    carries a reason, the same exception type is raised as
+    "HTTP <status>: <reason>"; otherwise the original error propagates.
+    """
+    try:
+        response.raise_for_status()
+    except Exception as exc:
+        detail = http_error_detail(response)
+        if not detail:
+            raise
+        raise type(exc)(f"HTTP {response.status_code}: {detail}", response=response) from None
+
+
 def validate_url_scheme(url, as_json=False):
     """Exit via ``die()`` unless ``url`` starts with ``http://`` or ``https://``.
 
@@ -156,3 +215,24 @@ def positive_int(value):
     if number < 1:
         raise argparse.ArgumentTypeError(f"must be a positive integer, got {number}")
     return number
+
+
+def non_negative_int(value):
+    """argparse ``type`` for an integer that must be 0 or greater."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}")
+    if number < 0:
+        raise argparse.ArgumentTypeError(f"must be 0 or greater, got {number}")
+    return number
+
+
+def bounded_int(maximum):
+    """argparse ``type`` for an integer from 1 to ``maximum``."""
+    def check(value):
+        number = positive_int(value)
+        if number > maximum:
+            raise argparse.ArgumentTypeError(f"must be at most {maximum}, got {number}")
+        return number
+    return check
